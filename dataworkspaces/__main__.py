@@ -4,7 +4,8 @@ import traceback
 
 import click
 
-from .commands.actions import CalledProcessError, UserAbort, ConfigurationError
+from .commands.actions import CalledProcessError, UserAbort, ConfigurationError,\
+                              InternalError
 
 from .dws import cli
 
@@ -24,6 +25,11 @@ except UserAbort as e:
     sys.exit(1)
 except ConfigurationError as e:
     click.echo("Configuration error: " + str(e), err=True)
+    sys.exit(1)
+except InternalError as e:
+    tb = traceback.format_exc()
+    click.echo(tb, err=True)
+    click.echo("Aborting due to internal error: %s" % str(e), err=True)
     sys.exit(1)
 except Exception as e:
     tb = traceback.format_exc()

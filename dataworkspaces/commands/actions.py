@@ -7,7 +7,7 @@ and execute them via run_plan()
 """
 
 import os
-from os.path import isfile, abspath, expanduser, join
+from os.path import isfile, abspath, expanduser, join, isabs
 import sys
 import click
 from subprocess import run, CalledProcessError, PIPE
@@ -17,11 +17,21 @@ from subprocess import run, CalledProcessError, PIPE
 #                           Error class definitions                        #
 ############################################################################
 class ConfigurationError(Exception):
+    """Thrown when something is wrong with the system environment.
+    """
     pass
 
 
 class UserAbort(Exception):
+    """Thrown when the user requests not to perform the action.
+    """
     pass
+
+class InternalError(Exception):
+    """Thrown when something unexpected happens.
+    """
+    pass
+
 
 ############################################################################
 #                           Helper functions                               #
@@ -68,30 +78,62 @@ CURR_DIR = abspath(expanduser(os.curdir))
 class Action:
     """Base class for all actions"""
     def __init__(self, verbose):
+        """Do any prechecks here...
+        """
         self.verbose = verbose
-
-    def precheck(self):
-        pass
 
     def run(self):
         pass
     def __str__(self):
         return "This should explain what the actions will do"
 
-class GitInit(Action):
+class GitBaseAction(Action):
+    """Base class for git actions
+    """
     def __init__(self, base_directory, verbose):
         super().__init__(verbose)
         self.base_directory = base_directory
-
-    def precheck(self):
         if GIT_EXE_PATH is None:
             raise ConfigurationError("git executable not found.")
 
+
+class GitInit(GitBaseAction):
     def run(self):
         call_subprocess([GIT_EXE_PATH, 'init'], self.base_directory, verbose=self.verbose)
 
     def __str__(self):
         return "Run 'git init' in %s to initialize a git repository" % self.base_directory
+
+class GitAdd(GitBaseAction):
+    def __init__(self, base_directory, file_to_add, verbose):
+        super().__init__(base_directory, verbose)
+        if isabs(file_to_add):
+            if not file_to_add.startswith(base_directory):
+                raise InternalError("git add file '%s' is not within repository %s" %
+                                    (file_to_add, base_directory))
+            else:
+                file_to_add = file_to_add[len(base_directory)+1:]
+        self.file_to_add = file_to_add
+
+    def run(self):
+        call_subprocess([GIT_EXE_PATH, 'add', self.file_to_add],
+                        self.base_directory, verbose=self.verbose)
+
+    def __str__(self):
+        return "Add %s to git repository at %s" % (self.file_to_add, self.base_directory)
+
+
+class GitCommit(GitBaseAction):
+    def __init__(self, base_directory, message, verbose):
+        super().__init__(base_directory, verbose)
+        self.message = message
+
+    def run(self):
+        call_subprocess([GIT_EXE_PATH, 'commit', '-m', self.message],
+                        self.base_directory, verbose=self.verbose)
+
+    def __str__(self):
+        return "Git commit in %s" % self.base_directory
 
 
 
