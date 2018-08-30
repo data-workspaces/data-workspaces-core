@@ -7,7 +7,7 @@ and execute them via run_plan()
 """
 
 import os
-from os.path import isfile, abspath, expanduser, join, isabs
+from os.path import isfile, abspath, expanduser, join, isabs, isdir
 import sys
 import click
 from subprocess import run, CalledProcessError, PIPE
@@ -62,12 +62,33 @@ def find_exe(exe_name, additional_search_locations=[]):
             return fpath
     return None
 
+def is_git_repo(dirpath):
+    if isdir(join(dirpath, '.git')):
+        return True
+    else:
+        return False
+
+
 STANDARD_EXE_SEARCH_LOCATIONS=['/usr/bin', '/usr/local/bin',
                                abspath(expanduser('~/bin'))]
 
 GIT_EXE_PATH=find_exe('git', additional_search_locations=STANDARD_EXE_SEARCH_LOCATIONS)
 
 CURR_DIR = abspath(expanduser(os.curdir))
+
+def find_containing_workspace():
+    """For commands that execute in the context of a containing
+    workspace, find the nearest containging workspace and return
+    its absolute path. If none is found, return None.
+    """
+    curr_base = CURR_DIR
+    while curr_base != '/':
+        if isdir(join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
+            return curr_base
+        else:
+            curr_base = dirname(curr_base)
+    return None
+
 
 
 ############################################################################
@@ -105,22 +126,25 @@ class GitInit(GitBaseAction):
         return "Run 'git init' in %s to initialize a git repository" % self.base_directory
 
 class GitAdd(GitBaseAction):
-    def __init__(self, base_directory, file_to_add, verbose):
+    def __init__(self, base_directory, files_to_add, verbose):
         super().__init__(base_directory, verbose)
-        if isabs(file_to_add):
-            if not file_to_add.startswith(base_directory):
-                raise InternalError("git add file '%s' is not within repository %s" %
-                                    (file_to_add, base_directory))
-            else:
-                file_to_add = file_to_add[len(base_directory)+1:]
-        self.file_to_add = file_to_add
+        self.files_to_add = []
+        for file_to_add in files_to_add:
+            if isabs(file_to_add):
+                if not file_to_add.startswith(base_directory):
+                    raise InternalError("git add file '%s' is not within repository %s" %
+                                        (file_to_add, base_directory))
+                else:
+                    file_to_add = file_to_add[len(base_directory)+1:]
+            self.files_to_add.append(file_to_add)
 
     def run(self):
-        call_subprocess([GIT_EXE_PATH, 'add', self.file_to_add],
+        call_subprocess([GIT_EXE_PATH, 'add'] + self.files_to_add,
                         self.base_directory, verbose=self.verbose)
 
     def __str__(self):
-        return "Add %s to git repository at %s" % (self.file_to_add, self.base_directory)
+        return "Add files to git repository at %s: %s" % \
+            (self.base_directory, ', '.join(self.files_to_add))
 
 
 class GitCommit(GitBaseAction):

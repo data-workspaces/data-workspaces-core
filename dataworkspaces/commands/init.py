@@ -12,6 +12,7 @@ class MakeWorkSpaceConfig(actions.Action):
         super().__init__(verbose)
         self.dataworkspace_dir =  dataworkspace_dir
         self.config_fpath = join(dataworkspace_dir, 'config.json')
+        self.resources_fpath = join(dataworkspace_dir, 'resources.json')
         self.workspace_name = workspace_name
         if isdir(self.dataworkspace_dir):
             raise actions.ConfigurationError(".dataworkspace already exists in %s" %
@@ -22,24 +23,28 @@ class MakeWorkSpaceConfig(actions.Action):
         with open(self.config_fpath, 'w') as f:
             json.dump({'name':self.workspace_name, 'dws-version':__version__}, f,
                       indent=2)
+        with open(self.resources_fpath, 'w') as f:
+            json.dump([], f, indent=2)
 
     def __str__(self):
-        return "Initialize configuration file for workspace '%s' at .dataworkspace/config.json" %\
+        return "Initialize .dataworkspace directory for workspace '%s'" %\
             self.workspace_name
 
 
 def init_command(name, batch=False, verbose=False):
     click.echo("init: name=%s" % name)
     plan = []
-    if isdir(join(actions.CURR_DIR, '.git')):
+    if actions.is_git_repo(actions.CURR_DIR):
         click.echo("Found a git repo, we will add to it")
     else:
         plan.append(actions.GitInit(actions.CURR_DIR, verbose=verbose))
     dataworkspace_dir = join(actions.CURR_DIR, '.dataworkspace')
     step = MakeWorkSpaceConfig(dataworkspace_dir, name, verbose=verbose)
     config_fpath = step.config_fpath
+    resources_fpath = step.resources_fpath
     plan.append(step)
-    plan.append(actions.GitAdd(actions.CURR_DIR, config_fpath, verbose=verbose))
+    plan.append(actions.GitAdd(actions.CURR_DIR, [config_fpath, resources_fpath],
+                               verbose=verbose))
     plan.append(actions.GitCommit(actions.CURR_DIR,
                                   'Initial version of data workspace',
                                   verbose=verbose))
