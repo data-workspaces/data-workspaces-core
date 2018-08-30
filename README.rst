@@ -65,3 +65,14 @@ A resource (collection of files) may have one of four roles:
 3. **Results** - the outputs of the machine learning / data science process.
 4. **Code** - code used to create the intermediate data and results, typically
    in a git repository or Docker container.
+
+The treatment of resources may vary based on the role. For example:
+
+* We want the ability to name source data sets and swap them in and out without
+  changing other parts of the workspace.
+* For intermediate data, we may want to delete it from the current state of
+  the workspace if it becomes out of date (e.g. a data source version is changed
+  or swapped out).
+* Results should be additive. For example, if we revert the workspace to an
+  older state, we should not revert the results database. It should always
+  be kept at the latest version.
