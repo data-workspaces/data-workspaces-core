@@ -76,3 +76,80 @@ The treatment of resources may vary based on the role. For example:
 * Results should be additive. For example, if we revert the workspace to an
   older state, we should not revert the results database. It should always
   be kept at the latest version.
+
+Example Workflows
+=================
+Here are a few example workflows using the command line interface.
+Lines with user input start with the shell prompt ``$``.
+
+First, we create our workspace and define our resources
+(a remote s3 bucket, a local git repo and two subdirectories):
+
+.. code:: bash
+
+   $ cd /home/joe/example-workspace
+   $ dws init
+   Created workspace 'example-workspace'.
+   $ dws add --source-data s3://data-bucket
+   Added s3 resource 'data-bucket' as source data.
+   $ dws add --code ./myrepo
+   Added git resource './myrepo' as code.
+   $ dws add --intermediate-data ./intermediate
+   Added local resource './intermediate' as intermediate data.
+   $ dws add --results ./results
+   Added local resource './results' as result data.
+   $ dws set-hook merge merge-json ./results/results.csv
+
+The last line indicates that, when we take a snapshot, we merge ``results.csv`` with
+the previous version, creating a combined csv file that includes all the results.
+By default, overwriting a results file will cause the previous version to be renamed
+upon taking the snapshot (e.g. the previous version becomes results.csv.v1 if the previous
+snapshot was tagged with "v1").
+
+Now, we can run our scripts and then take a snapshot:
+
+.. code:: bash
+
+   $ python ./myrepo/extract_features.py -o ./intermediate/features.csv s3://data-bucket
+   $ python ./myrepo/train.py --solver=SVC ./intermediate/features.csv ./results/results.csv
+   $ dws snapshot v1
+   Created snapshot with hash '34A440983F' and tag 'v1'.
+
+If we list the local files in our workspace at this point, we see:
+
+.. code:: bash
+
+   $ ls -R
+   ./intermediate:
+   features.csv
+
+   ./myrepo:
+   extract_featues.py            train.py
+
+   ./results:
+   results.csv
+
+We make some changes to the code, do another run, and take a second snapshot:
+
+.. code:: bash
+
+   $ cd myrepo; vi extract_features.py
+   $ git add extract_features.py; git commit -m "some changes to feature extraction"
+   $ cd ..
+   $ python ./myrepo/extract_features.py -o ./intermediate/features.csv s3://data-bucket
+   $ python ./myrepo/train.py --solver=SVC ./intermediate/features.csv ./results/results.csv
+   $ dws snapshot v2
+   Created snapshot with hash 'FF83830484' and tag 'v2'.
+
+Let's say we wanted to go back to the previous version, but run with a different solver.
+We do not need to rerun the first step, as the intermediate data has been restored
+as well.
+
+.. code:: bash
+
+   $ dws revert v1
+   Reverted to snapshot with hash '34A440983F' and tag 'v1'.
+   $ python ./myrepo/train.py --solver=SVC ./intermediate/features.csv ./results/results.csv
+   $ dws snapshot v3
+   Created snapshot with hash 'A3838492B3' and tag 'v3'.
+
