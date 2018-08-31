@@ -77,6 +77,29 @@ The treatment of resources may vary based on the role. For example:
   older state, we should not revert the results database. It should always
   be kept at the latest version.
 
+Code Organization
+-----------------
+We use the Python library ``click`` (http://click.pocoo.org/6/) to implement
+the command argument parsing. The implementations of individual commands
+may be found in the ``commands/`` subdirectory.
+
+Actions
+~~~~~~~
+We wish to perform all the
+checks of a command up front and then only run the steps when we know they
+will succeed. This is done through *actions*, as defined in ``commands/actions.py``.
+Each ``Action`` subclass performs any necesary checks in its ``__init__()`` method.
+The actual execution of the action is in the ``run()`` method. Commands instantiate
+the actions they need, add them to a list (called the *plan*), and when all
+checks have been performed, execute the actions via the function
+``actions.run_plan()``. When running in verbose mode, we also print the
+list of actions to perform and ask the user for confirmation.
+
+Resources
+~~~~~~~~~
+Resources are orthoginal to actions and represent the collections of
+files to be versioned.
+
 Example Workflows
 =================
 Here are a few example workflows using the command line interface.

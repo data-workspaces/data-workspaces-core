@@ -169,7 +169,7 @@ def run_plan(plan, what, what_past_tense, batch=False, verbose=False, dry_run=Fa
     if len(plan)==0:
         print("Nothing to do for %s" % what)
         return
-    if not batch:
+    if verbose and (not batch):
         print("Here are the planned actions to %s:" % what)
         for action in plan:
             print("  %s" % action)
@@ -177,13 +177,14 @@ def run_plan(plan, what, what_past_tense, batch=False, verbose=False, dry_run=Fa
     # if dry_run:
     #     print("--dry-run specified, exiting without doing anything")
     #     return 0
-    if not batch:
+    if verbose and (not batch):
         resp = input("Should I perform these actions? [y/n]")
     else:
         resp = 'y'
     if resp.lower()=='y':
         for (i, cmd) in enumerate(plan):
-            print("%d. %s" % (i+1, cmd))
+            if verbose:
+                print("%d. %s" % (i+1, cmd))
             cmd.run()
         print("Have now successfully %s" % what_past_tense)
     else:
