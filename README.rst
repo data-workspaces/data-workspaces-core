@@ -113,13 +113,13 @@ First, we create our workspace and define our resources
    $ cd /home/joe/example-workspace
    $ dws init
    Created workspace 'example-workspace'.
-   $ dws add --source-data s3://data-bucket
+   $ dws add source-data s3://data-bucket
    Added s3 resource 'data-bucket' as source data.
-   $ dws add --code ./myrepo
+   $ dws add code ./myrepo
    Added git resource './myrepo' as code.
-   $ dws add --intermediate-data ./intermediate
+   $ dws add intermediate-data ./intermediate
    Added local resource './intermediate' as intermediate data.
-   $ dws add --results ./results
+   $ dws add results ./results
    Added local resource './results' as result data.
    $ dws set-hook merge merge-json ./results/results.csv
 
