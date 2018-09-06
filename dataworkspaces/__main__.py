@@ -4,8 +4,8 @@ import traceback
 
 import click
 
-from .commands.actions import CalledProcessError, UserAbort, ConfigurationError,\
-                              InternalError
+from .errors import CalledProcessError, UserAbort, ConfigurationError,\
+                              InternalError, BatchModeError
 
 from .dws import cli
 
@@ -25,6 +25,10 @@ except UserAbort as e:
     sys.exit(1)
 except ConfigurationError as e:
     click.echo("Configuration error: " + str(e), err=True)
+    sys.exit(1)
+except BatchModeError as e:
+    click.echo("Running in --batch mode, but user input required for %s"%
+               str(e), err=True)
     sys.exit(1)
 except InternalError as e:
     tb = traceback.format_exc()

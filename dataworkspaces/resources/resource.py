@@ -1,20 +1,32 @@
 """
-Classes for resources
+Base classes for resoures
 """
-import subprocess
+import re
+from urllib.parse import urlparse
+from os.path import expanduser, isdir, abspath
 
-import actions
+from dataworkspaces.errors import ConfigurationError
 
 class ResourceRoles:
-    SOURCE_DATA_SET='SourceDataSet'
-    INTERMEDIATE_DATA='IntermediateData'
-    CODE='Code'
-    RESULTS='ResultsData'
+    SOURCE_DATA_SET='source-data'
+    INTERMEDIATE_DATA='intermediate-data'
+    CODE='code'
+    RESULTS='results'
+
+RESOURCE_ROLE_CHOICES = [
+    ResourceRoles.SOURCE_DATA_SET,
+    ResourceRoles.INTERMEDIATE_DATA,
+    ResourceRoles.CODE,
+    ResourceRoles.RESULTS
+]
 
 class Resource:
     """Base class for all resources"""
-    def get_role(self):
-        pass
+    def __init__(self, scheme, url, role, workspace_dir):
+        self.scheme = scheme
+        self.url = url
+        self.role = role
+        self.workspace_dir = workspace_dir
 
     def to_json(self):
         """Return a json (unserialized) representation of this
@@ -22,62 +34,47 @@ class Resource:
         """
         pass
 
-    def add_prechecks(self, dws_basedir):
+    def add_prechecks(self):
         pass
 
-    def add(self, dws_basedir):
+    def add(self):
         pass
 
-    def snapshot_prechecks(self, dws_basedir):
+    def snapshot_prechecks(self):
         pass
 
-    def snapshot(self, dws_basedir):
-        pass
-
-def is_git_dirty(cwd):
-    if actions.GIT_EXE_PATH is None:
-        raise actions.ConfigurationError("git executable not found")
-    cmd = [actions.GIT_EXE_PATH, 'diff', '--exit-code', '--quiet']
-    result = subprocess.run(cmd, stdout=PIPE, cwd=cwd)
-    return result.returncode!=0
-
-
-class GitRepoResource(Resource):
-    def __init__(self, local_directory, role):
-        self.local_directory = local_directory
-        self.role = role
-
-    def get_role(self):
-        return self.role
-
-    def to_json(self):
-        return {
-            'resource_type': 'git',
-            'role':self.role,
-            'local_directory':self.local_directory
-        }
-
-    def add_prechecks(self, dws_basedir):
-        if not actions.is_git_repo(self.local_directory):
-            raise actions.ConfigurationError(self.local_directory + ' is not a git repository')
-        if is_git_dirty(self.local_directory):
-            raise actions.ConfigurationError(
-                "Git repo at %s has uncommitted changes. Please commit your changes before adding to workspace" %
-                self.local_directory)
-
-    def add(self, dws_basedir):
-        pass
-
-    def snapshot_prechecks(self, dws_basedir):
-        if is_git_dirty(self.local_directory):
-            raise actions.ConfigurationError(
-                "Git repo at %s has uncommitted changes. Please commit your changes before taking a snapshot" %
-                self.local_directory)
-
-    def snapshot(self, dws_basedir):
-        # Todo: handle tags
+    def snapshot(self):
         pass
 
     def __str__(self):
-        return "Git repository %s in role %s" % (self.local_directory, self.role)
+        return 'Resource %s in role %s' % (self.url, self.role)
+
+
+class ResourceFactory:
+    def from_command_line(self, role, workspace_dir, batch, verbose,
+                          *args):
+        """Instantiate a resource object from the add command's
+        arguments"""
+        pass
+
+    def from_json(self, json_data, workspace_dir, batch, verbose):
+        """Instantiate a resource object from the parsed resources.json file"""
+        pass
+
+# Mapping from resource type name (e.g. file, git, s3) to ResourceFactory
+# Registered via dataworkspaces.resources.register_resource_types
+RESOURCE_TYPES = {
+    
+}
+
+
+def get_resource_from_command_line(scheme, role, workspace_dir, batch, verbose, *args):
+    if scheme not in RESOURCE_TYPES:
+        # should have been caught in command line processing
+        raise InternalError("'%s' not a valid resource type. Valid types are: %s."
+                            % (scheme, ', '.join(sorted(RESOURCE_TYPES.keys()))))
+    factory = RESOURCE_TYPES[scheme]
+    return factory.from_command_line(role, workspace_dir, batch, verbose, *args)
+
+
 

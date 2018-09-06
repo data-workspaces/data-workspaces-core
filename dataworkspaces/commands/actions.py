@@ -10,27 +10,9 @@ import os
 from os.path import isfile, abspath, expanduser, join, isabs, isdir
 import sys
 import click
-from subprocess import run, CalledProcessError, PIPE
+from subprocess import run, PIPE
 
-
-############################################################################
-#                           Error class definitions                        #
-############################################################################
-class ConfigurationError(Exception):
-    """Thrown when something is wrong with the system environment.
-    """
-    pass
-
-
-class UserAbort(Exception):
-    """Thrown when the user requests not to perform the action.
-    """
-    pass
-
-class InternalError(Exception):
-    """Thrown when something unexpected happens.
-    """
-    pass
+from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 
 
 ############################################################################
@@ -76,18 +58,6 @@ GIT_EXE_PATH=find_exe('git', additional_search_locations=STANDARD_EXE_SEARCH_LOC
 
 CURR_DIR = abspath(expanduser(os.curdir))
 
-def find_containing_workspace():
-    """For commands that execute in the context of a containing
-    workspace, find the nearest containging workspace and return
-    its absolute path. If none is found, return None.
-    """
-    curr_base = CURR_DIR
-    while curr_base != '/':
-        if isdir(join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
-            return curr_base
-        else:
-            curr_base = dirname(curr_base)
-    return None
 
 
 
