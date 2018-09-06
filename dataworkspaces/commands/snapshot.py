@@ -80,7 +80,7 @@ class AppendSnapshotHistory(actions.Action):
             json.dump(data, f, indent=2)
 
     def __str__(self):
-        return "Append snapshot metadasta to .dataworkspace/snapshots/snapshot_history.json"
+        return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
 
 
 def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
@@ -117,7 +117,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                                                      (lambda h:h.hash_value)(hash_action),
                                       verbose=verbose))
         actions.run_plan(plan, "take snapshot of workspace",
-                         "taken snapshot of workspace", batch, verbose)
+                         "taken snapshot of workspace", batch=batch, verbose=verbose)
     except:
         if exists(tfilename):
             os.remove(tfilename)

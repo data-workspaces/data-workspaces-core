@@ -1,11 +1,18 @@
 #!/bin/bash
 # A simple test case
 set -e
-if [[ "$1" == "--keep" ]]; then
-  KEEP=1
-else
-  KEEP=0
-fi
+KEEP=0
+VERBOSE=""
+for arg in $*; do
+  echo $arg
+  if [[ "$arg" == "--keep" ]]; then
+    KEEP=1
+  fi
+  if [[ "$arg" == "--verbose" ]]; then
+    VERBOSE="--verbose"
+  fi
+done
+  
 
 SAVEDIR=`pwd`
 rm -rf ./test
@@ -22,9 +29,9 @@ git add test.py
 git commit -m "initial version"
 
 cd $WORKDIR
-dws init
-dws add git --role=code ./code
-dws snapshot -m "first version" V1
+dws $VERBOSE init
+dws $VERBOSE add git --role=code ./code
+dws $VERBOSE snapshot -m "first version" V1
 
 
 cd $SAVEDIR
