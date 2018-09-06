@@ -13,6 +13,8 @@ class MakeWorkSpaceConfig(actions.Action):
         self.dataworkspace_dir =  dataworkspace_dir
         self.config_fpath = join(dataworkspace_dir, 'config.json')
         self.resources_fpath = join(dataworkspace_dir, 'resources.json')
+        self.snapshots_dir = join(dataworkspace_dir, 'snapshots')
+        self.snapshots_fpath =  join(self.snapshots_dir, 'snapshot_history.json')
         self.workspace_name = workspace_name
         if isdir(self.dataworkspace_dir):
             raise actions.ConfigurationError(".dataworkspace already exists in %s" %
@@ -20,10 +22,13 @@ class MakeWorkSpaceConfig(actions.Action):
 
     def run(self):
         os.mkdir(self.dataworkspace_dir)
+        os.mkdir(self.snapshots_dir)
         with open(self.config_fpath, 'w') as f:
             json.dump({'name':self.workspace_name, 'dws-version':__version__}, f,
                       indent=2)
         with open(self.resources_fpath, 'w') as f:
+            json.dump([], f, indent=2)
+        with open(self.snapshots_fpath, 'w') as f:
             json.dump([], f, indent=2)
 
     def __str__(self):
@@ -32,7 +37,6 @@ class MakeWorkSpaceConfig(actions.Action):
 
 
 def init_command(name, batch=False, verbose=False):
-    click.echo("init: name=%s" % name)
     plan = []
     if actions.is_git_repo(actions.CURR_DIR):
         click.echo("Found a git repo, we will add to it")
@@ -42,8 +46,10 @@ def init_command(name, batch=False, verbose=False):
     step = MakeWorkSpaceConfig(dataworkspace_dir, name, verbose=verbose)
     config_fpath = step.config_fpath
     resources_fpath = step.resources_fpath
+    snapshots_fpath = step.snapshots_fpath
     plan.append(step)
-    plan.append(actions.GitAdd(actions.CURR_DIR, [config_fpath, resources_fpath],
+    plan.append(actions.GitAdd(actions.CURR_DIR,
+                               [config_fpath, resources_fpath, snapshots_fpath],
                                verbose=verbose))
     plan.append(actions.GitCommit(actions.CURR_DIR,
                                   'Initial version of data workspace',

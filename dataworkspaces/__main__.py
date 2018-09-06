@@ -18,7 +18,7 @@ except CalledProcessError as e:
     click.echo(e.stderr)
     tb = traceback.format_exc()
     click.echo(tb, err=True)
-    click.echo("Error in subprocess call. Command was:\n   %s" % cmd, err=True)
+    click.echo("Error in subprocess call. Command was:\n   %s" % e.cmd, err=True)
     sys.exit(1)
 except UserAbort as e:
     click.echo("Not a positive response, exiting without doing anything", err=True)

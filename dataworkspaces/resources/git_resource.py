@@ -13,7 +13,7 @@ def is_git_dirty(cwd):
     if actions.GIT_EXE_PATH is None:
         raise actions.ConfigurationError("git executable not found")
     cmd = [actions.GIT_EXE_PATH, 'diff', '--exit-code', '--quiet']
-    result = subprocess.run(cmd, stdout=PIPE, cwd=cwd)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, cwd=cwd)
     return result.returncode!=0
 
 
@@ -41,15 +41,18 @@ class GitRepoResource(Resource):
     def add(self):
         pass
 
-    def snapshot_prechecks(self, dws_basedir):
+    def snapshot_prechecks(self):
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before taking a snapshot" %
                 self.local_path)
 
-    def snapshot(self, dws_basedir):
+    def snapshot(self):
         # Todo: handle tags
-        pass
+        hashval = actions.call_subprocess([actions.GIT_EXE_PATH, 'rev-parse',
+                                           'HEAD'],
+                                          cwd=self.local_path, verbose=False)
+        return hashval.strip()
 
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)

@@ -12,6 +12,7 @@ from argparse import Namespace
 
 from .commands.init import init_command
 from .commands.add import add_command
+from .commands.snapshot import snapshot_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -163,9 +164,14 @@ def git(ctx, role, path):
 add.add_command(git)
 
 @click.command()
-def snapshot():
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--message', '-m', type=str, default='')
+@click.argument('tag', type=str, default=None, required=False)
+@click.pass_context
+def snapshot(ctx, workspace_dir, message, tag):
     """Take a snapshot of the current workspace's state"""
-    pass
+    ns = ctx.obj
+    snapshot_command(workspace_dir, ns.batch, ns.verbose, tag, message)
 
 cli.add_command(snapshot)
 

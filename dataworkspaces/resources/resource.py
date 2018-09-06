@@ -76,5 +76,11 @@ def get_resource_from_command_line(scheme, role, workspace_dir, batch, verbose, 
     factory = RESOURCE_TYPES[scheme]
     return factory.from_command_line(role, workspace_dir, batch, verbose, *args)
 
-
+def get_resource_from_json(json_data, workspace_dir, batch, verbose):
+    scheme = json_data['resource_type']
+    if scheme not in RESOURCE_TYPES:
+        raise InternalError("'%s' not a valid resource type. Valid types are: %s."
+                            % (scheme, ', '.join(sorted(RESOURCE_TYPES.keys()))))
+    factory = RESOURCE_TYPES[scheme]
+    return factory.from_json(json_data, workspace_dir, batch, verbose)
 
