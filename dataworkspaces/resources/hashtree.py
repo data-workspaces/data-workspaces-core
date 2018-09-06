@@ -133,27 +133,26 @@ class HashTree(object):
 HashTree._map_id_to_type[TREE] = HashTree
 
 
-def generate(path_where_hashes_are_stored, local_dir, skip=[]):
+def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
     """traverse a directory tree rooted at :local_dir: and construct the tree hashes
        in the directory :path_where_hashes_are_stored:
-       skip directories in :skip:"""
+       skip directories in :ignore:"""
     hashtbl = { }
     for root, dirs, files in os.walk(local_dir, topdown=False):
-        print('processing ', root)
-        if root in skip:
+        # print('processing ', root)
+        if os.path.basename(root) in ignore:
             continue
 
         t = HashTree(path_where_hashes_are_stored, root)
         for f in files:
-            print(f)
-            sha = compute_hash(os.path.abspath(f))
+            # print(f)
+            sha = compute_hash(os.path.join(root, f))
             t.add(f, BLOB, sha)
         for dir in dirs:
-            print(dir)
-            print(skip)
-            if os.path.abspath(os.path.join(root,dir)) in skip:
+            # print(dir, ' > ignore is ', ignore)
+            if dir in ignore: 
                 continue
-            dirsha = hashtbl[os.path.abspath(os.path.join(root, dir))]
+            dirsha = hashtbl[os.path.join(root, dir)]
             t.add(dir, TREE, dirsha)
         h = t.write()
         hashtbl[root] = h
@@ -164,7 +163,7 @@ def test():
     # t.add('f2', BLOB, 'hash2')
     # n = t.write()
     # print('hash = ', n)
-    generate('./tmp', '..', skip=['../resources/tmp'])
+    generate_hashes('./tmp', '..', ignore=['tmp'])
         
 if __name__ == '__main__':
     test()
