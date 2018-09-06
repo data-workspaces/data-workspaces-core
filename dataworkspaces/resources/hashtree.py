@@ -145,17 +145,18 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
 
         t = HashTree(path_where_hashes_are_stored, root)
         for f in files:
-            # print(f)
+            print(f)
             sha = compute_hash(os.path.join(root, f))
             t.add(f, BLOB, sha)
         for dir in dirs:
-            # print(dir, ' > ignore is ', ignore)
+            print(dir)
             if dir in ignore: 
                 continue
             dirsha = hashtbl[os.path.join(root, dir)]
             t.add(dir, TREE, dirsha)
         h = t.write()
         hashtbl[root] = h
+    return hashtbl[local_dir]
 
 def test():
     # t = HashTree('.', 'root')
@@ -163,7 +164,9 @@ def test():
     # t.add('f2', BLOB, 'hash2')
     # n = t.write()
     # print('hash = ', n)
-    generate_hashes('./tmp', '..', ignore=['tmp'])
+    h = generate_hashes('./tmp', '..', ignore=['tmp'])
+    # h = generate_hashes('./tmp', '..', ignore=['tmp', '.git'])
+    print("Hash of .. is ", h)
         
 if __name__ == '__main__':
     test()
