@@ -2,7 +2,7 @@
 Resource for git repositories
 """
 import subprocess
-from os.path import realpath
+from os.path import realpath, basename
 
 from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
@@ -18,8 +18,8 @@ def is_git_dirty(cwd):
 
 
 class GitRepoResource(Resource):
-    def __init__(self, url, role, workspace_dir, local_path):
-        super().__init__('git', url, role, workspace_dir)
+    def __init__(self, name, url, role, workspace_dir, local_path):
+        super().__init__('git', name, url, role, workspace_dir)
         self.local_path = local_path
 
 
@@ -27,6 +27,7 @@ class GitRepoResource(Resource):
         return {
             'resource_type': 'git',
             'role':self.role,
+            'name':self.name,
             'url':self.url,
             'local_path':self.local_path
         }
@@ -58,17 +59,20 @@ class GitRepoResource(Resource):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
 
 class GitRepoFactory(ResourceFactory):
-    def from_command_line(self, role, workspace_dir, batch, verbose,
+    def from_command_line(self, role, name, workspace_dir, batch, verbose,
                           local_path):
         """Instantiate a resource object from the add command's
         arguments"""
         url = 'git:' + local_path
-        return GitRepoResource(url, role, workspace_dir,
+        return GitRepoResource(name, url, role, workspace_dir,
                                local_path)
 
     def from_json(self, json_data, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']=='git'
-        return GitRepoResource(json_data['url'], json_data['role'],
+        return GitRepoResource(json_data['name'], json_data['url'], json_data['role'],
                                workspace_dir, json_data['local_path'])
+
+    def suggest_name(self, local_path):
+        return basename(local_path)
 

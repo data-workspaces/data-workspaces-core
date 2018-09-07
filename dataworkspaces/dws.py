@@ -127,15 +127,18 @@ def add(ctx, workspace_dir):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
+        
     ns.workspace_dir = workspace_dir
 
 cli.add_command(add)
 
 @click.command(name='local-files')
 @click.option('--role', type=ROLE_PARAM)
+@click.option('--name', type=str, default=None,
+              help="Short name for this resource")
 @click.argument('path', type=DIRECTORY_PARAM)
 @click.pass_context
-def local_files(ctx, role, path):
+def local_files(ctx, role, name, path):
     """Local file directory (not managed by git)"""
     ns = ctx.obj
     if role is None:
@@ -143,15 +146,17 @@ def local_files(ctx, role, path):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    add_command('file', role, ns.workspace_dir, ns.batch, ns.verbose, path)
+    add_command('file', role, name, ns.workspace_dir, ns.batch, ns.verbose, path)
 
 add.add_command(local_files)
 
 @click.command()
 @click.option('--role', type=ROLE_PARAM)
+@click.option('--name', type=str, default=None,
+              help="Short name for this resource")
 @click.argument('path', type=DIRECTORY_PARAM)
 @click.pass_context
-def git(ctx, role, path): 
+def git(ctx, role, name, path): 
     """Local git repository"""
     ns = ctx.obj
     if role is None:
@@ -159,13 +164,14 @@ def git(ctx, role, path):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    add_command('git', role, ns.workspace_dir, ns.batch, ns.verbose, path)
+    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path)
 
 add.add_command(git)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
-@click.option('--message', '-m', type=str, default='')
+@click.option('--message', '-m', type=str, default='',
+              help="Message describing the snapshot")
 @click.argument('tag', type=str, default=None, required=False)
 @click.pass_context
 def snapshot(ctx, workspace_dir, message, tag):
@@ -176,6 +182,8 @@ def snapshot(ctx, workspace_dir, message, tag):
 cli.add_command(snapshot)
 
 @click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.argument('tag_or_hash', type=str, default=None, required=True)
 def restore():
     """Restore the workspace to a prior state"""
     pass

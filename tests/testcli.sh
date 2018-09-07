@@ -30,7 +30,7 @@ git commit -m "initial version"
 
 cd $WORKDIR
 dws $VERBOSE init
-dws $VERBOSE add git --role=code ./code
+dws $VERBOSE add git --role=code --name=code ./code
 dws $VERBOSE snapshot -m "first version" V1
 
 
