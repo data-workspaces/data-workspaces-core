@@ -13,4 +13,4 @@ from ..resources.git_resource import GitRepoFactory
 register_resource_type('git', GitRepoFactory)
 
 from ..resources.local_file_resource import LocalFileFactory
-register_resource_type('local_file', LocalFileFactory)
+register_resource_type('file', LocalFileFactory)

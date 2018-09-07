@@ -21,16 +21,26 @@ cd ./test
 WORKDIR=`pwd`
 
 # create a small git repo
-mkdir code
+mkdir -p code
 cd code
 git init
 echo "print('test')" >test.py
 git add test.py
 git commit -m "initial version"
+cd ..
+
+# create a local directory structure
+mkdir -p local_files
+echo 'File 1' > local_files/f1
+echo 'File 2' > local_files/f2
+mkdir -p local_files/dir
+echo 'File 3' > local_files/dir/f3
+ls
 
 cd $WORKDIR
 dws $VERBOSE init
-dws $VERBOSE add git --role=code --name=code ./code
+dws $VERBOSE add git --role=code --name=code-git ./code
+dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE snapshot -m "first version" V1
 
 

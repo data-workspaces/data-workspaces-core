@@ -158,15 +158,52 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
         hashtbl[root] = h
     return hashtbl[local_dir]
 
+def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]):
+    """Traverse a directory tree rooted at :local_dir: and check that the files
+       match the hashes kept in :basedir_where_hashes_are_stored: and that no new
+       files have been added.
+       Ignore directories in :ignore:"""
+    hashfile = os.path.abspath(os.path.join(basedir_where_hashes_are_stored, roothash))
+    print('Checking hashes. Root hash ', roothash, ' root hashfile ', hashfile)
+ 
+    hashtbl = { local_dir : hashfile }
+    for root, dirs, files in os.walk(local_dir, topdown=True):
+        print('processing ', root)
+        if os.path.basename(root) in ignore:
+            continue
+
+        hashfile = hashtbl[root]
+        try:
+            fd = open(hashfile, 'r') 
+        except:
+            print('File %s not found or not readable' % hashfile)
+            return False
+
+        dirs.sort()
+        files.sort()
+
+        
+        line = fd.read()
+        print('Line: ', line)
+        print(line.split('\t')
+        # h, kind, name = line.split('\t')
+        # print(h, '\t', kind, '\t', name)
+        fd.close()
+    return True
+
+
 def test():
     # t = HashTree('.', 'root')
     # t.add('f1', BLOB, 'hash1')
     # t.add('f2', BLOB, 'hash2')
     # n = t.write()
     # print('hash = ', n)
-    h = generate_hashes('./tmp', '..', ignore=['tmp'])
+    h = generate_hashes('./tmp', '..', ignore=['tmp', '__pycache__'])
     # h = generate_hashes('./tmp', '..', ignore=['tmp', '.git'])
     print("Hash of .. is ", h)
+
+    b = check_hashes(h, './tmp', '..', ignore=['tmp', '__pycache__'])
+    print(b)
         
 if __name__ == '__main__':
     test()
