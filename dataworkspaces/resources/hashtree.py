@@ -183,11 +183,11 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
         files.sort()
 
         
-        line = fd.read()
-        print('Line: ', line)
-        print(line.split('\t')
-        # h, kind, name = line.split('\t')
-        # print(h, '\t', kind, '\t', name)
+        for line in fd.readlines():
+            print('Line: ', line)
+            print(line.split('\t'))
+            # h, kind, name = line.split('\t')
+            # print(h, '\t', kind, '\t', name)
         fd.close()
     return True
 
