@@ -39,8 +39,8 @@ ls
 
 cd $WORKDIR
 dws $VERBOSE init
-dws $VERBOSE add git --role=code ./code
-dws $VERBOSE add local-files --role=code ./local_files
+dws $VERBOSE add git --role=code --name=code-git ./code
+dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE snapshot -m "first version" V1
 
 
