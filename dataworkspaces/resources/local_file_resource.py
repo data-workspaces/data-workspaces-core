@@ -14,18 +14,15 @@ from . import hashtree
 LOCAL_FILE = 'file'
 
 class LocalFileResource(Resource):
-    def __init__(self, url, role, workspace_dir, local_path):
-        super().__init__(LOCAL_FILE, url, role, workspace_dir)
+    def __init__(self, name, url, role, workspace_dir, local_path):
+        super().__init__(LOCAL_FILE, name, url, role, workspace_dir)
         self.local_path = local_path
 
 
     def to_json(self):
-        return {
-            'resource_type': LOCAL_FILE,
-            'role':self.role,
-            'url':self.url,
-            'local_path':self.local_path
-        }
+        d = super().to_json()
+        d['local_path'] = self.local_path
+        return d
 
     def add_prechecks(self):
         if not(os.path.isdir(self.local_path)):
@@ -57,14 +54,18 @@ class LocalFileResource(Resource):
         return "Local directory %s in role '%s'" % (self.local_path, self.role)
 
 class LocalFileFactory(ResourceFactory):
-    def from_command_line(self, role, workspace_dir, batch, verbose,
+    def from_command_line(self, role, name, workspace_dir, batch, verbose,
                           local_path):
         """Instantiate a resource object from the add command's arguments"""
         url = LOCAL_FILE + ':' + local_path
-        return LocalFileResource(url, role, workspace_dir, local_path)
+        return LocalFileResource(name, url, role, workspace_dir, local_path)
 
     def from_json(self, json_data, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']==LOCAL_FILE
-        return LocalFileResource(json_data['url'], json_data['role'], workspace_dir, json_data['local_path'])
+        return LocalFileResource(json_data['name'], json_data['url'],
+                                 json_data['role'], workspace_dir, json_data['local_path'])
+
+    def suggest_name(self, local_path):
+        return os.path.basename(local_path)
 

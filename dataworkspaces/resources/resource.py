@@ -49,7 +49,13 @@ class Resource:
         """Return a json (unserialized) representation of this
         resource for the resources file.
         """
-        pass
+        # subclasses can call this and then add to the dict
+        return {
+            'resource_type': self.scheme,
+            'name': self.name,
+            'url': self.url,
+            'role': self.role
+        }
 
     def add_prechecks(self):
         pass

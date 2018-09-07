@@ -24,13 +24,9 @@ class GitRepoResource(Resource):
 
 
     def to_json(self):
-        return {
-            'resource_type': 'git',
-            'role':self.role,
-            'name':self.name,
-            'url':self.url,
-            'local_path':self.local_path
-        }
+        d = super().to_json()
+        d['local_path'] = self.local_path
+        return d
 
     def add_prechecks(self):
         if not actions.is_git_repo(self.local_path):
