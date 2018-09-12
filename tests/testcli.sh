@@ -43,6 +43,17 @@ dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE snapshot -m "first version" V1
 
+# make some changes in the git repo
+cd code
+echo "# Changes" >>test.py
+git add test.py
+git commit -m "second version"
+cd ..
+
+# take a snapshot and then restore to v1
+dws $VERBOSE snapshot -m "second version" V2
+dws $VERBOSE restore V1
+
 
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then

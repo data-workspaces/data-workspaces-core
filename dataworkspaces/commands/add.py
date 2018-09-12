@@ -6,7 +6,7 @@ import json
 from dataworkspaces.errors import InternalError, ConfigurationError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import get_resource_from_command_line,\
-    suggest_resource_name, read_current_resources, get_resource_names
+    suggest_resource_name, CurrentResources
 
 
 
@@ -24,26 +24,26 @@ class AddResource(actions.Action):
 
 
 class AddResourceToFile(actions.Action):
-    def __init__(self, verbose, resource, resource_file_path, current_json):
+    def __init__(self, verbose, resource, current_resources):
         super().__init__(verbose)
         self.resource = resource
-        self.resource_file_path = resource_file_path
-        self.current_json = current_json
-        for r in current_json:
-            if r['url']==resource.url:
-                raise ConfigurationError("Resource '%s' already in workspace" % resource.url)
+        self.current_resources = current_resources
+        # A given resource should resolve to a unique URL, so this is the best way
+        # to check for duplication.
+        if resource.url in current_resources.urls:
+            raise ConfigurationError("Resource '%s' already in workspace" % resource.url)
 
     def run(self):
-        self.current_json.append(self.resource.to_json())
-        with open(self.resource_file_path, 'w') as f:
-            json.dump(self.current_json, f, indent=2)
+        self.current_resources.add_resource(self.resource)
+        self.current_resources.write_current_resources()
 
     def __str__(self):
         return "Add '%s' to resources.json file" % str(self.resource)
-    
+
+
 def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
-    resource_json = read_current_resources(workspace_dir)
-    current_names = get_resource_names(resource_json)
+    current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
+    current_names = current_resources.get_names()
     if batch:
         if name==None:
             name = suggest_resource_name(scheme, role, current_names,
@@ -69,9 +69,8 @@ def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
                                        batch, verbose, *args)
     plan = []
     plan.append(AddResource(verbose, r))
-    rfile = join(workspace_dir, '.dataworkspace/resources.json')
-    plan.append(AddResourceToFile(verbose, r, rfile, resource_json))
-    plan.append(actions.GitAdd(workspace_dir, [rfile], verbose))
+    plan.append(AddResourceToFile(verbose, r, current_resources))
+    plan.append(actions.GitAdd(workspace_dir, [current_resources.json_file], verbose))
     plan.append(actions.GitCommit(workspace_dir, 'Added resource %s'%str(r),
                                   verbose))
     actions.run_plan(plan, 'Add %s to workspace'%str(r), 'Added %s to workspace'%str(r), batch, verbose)

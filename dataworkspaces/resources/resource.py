@@ -3,10 +3,11 @@ Base classes for resoures
 """
 import re
 import json
+import copy
 from urllib.parse import urlparse
 from os.path import expanduser, isdir, abspath, join, exists
 
-from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.errors import InternalError
 
 class ResourceRoles:
     SOURCE_DATA_SET='source-data'
@@ -20,20 +21,6 @@ RESOURCE_ROLE_CHOICES = [
     ResourceRoles.CODE,
     ResourceRoles.RESULTS
 ]
-
-def read_current_resources(workspace_dir):
-    rfile = join(workspace_dir, '.dataworkspace/resources.json')
-    if not exists(rfile):
-        raise ConfigurationError("Missing resources file at %s" % rfile)
-    with open(rfile, 'r') as f:
-        data = json.load(f)
-    return data
-
-def get_resource_names(resource_json_list):
-    names = set()
-    for r in resource_json_list:
-        names.add(r['name'])
-    return names
 
 
 class Resource:
@@ -69,6 +56,12 @@ class Resource:
     def snapshot(self):
         pass
 
+    def restore_prechecks(self, hashval):
+        pass
+
+    def restore(self, hashval):
+        pass
+
     def __str__(self):
         return 'Resource %s in role %s' % (self.name, self.role)
 
@@ -97,6 +90,90 @@ class ResourceFactory:
 RESOURCE_TYPES = {
     
 }
+
+class ResourceCollection:
+    """A collection of resources, with a json representation.
+    Base class for resources.json and snapshot manifests.
+    """
+    def __init__(self, resources_json_file, workspace_dir, batch, verbose):
+        with open(resources_json_file, 'r') as f:
+            self.json_data = json.load(f)
+        self.resources = [get_resource_from_json(rdata, workspace_dir, batch, verbose)
+                          for rdata in self.json_data]
+        self.by_name = {r.name:r for r in self.resources}
+        self.urls = set([r.url for r in self.resources])
+
+    def is_a_current_name(self, name):
+        return name in self.by_name
+
+    def get_names(self):
+        return set(self.by_name.keys())
+
+    def add_resource(self, r):
+        assert r.name not in self.by_name.keys()
+        self.resources.append(r)
+        self.json_data.append(r.to_json())
+        self.by_name[r.name] = r
+        self.urls.add(r.url)
+
+class CurrentResources(ResourceCollection):
+    """In-memory representation of resources.json - the list of resources in the
+    workspace.
+    """
+    def __init__(self, resources_json_file, workspace_dir, batch, verbose):
+        super().__init__(resources_json_file, workspace_dir, batch, verbose)
+        self.json_file = resources_json_file
+
+    def write_current_resources(self):
+        with open(self.json_file, 'w') as f:
+            json.dump(self.json_data, f, indent=2)
+
+    def write_snapshot_manifest(self, snapshot_filepath, url_to_hashval):
+        sn_json = copy.deepcopy(self.json_data)
+        for rdata in sn_json:
+            rdata['hash'] = url_to_hashval[rdata['url']]
+        with open(snapshot_filepath, 'w') as f:
+            json.dump(sn_json, f, indent=2)
+
+    def __str__(self):
+        resources = ['%s[%s]' % (rname, self.by_name[rname].url)
+                     for rname in sorted(self.by_name.keys())]
+        return 'CurrentResources(%s)' % ', '.join(resources)
+        
+    @staticmethod
+    def read_current_resources(workspace_dir, batch, verbose):
+        resource_file = join(workspace_dir, '.dataworkspace/resources.json')
+        if not exists(resource_file):
+            raise InternalError("Missing current resources file %s" % resource_file)
+        return CurrentResources(resource_file, workspace_dir, batch, verbose)
+
+
+class SnapshotResources(ResourceCollection):
+    """In-memory represtation of a snapshot file. The JSON representation is
+    the same as resources.json, but we add the hash for each resource.
+    """
+    def __init__(self, snapshot_json_file, workspace_dir, batch, verbose):
+        super().__init__(snapshot_json_file, workspace_dir, batch, verbose)
+        self.url_to_hashval = {rdata['url']:rdata['hash'] for rdata in self.json_data}
+        self.json_file = snapshot_json_file
+
+    def write_revised_snapshot_manifest(self, snapshot_filepath, url_to_hashval):
+        sn_json = copy.deepcopy(self.json_data)
+        for rdata in sn_json:
+            # only new resources will need hash entries added
+            if 'hash' not in rdata:
+                hashval = url_to_hashval[rdata['url']]
+                rdata['hash'] = hashval
+                self.url_to_hashval[rdata['url']] = hashval
+        with open(snapshot_filepath, 'w') as f:
+            json.dump(sn_json, f, indent=2)
+
+    @staticmethod
+    def read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose):
+        filepath = join(workspace_dir, '.dataworkspace/snapshots/snapshot-%s.json'% snapshot_hash)
+        if not exists(filepath):
+            raise InternalError("Missing snapshot manifest file %s" % filepath)
+        return SnapshotResources(filepath, workspace_dir, batch, verbose)
 
 
 def get_factory_by_scheme(scheme):

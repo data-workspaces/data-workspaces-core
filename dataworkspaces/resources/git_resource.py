@@ -34,7 +34,6 @@ class GitRepoResource(Resource):
         if realpath(self.local_path)==realpath(self.workspace_dir):
             raise ConfigurationError("Cannot add the entire workspace as a git resource")
 
-
     def add(self):
         pass
 

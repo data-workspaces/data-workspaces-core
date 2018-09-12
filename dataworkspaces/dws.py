@@ -13,6 +13,7 @@ from argparse import Namespace
 from .commands.init import init_command
 from .commands.add import add_command
 from .commands.snapshot import snapshot_command
+from .commands.restore import restore_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -183,10 +184,15 @@ cli.add_command(snapshot)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--ignore-dropped-resources', is_flag=True, default=False,
+              help="If the current snapshot has resources that are not in the restored snapshot, always ignore then")
 @click.argument('tag_or_hash', type=str, default=None, required=True)
-def restore():
+@click.pass_context
+def restore(ctx, workspace_dir, ignore_dropped_resources, tag_or_hash):
     """Restore the workspace to a prior state"""
-    pass
+    ns = ctx.obj
+    restore_command(workspace_dir, ns.batch, ns.verbose, tag_or_hash,
+                    ignore_dropped=ignore_dropped_resources)
 
 cli.add_command(restore)
 

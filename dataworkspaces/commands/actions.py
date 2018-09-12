@@ -7,10 +7,12 @@ and execute them via run_plan()
 """
 
 import os
-from os.path import isfile, abspath, expanduser, join, isabs, isdir, dirname
+from os.path import isfile, abspath, expanduser, join, isabs, isdir, dirname, exists
 import sys
 import click
 from subprocess import run, PIPE
+import re
+from tempfile import NamedTemporaryFile
 
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 
@@ -62,7 +64,31 @@ GIT_EXE_PATH=find_exe('git', additional_search_locations=STANDARD_EXE_SEARCH_LOC
 
 CURR_DIR = abspath(expanduser(os.curdir))
 
+HASH_RE = re.compile(r'^[0-9a-fA-F]+$')
+def is_a_git_hash(s):
+    return len(s)==40 and (HASH_RE.match(s) is not None)
 
+
+def write_and_hash_file(write_fn, filename_template, verbose):
+    """Write a file to a temporary location, take its hash
+    and rename to filename_template, replacing <HASHVAL> with
+    the hash. Returns hashval and the written filename.
+    """
+    with NamedTemporaryFile(delete=False) as f:
+        tfilename = f.name
+    try:
+        write_fn(tfilename)
+        stdout = call_subprocess([GIT_EXE_PATH, 'hash-object', tfilename],
+                                 cwd=dirname(tfilename), verbose=verbose)
+        hashval = stdout.strip()
+        target_name = filename_template.replace("<HASHVAL>", hashval)
+        assert target_name!=filename_template
+        os.rename(tfilename, target_name)
+        return (hashval, target_name)
+    except:
+        if exists(tfilename):
+            os.remove(tfilename)
+        raise
 
 
 ############################################################################
