@@ -223,21 +223,21 @@ def run_plan(plan, what, what_past_tense, batch=False, verbose=False, dry_run=Fa
         return
     if verbose and (not batch):
         print("Here are the planned actions to %s:" % what)
-        for action in plan:
-            print("  %s" % action)
+        for (i, action) in enumerate(plan):
+            print("  %d. %s" % (i+1, action))
         print()
     # if dry_run:
     #     print("--dry-run specified, exiting without doing anything")
     #     return 0
     if verbose and (not batch):
-        resp = input("Should I perform these actions? [y/n]")
+        resp = input("Should I perform these actions? [Y/n]")
     else:
         resp = 'y'
-    if resp.lower()=='y':
-        for (i, cmd) in enumerate(plan):
+    if resp.lower()=='y' or resp=='':
+        for (i, action) in enumerate(plan):
             if verbose:
-                print("%d. %s" % (i+1, cmd))
-            cmd.run()
+                print("%d. %s" % (i+1, action))
+            action.run()
         print("Have now successfully %s" % what_past_tense)
     else:
         raise UserAbort()

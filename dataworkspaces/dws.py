@@ -20,6 +20,14 @@ from .errors import BatchModeError
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
 
+# we are going to store the verbose mode
+# in a global here and wrap it in a function
+# so that we can access it from __main__.
+VERBOSE_MODE=False
+def is_verbose_mode():
+    global VERBOSE_MODE
+    return VERBOSE_MODE
+
 def _find_containing_workspace():
     """For commands that execute in the context of a containing
     workspace, find the nearest containging workspace and return
@@ -92,6 +100,8 @@ def cli(ctx, batch, verbose):
     ctx.obj = Namespace()
     ctx.obj.batch = batch
     ctx.obj.verbose = verbose
+    global VERBOSE_MODE
+    VERBOSE_MODE = verbose
 
 
 @click.command()
@@ -184,15 +194,24 @@ cli.add_command(snapshot)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
-@click.option('--ignore-dropped-resources', is_flag=True, default=False,
-              help="If the current snapshot has resources that are not in the restored snapshot, always ignore then")
+@click.option('--only', type=str, default=None,
+              help="Comma-separated list of resource names that you wish to revert to the specified snapshot. The rest will be left as-is.")
+@click.option('--leave', type=str, default=None,
+              help="Comma-separated list of resource names that you wish to leave in their current state. The rest will be restored to the specified snapshot.")
+@click.option('--no-new-snapshot', is_flag=True, default=False,
+              help="By default, a new snapshot will be taken if the restore leaves the "+
+                   "workspace in a different state than the requested shapshot (e.g. due "+
+                   "to --only or --leave or added resources). If --no-new-snapshot is "+
+                   "specified, we adjust the individual resource states without taking a new snapshot.")
 @click.argument('tag_or_hash', type=str, default=None, required=True)
 @click.pass_context
-def restore(ctx, workspace_dir, ignore_dropped_resources, tag_or_hash):
+def restore(ctx, workspace_dir, only, leave, no_new_snapshot, tag_or_hash):
     """Restore the workspace to a prior state"""
     ns = ctx.obj
+    if (only is not None) and (leave is not None):
+        raise click.BadOptionUsage(message="Please specify either --only or --leave, but not both")
     restore_command(workspace_dir, ns.batch, ns.verbose, tag_or_hash,
-                    ignore_dropped=ignore_dropped_resources)
+                    only=only, leave=leave, no_new_snapshot=no_new_snapshot)
 
 cli.add_command(restore)
 

@@ -156,6 +156,7 @@ class SnapshotResources(ResourceCollection):
         super().__init__(snapshot_json_file, workspace_dir, batch, verbose)
         self.url_to_hashval = {rdata['url']:rdata['hash'] for rdata in self.json_data}
         self.json_file = snapshot_json_file
+        self.resources_file = join(workspace_dir, '.dataworkspace/resources.json')
 
     def write_revised_snapshot_manifest(self, snapshot_filepath, url_to_hashval):
         sn_json = copy.deepcopy(self.json_data)
@@ -167,6 +168,16 @@ class SnapshotResources(ResourceCollection):
                 self.url_to_hashval[rdata['url']] = hashval
         with open(snapshot_filepath, 'w') as f:
             json.dump(sn_json, f, indent=2)
+
+    def write_current_resources(self):
+        """Write out a resources.json file corresponding to
+           the resources in the snapshot."""
+        r_json = copy.deepcopy(self.json_data)
+        for rdata in r_json:
+            if 'hash' in rdata:
+                del rdata['hash']
+        with open(self.resource_file, 'w') as f:
+            json.dump(r_json, f, indent=2)
 
     @staticmethod
     def read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose):

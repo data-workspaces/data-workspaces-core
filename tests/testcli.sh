@@ -41,6 +41,7 @@ cd $WORKDIR
 dws $VERBOSE init
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
+echo dws $VERBOSE snapshot -m "first version" V1
 dws $VERBOSE snapshot -m "first version" V1
 
 # make some changes in the git repo
@@ -51,9 +52,13 @@ git commit -m "second version"
 cd ..
 
 # take a snapshot and then restore to v1
+echo dws $VERBOSE snapshot -m "second version" V2
 dws $VERBOSE snapshot -m "second version" V2
+echo dws $VERBOSE restore V1
 dws $VERBOSE restore V1
 
+# Restore the git repo back to v2
+dws $VERBOSE restore --only code-git V2
 
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then
