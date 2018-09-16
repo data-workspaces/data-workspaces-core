@@ -158,6 +158,16 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
         hashtbl[root] = h
     return hashtbl[local_dir]
 
+def _get_next_element(dl, startindex, ignore):
+    index = startindex
+    found = False
+    for d in dl[startindex:]:
+        index = index + 1 
+        if d in ignore:
+            continue
+        return d, index
+    return None, -1 
+
 def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]):
     """Traverse a directory tree rooted at :local_dir: and check that the files
        match the hashes kept in :basedir_where_hashes_are_stored: and that no new
@@ -166,32 +176,58 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
     hashfile = os.path.abspath(os.path.join(basedir_where_hashes_are_stored, roothash))
     print('Checking hashes. Root hash ', roothash, ' root hashfile ', hashfile)
  
-    hashtbl = { local_dir : hashfile }
+    hashtbl = { os.path.abspath(local_dir) : hashfile }
     for root, dirs, files in os.walk(local_dir, topdown=True):
-        print('processing ', root)
+        print('processing ', root, files, dirs)
         if os.path.basename(root) in ignore:
             continue
-
-        hashfile = hashtbl[root]
         try:
-            fd = open(hashfile, 'r') 
-        except:
-            print('File %s not found or not readable' % hashfile)
-            return False
+            try:
+                hashfile = hashtbl[os.path.abspath(root)]
+            except KeyError as k:
+                print("Key Error:", k)
+                print("Hashtbl is\n", hashtbl)
+                sys.exit(1)
+            try:
+                fd = open(hashfile, 'r') 
+            except:
+                print('File %s not found or not readable' % hashfile)
+                return False
 
-        dirs.sort()
-        files.sort()
+            dirs.sort()
+            files.sort()
 
-        
-        for line in fd.readlines():
-            print('Line: ', line)
-            print(line.split('\t'))
-            # h, kind, name = line.split('\t')
-            # print(h, '\t', kind, '\t', name)
-        fd.close()
+            f_index = 0
+            d_index = 0
+            for line in fd.readlines():
+                line = line.rstrip('\n')
+                h, kind, name = line.split('\t')
+                # print("Line from hash file ", h, kind, name)
+                if kind == BLOB:
+                    f, f_index = _get_next_element(files, f_index, ignore) 
+                    if f != name:
+                        print("File mismatch:", f, " and (hash says)", name)
+                        return False
+                    sha = compute_hash(os.path.join(root, f))
+                    if sha != h:
+                        print("Hash mismatch for file: ", f, ":", sha, " and (hash says)", h)
+                        return False
+                elif kind == TREE:
+                    d, d_index = _get_next_element(dirs, d_index, ignore)
+                    if d != name:
+                        print("Dir mismatch: ", d, " and (hash says)", name)
+                        return False
+                    hashtbl[os.path.abspath(os.path.join(root, d))] = os.path.join(basedir_where_hashes_are_stored, h)
+                else:
+                    assert (kind == TREE or kind == BLOB)
+        finally:
+            fd.close()
     return True
 
-
+def test_walk(base):
+    for root, dir, files in os.walk(base, topdown=True):
+        print(root, "\t", dir, "\t", files)
+ 
 def test():
     # t = HashTree('.', 'root')
     # t.add('f1', BLOB, 'hash1')
@@ -202,8 +238,19 @@ def test():
     # h = generate_hashes('./tmp', '..', ignore=['tmp', '.git'])
     print("Hash of .. is ", h)
 
+    print("\n\nTest")
+    test_walk('..')
+
+    print("\n\nChecking hashes (should work)")
     b = check_hashes(h, './tmp', '..', ignore=['tmp', '__pycache__'])
     print(b)
+
+    with open('log', 'w') as f:
+        f.write("AHA")
+    print("\n\nChecking hashes again (should fail)")
+    b = check_hashes(h, './tmp', '..', ignore=['tmp', '__pycache__'])
+    print(b)
+    
         
 if __name__ == '__main__':
     test()
