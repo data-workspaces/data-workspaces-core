@@ -3,6 +3,7 @@
 set -e
 KEEP=0
 VERBOSE=""
+BATCH=""
 for arg in $*; do
   echo $arg
   if [[ "$arg" == "--keep" ]]; then
@@ -10,6 +11,9 @@ for arg in $*; do
   fi
   if [[ "$arg" == "--verbose" ]]; then
     VERBOSE="--verbose"
+  fi
+  if [[ "$arg" == "--batch" ]]; then
+    BATCH="--batch"
   fi
 done
   
@@ -55,10 +59,10 @@ cd ..
 echo dws $VERBOSE snapshot -m "second version" V2
 dws $VERBOSE snapshot -m "second version" V2
 echo dws $VERBOSE restore V1
-dws $VERBOSE restore V1
+dws $VERBOSE $BATCH restore V1
 
 # Restore the git repo back to v2
-dws $VERBOSE restore --only code-git V2
+dws $VERBOSE $BATCH restore --only code-git V2
 
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then

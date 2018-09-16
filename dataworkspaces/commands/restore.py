@@ -59,12 +59,13 @@ class WriteRevisedSnapshotFile(actions.Action):
         self.snapshot_resources = snapshot_resources
         self.snapshot_hash = None
         self.snapshot_filename = None
+        self.new_snapshot = None
 
     def run(self):
         def write_fn(tempfile):
             self.snapshot_resources.write_revised_snapshot_manifest(tempfile,
                                                                    self.map_of_hashes)
-        (self.snapshot_hash, self.snapshot_filename) = \
+        (self.snapshot_hash, self.snapshot_filename, self.new_snapshot) = \
             actions.write_and_hash_file(
                 write_fn,
                 join(self.workspace_dir,
@@ -91,8 +92,6 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
     --only, --leave, and --ignore-dropped command line options, figure out what we should
     do for each resource.
     """
-    print("current_names = %s" % ', '.join(sorted(current_names))) # XXX
-    print("snapshot_names = %s" % ', '.join(sorted(snapshot_names))) # XXX
     all_names = snapshot_names.union(current_names)
     names_to_restore = snapshot_names.intersection(current_names)
     names_to_add = snapshot_names.difference(current_names)
@@ -146,8 +145,6 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     original_current_resource_names = current_resources.get_names()
     (names_to_restore, names_to_add, names_to_leave) = \
         process_names(original_current_resource_names, snapshot_resources.get_names(), only, leave)
-    print("names_to_restore: %s, names_to_add: %s, names_to_leave: %s" %
-          (repr(names_to_restore), repr(names_to_add), repr(names_to_leave)))
     plan = []
     create_new_hash = False
     map_of_hashes = {}

@@ -35,6 +35,18 @@ def call_subprocess(args, cwd, verbose=False):
         click.echo(cp.stdout)
     return cp.stdout # can ignore if you don't need this.
 
+def call_subprocess_for_rc(args, cwd, verbose=False):
+    """Call an executable as a child process. Returns the return
+    code of the call.
+    """
+    if verbose:
+        click.echo(" ".join(args) + " [run in %s]" % cwd)
+    cp = run(args, cwd=cwd, encoding='utf-8', stdout=PIPE, stderr=PIPE)
+    if verbose:
+        click.echo(cp.stdout)
+        click.echo("%s exited with %d" % (args[0], cp.returncode))
+    return cp.returncode
+
 
 
 def find_exe(exe_name, additional_search_locations=[]):
@@ -72,7 +84,9 @@ def is_a_git_hash(s):
 def write_and_hash_file(write_fn, filename_template, verbose):
     """Write a file to a temporary location, take its hash
     and rename to filename_template, replacing <HASHVAL> with
-    the hash. Returns hashval and the written filename.
+    the hash. Returns hashval, the snapshot filename, and
+    a boolean indicating whether this is a new snapshot
+    (may end up with a snapshot matching a previous one).
     """
     with NamedTemporaryFile(delete=False) as f:
         tfilename = f.name
@@ -83,12 +97,14 @@ def write_and_hash_file(write_fn, filename_template, verbose):
         hashval = stdout.strip()
         target_name = filename_template.replace("<HASHVAL>", hashval)
         assert target_name!=filename_template
-        os.rename(tfilename, target_name)
-        return (hashval, target_name)
-    except:
+        if exists(target_name):
+            return (hashval, target_name, False)
+        else:
+            os.rename(tfilename, target_name)
+            return (hashval, target_name, True)
+    finally:
         if exists(tfilename):
             os.remove(tfilename)
-        raise
 
 
 ############################################################################

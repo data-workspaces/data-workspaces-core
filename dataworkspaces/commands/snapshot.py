@@ -31,11 +31,12 @@ class WriteSnapshotFile(actions.Action):
         self.current_resources = current_resources
         self.snapshot_hash = None
         self.snapshot_filename = None
+        self.new_snapshot = None
 
     def run(self):
         def write_fn(tempfile):
             self.current_resources.write_snapshot_manifest(tempfile, self.map_of_hashes)
-        (self.snapshot_hash, self.snapshot_filename) = \
+        (self.snapshot_hash, self.snapshot_filename, self.new_snapshot) = \
             actions.write_and_hash_file(
                 write_fn,
                 join(self.workspace_dir,
@@ -45,7 +46,7 @@ class WriteSnapshotFile(actions.Action):
     def __str__(self):
         return 'Create and hash snapshot file'
 
-
+# TODO: If not a new snapshot, merge history entries!
 class AppendSnapshotHistory(actions.Action):
     def __init__(self, verbose, workspace_dir, tag, message, get_hash_fn):
         self.snapshot_history_file = join(workspace_dir, '.dataworkspace/snapshots/snapshot_history.json')
