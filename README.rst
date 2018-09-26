@@ -64,19 +64,20 @@ and associated infrastructure (`see below <actions>`__).
 Snapshot
 ~~~~~~~~
 Taking a snapshot involves instantiating resource objects for each resource
-in resources.json and calling ``snapshot_prechecks()`` and ``snapshot()``
+in resources.json and calling ``snapshot_prechecks()`` and ``snapshot()``.
+
 Restore
 ~~~~~~~
 Restore has some options to let you specify which resources to restore
-and which to leave in their current state (--only and --leave). Restore may
+and which to leave in their current state (``--only`` and ``--leave``). Restore may
 create a new snapshot if the state of the resources does not exactly match
-the original snapshot's state. If --no-new-snapshot is
+the original snapshot's state. If ``--no-new-snapshot`` is
 specified, we adjust the individual resource
 states without taking a new snapshot.
 
 To implement restore for a new resource type, you just need to implement the
-restore_prechecks() and restore() methods. Both take a hashval parameter. In the
-restore_prechecks() call, you should validate that there is a state corresponding
+``restore_prechecks()`` and ``restore()`` methods. Both take a hashval parameter. In the
+``restore_prechecks()`` call, you should validate that there is a state corresponding
 to that hash.
 
 There are a few edge cases that may need further thought:
@@ -102,13 +103,13 @@ resource functionality per role.
 Source Data Sets
 ~~~~~~~~~~~~~~~~
 We want the ability to name source data sets and swap them in and out without
-changing other parts of the workspace.
+changing other parts of the workspace. This still needs to be implemented.
 
 Intrermediate Data
 ~~~~~~~~~~~~~~~~~~
 For intermediate data, we may want to delete it from the current state of
 the workspace if it becomes out of date (e.g. a data source version is changed
-or swapped out).
+or swapped out). This still needs to be implemented.
 
 Results
 ~~~~~~~
