@@ -7,6 +7,7 @@ import copy
 from urllib.parse import urlparse
 from os.path import expanduser, isdir, abspath, join, exists
 
+
 from dataworkspaces.errors import InternalError
 
 class ResourceRoles:
@@ -53,6 +54,24 @@ class Resource:
     def snapshot_prechecks(self):
         pass
 
+    def results_move_current_files(rel_dest_root, exclude_files,
+                                   exclude_dirs_re):
+        """If the resource has a result role, we want
+        to move the current files into a subdirectory ahead
+        of taking a snapshot.
+
+        rel_dest_root is the relative path within the resource for
+        a directory to be created and the files moved.
+
+        exclude_files is a (possibly empty) set of relative
+        file paths to exclude from the move (e.g. an additive
+        results file).
+
+        exclude_dirs_re is a regular expression for relative file paths
+        used to exclude the directories of prior checkpoints.
+        """
+        pass
+
     def snapshot(self):
         pass
 
@@ -64,6 +83,7 @@ class Resource:
 
     def __str__(self):
         return 'Resource %s in role %s' % (self.name, self.role)
+
 
 
 class ResourceFactory:
