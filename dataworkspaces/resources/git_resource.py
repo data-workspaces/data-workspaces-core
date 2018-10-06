@@ -3,10 +3,12 @@ Resource for git repositories
 """
 import subprocess
 from os.path import realpath, basename
+import re
 
 from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
 from .resource import Resource, ResourceFactory
+from .results_utils import move_current_files_local_fs
 
 
 def is_git_dirty(cwd):
@@ -16,6 +18,7 @@ def is_git_dirty(cwd):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, cwd=cwd)
     return result.returncode!=0
 
+DOT_GIT_RE=re.compile(re.escape('.git'))
 
 class GitRepoResource(Resource):
     def __init__(self, name, url, role, workspace_dir, local_path, verbose=False):
@@ -36,6 +39,27 @@ class GitRepoResource(Resource):
 
     def add(self):
         pass
+
+    def results_move_current_files(self, rel_dest_root, exclude_files,
+                                   exclude_dirs_re):
+        def git_move(srcpath, destpath):
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
+                                     srcpath, destpath],
+                                    cwd=self.local_path,
+                                    verbose=self.verbose)
+        moved_files = move_current_files_local_fs(
+            self.name, self.local_path, rel_dest_root,
+            exclude_files,
+            [exclude_dirs_re, DOT_GIT_RE],
+            move_fn=git_move,
+            verbose=self.verbose)
+        # If there were no files in the results dir, then we do not
+        # create a subdirectory for this snapshot
+        if len(moved_files)>0:
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'commit',
+                                     '-m', "Move current results to %s" % rel_dest_root],
+                                    cwd=self.local_path,
+                                    verbose=self.verbose)
 
     def snapshot_prechecks(self):
         if is_git_dirty(self.local_path):

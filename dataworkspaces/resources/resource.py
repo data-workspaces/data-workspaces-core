@@ -33,6 +33,9 @@ class Resource:
         self.role = role
         self.workspace_dir = workspace_dir
 
+    def has_results_role(self):
+        return self.role==ResourceRoles.RESULTS
+
     def to_json(self):
         """Return a json (unserialized) representation of this
         resource for the resources file.
@@ -54,7 +57,7 @@ class Resource:
     def snapshot_prechecks(self):
         pass
 
-    def results_move_current_files(rel_dest_root, exclude_files,
+    def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
         """If the resource has a result role, we want
         to move the current files into a subdirectory ahead

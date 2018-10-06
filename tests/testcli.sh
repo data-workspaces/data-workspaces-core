@@ -41,10 +41,21 @@ mkdir -p local_files/dir
 echo 'File 3' > local_files/dir/f3
 ls
 
+# create a git repo for storing results
+mkdir -p results_git
+cd results_git
+git init
+echo "File 1" >f1
+echo "File 2" >f2
+git add f1 f2
+git commit -m "initial version"
+cd ..
+
 cd $WORKDIR
 dws $VERBOSE init
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
+dws $VERBOSE add git --role=results --name=results-git ./results_git
 echo dws $VERBOSE snapshot -m "first version" V1
 dws $VERBOSE snapshot -m "first version" V1
 
@@ -52,6 +63,14 @@ dws $VERBOSE snapshot -m "first version" V1
 cd code
 echo "# Changes" >>test.py
 git add test.py
+git commit -m "second version"
+cd ..
+
+# make some changes to the results
+cd results_git
+echo "File 3" >f3
+echo "File 4" >f4
+git add f3 f4
 git commit -m "second version"
 cd ..
 

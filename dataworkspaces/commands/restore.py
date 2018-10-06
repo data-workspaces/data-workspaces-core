@@ -1,12 +1,14 @@
 import json
 from os.path import join, exists
 from collections import namedtuple
+import datetime
 
 import click
 
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.resources.resource import CurrentResources, SnapshotResources
+from dataworkspaces.resources.resource import \
+    CurrentResources, SnapshotResources
 from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory
 
 class RestoreResource(actions.Action):
@@ -140,6 +142,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
             raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
         else:
             raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
+
     snapshot_resources = SnapshotResources.read_shapshot_manifest(snapshot['hash'], workspace_dir, batch, verbose)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     original_current_resource_names = current_resources.get_names()
@@ -149,12 +152,21 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     create_new_hash = False
     map_of_hashes = {}
     for name in names_to_restore:
-        # resources in both current and restored, just need to call restore
-        plan.append(RestoreResource(verbose, current_resources.by_name[name],
-                                    snapshot_resources))
+        # resources in both current and restored
+        r = current_resources.by_name[name]
+        if not r.has_results_role():
+            # just need to call restore
+            plan.append(RestoreResource(verbose, r, snapshot_resources))
+        else:
+            # This is a results resource, we'll add it to the leave set
+            if only and (name in only):
+                raise click.BadOptionUsage(message="Resource '%s' has a Results role and should not be included in the --only list" %
+                                           name)
+            names_to_leave.append(name)
     for name in names_to_add:
         # These are resources which are in the restored snapshot, but not the
         # current resources. We'll grab the resource objects from snapshot_resources
+        # XXX Do we need to handle Results resources differently?
         r = snapshot_resources.by_name[name]
         plan.append(RestoreResource(verbose, r, snapshot_resources))
     for name in names_to_leave:
@@ -166,6 +178,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         if not snapshot_resources.is_a_current_name(name):
             plan.append(AddResourceToSnapshot(verbose, r, snapshot_resources))
         if not no_new_snapshot:
+            # XXX Need to handle Results resource - should move files
             plan.append(TakeResourceSnapshot(verbose, r, map_of_hashes))
             create_new_hash = True
     need_to_write_resources_file = \
@@ -176,7 +189,8 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         plan.append(write_revised)
         history_action = AppendSnapshotHistory(verbose, workspace_dir, None,
                                                "Revert creating a new hash",
-                                               lambda:write_revised.snapshot_hash)
+                                               lambda:write_revised.snapshot_hash,
+                                               datetime.datetime.now())
         plan.append(history_action)
         if need_to_write_resources_file:
             plan.append(WriteRevisedResourceFile(verbose, snapshot_resources))

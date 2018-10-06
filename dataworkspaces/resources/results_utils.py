@@ -9,6 +9,8 @@ import re
 
 import click
 
+from dataworkspaces.errors import ConfigurationError
+
 # Timestamps have the form '2018-09-30T14:09:05'
 TEMPLATE_VAR_PATS = {
     'USERNAME':r'\w+',
@@ -36,6 +38,12 @@ VALID_TEMPLATE_VARS.remove('TAGBOTH')
 VALID_TEMPLATE_VARS.remove('TAGLEFT')
 VALID_TEMPLATE_VARS.remove('TAGRIGHT')
 
+def validate_template(template):
+    for mo in TEMPLATE_VAR_RE.finditer(template):
+        tvar = mo.group(0)[1:-1]
+        if tvar not in VALID_TEMPLATE_VARS:
+            raise ConfigurationError("Unknown variable '%s' in results directory template '%s'"%
+                                     (tvar, template))
 
 def _translate_tag_vars(template):
     """The {TAG} template variable is optional, so we treat it as a
@@ -54,10 +62,9 @@ def make_re_pattern_for_dir_template(template):
     escaped = re.escape(template).replace('\\{', '{').replace('\\}', '}')
     def repl(tvar_mo):
         tvar = tvar_mo.group(0)[1:-1]
-        if tvar in TEMPLATE_VAR_PATS:
-            return TEMPLATE_VAR_PATS[tvar]
-        else:
-            raise Exception("Uknown result directory template variable '%s'" %tvar)
+        assert tvar in TEMPLATE_VAR_PATS, \
+            "Uknown result directory template variable '%s'" %tvar
+        return TEMPLATE_VAR_PATS[tvar]
     return '^' + TEMPLATE_VAR_RE.sub(repl, escaped) + '$'
 
 WEEKDAYS=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -91,24 +98,28 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
         values['TAGBOTH'] = '-'
     def repl(tvar_mo):
         tvar = tvar_mo.group(0)[1:-1]
-        if tvar in values:
-            return values[tvar]
-        else:
-            raise Exception("Uknown result directory template variable '%s'" % tvar)
+        assert tvar in values, \
+            "Uknown result directory template variable '%s'" %tvar
+        return values[tvar]
     return TEMPLATE_VAR_RE.sub(repl, template)
 
 
 def move_current_files_local_fs(resource_name,
                                 base_dir, rel_dest_root, exclude_files,
-                                exclude_dirs_re, verbose=False):
+                                exclude_dirs_res, move_fn=os.rename,
+                                verbose=False):
     """Utility for impelementing Resource.results_move_current_file()
     for when the files are stored on the local filesystem (e.g. local or git
     resources).
+    exclude_dirs_res is either a single regular expression object or a list
+    of regular expression objects.
     This returns the list of (before, after) relative path pairs.
     """
     abs_dest_root = join(base_dir, rel_dest_root)
-    os.makedirs(abs_dest_root)
+    created_dir = False # only create when we actually have a file to move
     moved_files = []
+    if not isinstance(exclude_dirs_res, list):
+        exclude_dirs_res = [exclude_dirs_res,]
     for (dirpath, dirnames, filenames) in os.walk(base_dir):
         assert dirpath.startswith(base_dir)
         rel_dirpath = dirpath[len(base_dir)+1:]
@@ -122,9 +133,10 @@ def move_current_files_local_fs(resource_name,
         for (i, dirname) in enumerate(dirnames):
             abs_dirpath = join(dirpath, dirname)
             rel_dirpath = abs_dirpath[len(base_dir)+1:]
-            if exclude_dirs_re.match(rel_dirpath):
-                skip.append(i)
-                print("Skipping directory %s" % rel_dirpath)
+            for exclude_dirs_re in exclude_dirs_res:
+                if exclude_dirs_re.match(rel_dirpath):
+                    skip.append(i)
+                    print("Skipping directory %s" % rel_dirpath)
         skip.reverse()
         for i in skip:
             del dirnames[i]
@@ -143,8 +155,12 @@ def move_current_files_local_fs(resource_name,
                                                      rel_src_file, rel_dest_file))
                 click.echo("     Absolute %s => %s" % (abs_src_file, abs_dest_file))
             dest_parent = os.path.dirname(abs_dest_file)
+            if not created_dir:
+                # lazily create the root directory
+                os.makedirs(abs_dest_root)
+                created_dir = True
             if not exists(dest_parent):
                 os.makedirs(dest_parent)
-            os.rename(abs_src_file, abs_dest_file)
+            move_fn(abs_src_file, abs_dest_file)
             moved_files.append((rel_src_file, rel_dest_file))
     return moved_files
