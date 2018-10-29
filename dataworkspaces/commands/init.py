@@ -8,8 +8,8 @@ import dataworkspaces.commands.actions as actions
 from dataworkspaces import __version__
 
 class MakeWorkSpaceConfig(actions.Action):
-    def __init__(self, dataworkspace_dir, workspace_name, verbose):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, dataworkspace_dir, workspace_name):
+        super().__init__(ns, verbose)
         self.dataworkspace_dir =  dataworkspace_dir
         self.config_fpath = join(dataworkspace_dir, 'config.json')
         self.resources_fpath = join(dataworkspace_dir, 'resources.json')
@@ -38,22 +38,21 @@ class MakeWorkSpaceConfig(actions.Action):
 
 def init_command(name, batch=False, verbose=False):
     plan = []
+    ns = actions.Namespace()
     if actions.is_git_repo(actions.CURR_DIR):
         click.echo("Found a git repo, we will add to it")
     else:
-        plan.append(actions.GitInit(actions.CURR_DIR, verbose=verbose))
+        plan.append(actions.GitInit(ns, verbose, actions.CURR_DIR))
     dataworkspace_dir = join(actions.CURR_DIR, '.dataworkspace')
-    step = MakeWorkSpaceConfig(dataworkspace_dir, name, verbose=verbose)
+    step = MakeWorkSpaceConfig(ns, verbose, dataworkspace_dir, name)
     config_fpath = step.config_fpath
     resources_fpath = step.resources_fpath
     snapshots_fpath = step.snapshots_fpath
     plan.append(step)
-    plan.append(actions.GitAdd(actions.CURR_DIR,
-                               [config_fpath, resources_fpath, snapshots_fpath],
-                               verbose=verbose))
-    plan.append(actions.GitCommit(actions.CURR_DIR,
-                                  'Initial version of data workspace',
-                                  verbose=verbose))
+    plan.append(actions.GitAdd(ns, verbose, actions.CURR_DIR,
+                               [config_fpath, resources_fpath, snapshots_fpath]))
+    plan.append(actions.GitCommit(ns, verbose, actions.CURR_DIR,
+                                  'Initial version of data workspace'))
     return actions.run_plan(plan, 'initialize a workspace at %s' % actions.CURR_DIR,
                             'initialized a workspace at %s' % actions.CURR_DIR,
                             batch=batch, verbose=verbose)

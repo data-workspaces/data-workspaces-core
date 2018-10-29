@@ -1,9 +1,7 @@
 
-from os.path import exists, join
 import click
-import json
 
-from dataworkspaces.errors import InternalError, ConfigurationError
+from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import get_resource_from_command_line,\
     suggest_resource_name, CurrentResources
@@ -11,8 +9,8 @@ from dataworkspaces.resources.resource import get_resource_from_command_line,\
 
 
 class AddResource(actions.Action):
-    def __init__(self, verbose, resource):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, resource):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.resource.add_prechecks()
 
@@ -24,8 +22,8 @@ class AddResource(actions.Action):
 
 
 class AddResourceToFile(actions.Action):
-    def __init__(self, verbose, resource, current_resources):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, resource, current_resources):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.current_resources = current_resources
         # A given resource should resolve to a unique URL, so this is the best way
@@ -65,12 +63,14 @@ def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
                 click.echo("Resource name '%s' already in use." %
                            name, err=True)
 
+    ns = actions.Namespace()
     r = get_resource_from_command_line(scheme, role, name, workspace_dir,
                                        batch, verbose, *args)
     plan = []
-    plan.append(AddResource(verbose, r))
-    plan.append(AddResourceToFile(verbose, r, current_resources))
-    plan.append(actions.GitAdd(workspace_dir, [current_resources.json_file], verbose))
-    plan.append(actions.GitCommit(workspace_dir, 'Added resource %s'%str(r),
-                                  verbose))
+    plan.append(AddResource(ns, verbose, r))
+    plan.append(AddResourceToFile(ns, verbose, r, current_resources))
+    plan.append(actions.GitAdd(ns, verbose,
+                               workspace_dir, [current_resources.json_file]))
+    plan.append(actions.GitCommit(ns, verbose,
+                                  workspace_dir, 'Added resource %s'%str(r)))
     actions.run_plan(plan, 'Add %s to workspace'%str(r), 'Added %s to workspace'%str(r), batch, verbose)
