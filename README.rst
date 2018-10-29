@@ -54,6 +54,37 @@ that can be restored upon request. The metadata about resources and snapshots
 is stored in JSON files, in the subdirectory ``.dataworkspace`` under the root
 directory of a given workspace.
 
+Commands
+--------
+Each command has a *validation* phase and an *execution* phase. The goal is to
+do all the checks up front before making any changes to the state of the
+resources or the workspace. This is supported by the ``Action`` class
+and associated infrastructure (`see below <actions>`__).
+
+Snapshot
+~~~~~~~~
+Taking a snapshot involves instantiating resource objects for each resource
+in resources.json and calling ``snapshot_prechecks()`` and ``snapshot()``.
+
+Restore
+~~~~~~~
+Restore has some options to let you specify which resources to restore
+and which to leave in their current state (``--only`` and ``--leave``). Restore may
+create a new snapshot if the state of the resources does not exactly match
+the original snapshot's state. If ``--no-new-snapshot`` is
+specified, we adjust the individual resource
+states without taking a new snapshot.
+
+To implement restore for a new resource type, you just need to implement the
+``restore_prechecks()`` and ``restore()`` methods. Both take a hashval parameter. In the
+``restore_prechecks()`` call, you should validate that there is a state corresponding
+to that hash.
+
+There are a few edge cases that may need further thought:
+
+* It is possible for the restore command to create a snapshot matching a previous one. We detect this situation, but don't do anything about it. It should be fine - there will just be an extra snapshot_history entry, but only one snapshot file.
+* The restore for the git resource does a hard reset, which resets both the current workspace of the repo and the HEAD. I'm not sure whether we want that behavior or just to reset the workspace.
+
 Resource Roles
 --------------
 A resource (collection of files) may have one of four roles:
@@ -66,16 +97,44 @@ A resource (collection of files) may have one of four roles:
 4. **Code** - code used to create the intermediate data and results, typically
    in a git repository or Docker container.
 
-The treatment of resources may vary based on the role. For example:
+The treatment of resources may vary based on the role. We now look at
+resource functionality per role.
 
-* We want the ability to name source data sets and swap them in and out without
-  changing other parts of the workspace.
-* For intermediate data, we may want to delete it from the current state of
-  the workspace if it becomes out of date (e.g. a data source version is changed
-  or swapped out).
-* Results should be additive. For example, if we revert the workspace to an
-  older state, we should not revert the results database. It should always
-  be kept at the latest version.
+Source Data Sets
+~~~~~~~~~~~~~~~~
+We want the ability to name source data sets and swap them in and out without
+changing other parts of the workspace. This still needs to be implemented.
+
+Intrermediate Data
+~~~~~~~~~~~~~~~~~~
+For intermediate data, we may want to delete it from the current state of
+the workspace if it becomes out of date (e.g. a data source version is changed
+or swapped out). This still needs to be implemented.
+
+Results
+~~~~~~~
+In general, results should be additive.
+
+For the ``snapshot`` command, we move the results to a specific subdirectory per
+snapshot. The name of this subdirectory is determined by a template that can
+be changed by setting the parameter ``results.subdir``. By default, the template
+is: ``{DAY}/{DATE_TIME}-{USER}-{TAG}``. The moving of files is accomplished via the
+method ``results_move_current_files(rel_path, exclude)`` on the `Resource <resources>`
+class. The ``snapshot()`` method of the resource is still called as usual, after
+the result files have been moved.
+
+Individual files may be excluded from being moved to a subdirectory. This is done
+through a configuration command. Need to think about where this would be stored --
+in the resources.json file? The files would be passed in the exclude set to
+``results_move_current_files``.
+
+If we run ``restore`` to revert the workspace to an
+older state, we should not revert the results database. It should always
+be kept at the latest version. This is done by always putting results
+resources into the leave set, as if specified in the ``--leave`` option.
+If the user puts a results resource in the ``--only`` set, we will error
+out for now.
+
 
 Code Organization
 -----------------
@@ -83,6 +142,7 @@ We use the Python library ``click`` (http://click.pocoo.org/6/) to implement
 the command argument parsing. The implementations of individual commands
 may be found in the ``commands/`` subdirectory.
 
+.. _actions:
 Actions
 ~~~~~~~
 We wish to perform all the
@@ -95,6 +155,7 @@ checks have been performed, execute the actions via the function
 ``actions.run_plan()``. When running in verbose mode, we also print the
 list of actions to perform and ask the user for confirmation.
 
+.. _resources:
 Resources
 ~~~~~~~~~
 Resources are orthoginal to actions and represent the collections of

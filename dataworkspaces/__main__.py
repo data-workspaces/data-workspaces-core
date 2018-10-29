@@ -7,7 +7,7 @@ import click
 from .errors import CalledProcessError, UserAbort, ConfigurationError,\
                               InternalError, BatchModeError
 
-from .dws import cli
+from .dws import cli, is_verbose_mode
 
 
 try:
@@ -24,9 +24,15 @@ except UserAbort as e:
     click.echo("Not a positive response, exiting without doing anything", err=True)
     sys.exit(1)
 except ConfigurationError as e:
+    if is_verbose_mode():
+        tb = traceback.format_exc()
+        click.echo(tb, err=True)
     click.echo("Configuration error: " + str(e), err=True)
     sys.exit(1)
 except BatchModeError as e:
+    if is_verbose_mode():
+        tb = traceback.format_exc()
+        click.echo(tb, err=True)
     click.echo("Running in --batch mode, but user input required for %s"%
                str(e), err=True)
     sys.exit(1)

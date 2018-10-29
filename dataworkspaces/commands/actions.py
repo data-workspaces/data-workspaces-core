@@ -7,10 +7,12 @@ and execute them via run_plan()
 """
 
 import os
-from os.path import isfile, abspath, expanduser, join, isabs, isdir, dirname
+from os.path import isfile, abspath, expanduser, join, isabs, isdir, dirname, exists
 import sys
 import click
 from subprocess import run, PIPE
+import re
+from tempfile import NamedTemporaryFile
 
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 
@@ -32,6 +34,18 @@ def call_subprocess(args, cwd, verbose=False):
     if verbose:
         click.echo(cp.stdout)
     return cp.stdout # can ignore if you don't need this.
+
+def call_subprocess_for_rc(args, cwd, verbose=False):
+    """Call an executable as a child process. Returns the return
+    code of the call.
+    """
+    if verbose:
+        click.echo(" ".join(args) + " [run in %s]" % cwd)
+    cp = run(args, cwd=cwd, encoding='utf-8', stdout=PIPE, stderr=PIPE)
+    if verbose:
+        click.echo(cp.stdout)
+        click.echo("%s exited with %d" % (args[0], cp.returncode))
+    return cp.returncode
 
 
 
@@ -62,7 +76,35 @@ GIT_EXE_PATH=find_exe('git', additional_search_locations=STANDARD_EXE_SEARCH_LOC
 
 CURR_DIR = abspath(expanduser(os.curdir))
 
+HASH_RE = re.compile(r'^[0-9a-fA-F]+$')
+def is_a_git_hash(s):
+    return len(s)==40 and (HASH_RE.match(s) is not None)
 
+
+def write_and_hash_file(write_fn, filename_template, verbose):
+    """Write a file to a temporary location, take its hash
+    and rename to filename_template, replacing <HASHVAL> with
+    the hash. Returns hashval, the snapshot filename, and
+    a boolean indicating whether this is a new snapshot
+    (may end up with a snapshot matching a previous one).
+    """
+    with NamedTemporaryFile(delete=False) as f:
+        tfilename = f.name
+    try:
+        write_fn(tfilename)
+        stdout = call_subprocess([GIT_EXE_PATH, 'hash-object', tfilename],
+                                 cwd=dirname(tfilename), verbose=verbose)
+        hashval = stdout.strip()
+        target_name = filename_template.replace("<HASHVAL>", hashval)
+        assert target_name!=filename_template
+        if exists(target_name):
+            return (hashval, target_name, False)
+        else:
+            os.rename(tfilename, target_name)
+            return (hashval, target_name, True)
+    finally:
+        if exists(tfilename):
+            os.remove(tfilename)
 
 
 ############################################################################
@@ -197,21 +239,21 @@ def run_plan(plan, what, what_past_tense, batch=False, verbose=False, dry_run=Fa
         return
     if verbose and (not batch):
         print("Here are the planned actions to %s:" % what)
-        for action in plan:
-            print("  %s" % action)
+        for (i, action) in enumerate(plan):
+            print("  %d. %s" % (i+1, action))
         print()
     # if dry_run:
     #     print("--dry-run specified, exiting without doing anything")
     #     return 0
     if verbose and (not batch):
-        resp = input("Should I perform these actions? [y/n]")
+        resp = input("Should I perform these actions? [Y/n]")
     else:
         resp = 'y'
-    if resp.lower()=='y':
-        for (i, cmd) in enumerate(plan):
+    if resp.lower()=='y' or resp=='':
+        for (i, action) in enumerate(plan):
             if verbose:
-                print("%d. %s" % (i+1, cmd))
-            cmd.run()
+                print("%d. %s" % (i+1, action))
+            action.run()
         print("Have now successfully %s" % what_past_tense)
     else:
         raise UserAbort()
