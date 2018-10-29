@@ -190,6 +190,16 @@ def restore():
 
 cli.add_command(restore)
 
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.pass_context
+def status(ctx, workspace_dir):
+    """Show the history of snapshots"""
+    pass
+
+cli.add_command(status)
+
+
 
 if __name__=='__main__':
     cli()
