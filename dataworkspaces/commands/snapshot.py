@@ -1,5 +1,4 @@
 
-import os
 from os.path import join, exists
 import re
 import json
@@ -7,7 +6,6 @@ import datetime
 import getpass
 import socket
 
-import click
 
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.results_utils import \
@@ -19,32 +17,36 @@ from dataworkspaces.errors import InternalError, ConfigurationError
 RESULTS_DIR_TEMPLATE="snapshots/{YEAR}-{MONTH}/{SHORT_MONTH}-{DAY}-{HOUR}:{MIN}:{SEC}-{TAG}"
 
 class TakeResourceSnapshot(actions.Action):
-    def __init__(self, verbose, resource, map_of_hashes):
-        super().__init__(verbose)
+    """Will store the hash in the namespace property map_of_hashes,
+    using the resource url as a key"""
+    def __init__(self, ns, verbose, resource):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.resource.snapshot_prechecks()
-        self.map_of_hashes = map_of_hashes
 
     def run(self):
-        self.map_of_hashes[self.resource.url] = self.resource.snapshot()
+        self.ns.map_of_hashes[self.resource.url] = self.resource.snapshot()
 
     def __str__(self):
         return "Run snapshot actions for %s" % str(self.resource)
 
 class WriteSnapshotFile(actions.Action):
-    def __init__(self, verbose, workspace_dir, map_of_hashes, current_resources):
-        self.verbose = verbose
+    """Creates a snapshot file and populates the
+    snapshot_hash property in the namespace"""
+    @actions.provides_to_ns('snapshot_hash', str)
+    @actions.provides_to_ns('snapshot_filename', str)
+    @actions.requires_from_ns('map_of_hashes', dict)
+    def __init__(self, ns, verbose, workspace_dir, current_resources):
+        super().__init__(ns, verbose)
         self.workspace_dir = workspace_dir
-        self.map_of_hashes = map_of_hashes
         self.current_resources = current_resources
-        self.snapshot_hash = None
-        self.snapshot_filename = None
         self.new_snapshot = None
 
     def run(self):
         def write_fn(tempfile):
-            self.current_resources.write_snapshot_manifest(tempfile, self.map_of_hashes)
-        (self.snapshot_hash, self.snapshot_filename, self.new_snapshot) = \
+            self.current_resources.write_snapshot_manifest(tempfile,
+                                                           self.ns.map_of_hashes)
+        (self.ns.snapshot_hash, self.ns.snapshot_filename, self.new_snapshot) = \
             actions.write_and_hash_file(
                 write_fn,
                 join(self.workspace_dir,
@@ -55,9 +57,9 @@ class WriteSnapshotFile(actions.Action):
         return 'Create and hash snapshot file'
 
 class MoveCurrentFilesForResults(actions.Action):
-    def __init__(self, verbose, resource, exclude_files,
+    def __init__(self, ns, verbose, resource, exclude_files,
                  template, timestamp, snapshot_no, snapshot_tag=None):
-        self.verbose = verbose
+        super().__init__(ns, verbose)
         assert resource.has_results_role()
         self.resource = resource
         self.exclude_files = exclude_files
@@ -81,21 +83,17 @@ class MoveCurrentFilesForResults(actions.Action):
 
 # TODO: If not a new snapshot, merge history entries!
 class AppendSnapshotHistory(actions.Action):
-    def __init__(self, verbose, workspace_dir, tag, message, get_hash_fn, timestamp):
-        self.snapshot_history_file = join(workspace_dir, '.dataworkspace/snapshots/snapshot_history.json')
-        if not exists(self.snapshot_history_file):
-            raise InternalError("Missing snapshot history file at %s" % self.snapshot_history)
-        self.get_hash_fn = get_hash_fn
-        with open(self.snapshot_history_file, 'r') as f:
-            self.snapshot_history_data = json.load(f)
+    @actions.requires_from_ns('snapshot_hash', str)
+    def __init__(self, ns, verbose, snapshot_history_file,
+                 snapshot_history_data, tag, message, timestamp):
+        super().__init__(ns, verbose)
         self.snapshot_data = {'tag':tag, 'message':message}
         self.timestamp = timestamp
-        # Snapshot numbers are just assigned based on where they are in the
-        # history file. Counting starts at 1.
-        self.snapshot_number = len(self.snapshot_history_data)+1
+        self.snapshot_history_file = snapshot_history_file
+        self.snapshot_history_data = snapshot_history_data
 
     def run(self):
-        self.snapshot_data['hash'] = self.get_hash_fn()
+        self.snapshot_data['hash'] = self.ns.snapshot_hash
         self.snapshot_data['timestamp'] = self.timestamp.isoformat()
         self.snapshot_history_data.append(self.snapshot_data)
         with open(self.snapshot_history_file, 'w') as f:
@@ -112,33 +110,40 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     plan = []
-    map_of_hashes = {}
-    # create the append history action now, so we can get the snapshot now
-    history_action = AppendSnapshotHistory(verbose, workspace_dir, tag, message,
-                                           lambda: write_snapshot.snapshot_hash,
-                                           snapshot_timestamp)
+    ns = actions.Namespace()
+    ns.map_of_hashes = actions.Promise(dict, "TakeResourceSnapshot")
+
+    snapshot_history_file = join(workspace_dir,
+                                 '.dataworkspace/snapshots/snapshot_history.json')
+    if not exists(snapshot_history_file):
+        raise InternalError("Missing snapshot history file at %s" %
+                            snapshot_history_file)
+    with open(snapshot_history_file, 'r') as f:
+        snapshot_history_data = json.load(f)
+    # Snapshot numbers are just assigned based on where they are in the
+    # history file. Counting starts at 1.
+    snapshot_number = len(snapshot_history_data)+1
+
 
     for r in current_resources.resources:
         if r.has_results_role():
-            plan.append(MoveCurrentFilesForResults(verbose, r, set(),
+            plan.append(MoveCurrentFilesForResults(ns, verbose, r, set(),
                                                    RESULTS_DIR_TEMPLATE,
                                                    snapshot_timestamp,
-                                                   history_action.snapshot_number,
+                                                   snapshot_number,
                                                    tag))
         plan.append(
-            TakeResourceSnapshot(verbose, r, map_of_hashes))
-    write_snapshot = WriteSnapshotFile(verbose, workspace_dir, map_of_hashes,
-                                       current_resources)
-    plan.append(write_snapshot)
-    plan.append(history_action)
-    plan.append(actions.GitAddDeferred(workspace_dir,
-                                       lambda:[write_snapshot.snapshot_filename,
-                                               history_action.snapshot_history_file],
-                                       verbose))
-    plan.append(actions.GitCommit(workspace_dir,
-                                  message=lambda:"Snapshot "+
-                                                 (lambda h:h.snapshot_hash)(write_snapshot),
-                                  verbose=verbose))
+            TakeResourceSnapshot(ns, verbose, r))
+    plan.append(WriteSnapshotFile(ns, verbose, workspace_dir, current_resources))
+    plan.append(AppendSnapshotHistory(ns, verbose, snapshot_history_file,
+                                      snapshot_history_data, tag, message,
+                                      snapshot_timestamp))
+    plan.append(actions.GitAdd(ns, verbose, workspace_dir,
+                               lambda:[ns.snapshot_filename,
+                                       snapshot_history_file]))
+    plan.append(actions.GitCommit(ns, verbose, workspace_dir,
+                                  commit_message=lambda:"Snapshot "+ns.snapshot_hash))
+    ns.map_of_hashes = {}
     actions.run_plan(plan, "take snapshot of workspace",
                      "taken snapshot of workspace", batch=batch, verbose=verbose)
 

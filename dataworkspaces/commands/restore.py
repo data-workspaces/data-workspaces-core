@@ -1,19 +1,18 @@
 import json
-from os.path import join, exists
-from collections import namedtuple
+from os.path import join
 import datetime
 
 import click
 
 import dataworkspaces.commands.actions as actions
-from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
     CurrentResources, SnapshotResources
 from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory
 
 class RestoreResource(actions.Action):
-    def __init__(self, verbose, resource, snapshot_resources):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, resource, snapshot_resources):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.hashval = snapshot_resources.url_to_hashval[resource.url]
         self.resource.restore_prechecks(self.hashval)
@@ -25,8 +24,8 @@ class RestoreResource(actions.Action):
         return "Run restore actions for %s" % str(self.resource)
 
 class SkipResource(actions.Action):
-    def __init__(self, verbose, resource, reason):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, resource, reason):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.reason = reason
 
@@ -37,8 +36,8 @@ class SkipResource(actions.Action):
         return 'Skipping resource %s, %s' % (str(self.resource), self.reason)
 
 class AddResourceToSnapshot(actions.Action):
-    def __init__(self, verbose, resource, snapshot_resources):
-        super().__init__(verbose)
+    def __init__(self, ns, verbose, resource, snapshot_resources):
+        super().__init__(ns, verbose)
         self.resource = resource
         self.snapshot_resources = snapshot_resources
         # A given resource should resolve to a unique URL, so this is the best way
@@ -54,20 +53,19 @@ class AddResourceToSnapshot(actions.Action):
         return "Add '%s' to resources.json file" % str(self.resource)
 
 class WriteRevisedSnapshotFile(actions.Action):
-    def __init__(self, verbose, workspace_dir, map_of_hashes, snapshot_resources):
-        self.verbose = verbose
+    @actions.requires_from_ns('map_of_hashes', dict)
+    @actions.provides_to_ns('snapshot_hash', str)
+    @actions.provides_to_ns('snapshot_filename', str)
+    def __init__(self, ns, verbose, workspace_dir, snapshot_resources):
+        super().__init__(ns, verbose)
         self.workspace_dir = workspace_dir
-        self.map_of_hashes = map_of_hashes
         self.snapshot_resources = snapshot_resources
-        self.snapshot_hash = None
-        self.snapshot_filename = None
-        self.new_snapshot = None
 
     def run(self):
         def write_fn(tempfile):
             self.snapshot_resources.write_revised_snapshot_manifest(tempfile,
-                                                                   self.map_of_hashes)
-        (self.snapshot_hash, self.snapshot_filename, self.new_snapshot) = \
+                                                                    self.ns.map_of_hashes)
+        (self.ns.snapshot_hash, self.ns.snapshot_filename, _) = \
             actions.write_and_hash_file(
                 write_fn,
                 join(self.workspace_dir,
@@ -150,13 +148,14 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         process_names(original_current_resource_names, snapshot_resources.get_names(), only, leave)
     plan = []
     create_new_hash = False
-    map_of_hashes = {}
+    ns = actions.Namespace()
+    ns.map_of_hashes = {}
     for name in names_to_restore:
         # resources in both current and restored
         r = current_resources.by_name[name]
         if not r.has_results_role():
             # just need to call restore
-            plan.append(RestoreResource(verbose, r, snapshot_resources))
+            plan.append(RestoreResource(ns, verbose, r, snapshot_resources))
         else:
             # This is a results resource, we'll add it to the leave set
             if only and (name in only):
@@ -168,7 +167,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         # current resources. We'll grab the resource objects from snapshot_resources
         # XXX Do we need to handle Results resources differently?
         r = snapshot_resources.by_name[name]
-        plan.append(RestoreResource(verbose, r, snapshot_resources))
+        plan.append(RestoreResource(ns, verbose, r, snapshot_resources))
     for name in names_to_leave:
         # These resources are only in the current resource list or explicitly left out.
         r = current_resources.by_name[name]
@@ -176,52 +175,46 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         # have to snapshot the resource itself.
         r = current_resources.by_name[name]
         if not snapshot_resources.is_a_current_name(name):
-            plan.append(AddResourceToSnapshot(verbose, r, snapshot_resources))
+            plan.append(AddResourceToSnapshot(ns, verbose, r, snapshot_resources))
         if not no_new_snapshot:
             # XXX Need to handle Results resource - should move files
-            plan.append(TakeResourceSnapshot(verbose, r, map_of_hashes))
+            plan.append(TakeResourceSnapshot(ns, verbose, r))
             create_new_hash = True
     need_to_write_resources_file = \
         original_current_resource_names!=snapshot_resources.get_names()
     if create_new_hash:
-        write_revised = WriteRevisedSnapshotFile(verbose, workspace_dir, map_of_hashes,
+        write_revised = WriteRevisedSnapshotFile(ns, verbose, workspace_dir,
                                                  snapshot_resources)
         plan.append(write_revised)
-        history_action = AppendSnapshotHistory(verbose, workspace_dir, None,
+        history_action = AppendSnapshotHistory(ns, verbose, sh_file, sh_data, None,
                                                "Revert creating a new hash",
-                                               lambda:write_revised.snapshot_hash,
                                                datetime.datetime.now())
         plan.append(history_action)
         if need_to_write_resources_file:
-            plan.append(WriteRevisedResourceFile(verbose, snapshot_resources))
-            plan.append(actions.GitAddDeferred(workspace_dir,
-                                               lambda:[write_revised.snapshot_filename,
-                                                       history_action.snapshot_history_file,
-                                                       snapshot_resources.resource_file],
-                                               verbose))
+            plan.append(WriteRevisedResourceFile(ns, verbose, snapshot_resources))
+            plan.append(actions.GitAdd(ns, verbose, workspace_dir,
+                                       lambda:[ns.snapshot_filename,
+                                               sh_file,
+                                               snapshot_resources.resource_file]))
         else:
-            plan.append(actions.GitAddDeferred(workspace_dir,
-                                               lambda:[write_revised.snapshot_filename,
-                                                       history_action.snapshot_history_file],
-                                               verbose))
+            plan.append(actions.GitAdd(ns, verbose, workspace_dir,
+                                       lambda:[ns.snapshot_filename, sh_file]))
     elif need_to_write_resources_file:
-        plan.append(actions.GitAdd(workspace_dir,
-                                   [snapshot_resources.resource_file],
-                                   verbose))
+        plan.append(actions.GitAdd(ns, verbose, workspace_dir,
+                                   [snapshot_resources.resource_file]))
 
     tagstr = ', tag=%s' % snapshot['tag'] if snapshot['tag'] else ''
     if create_new_hash:
         desc = "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
                 (snapshot['hash'], tagstr)
-        commit_msg_fn = lambda: desc + " " + (lambda h:h.snapshot_hash)(write_revised)
+        commit_msg_fn = lambda: desc + " " + ns.snapshot_hash
     else:
         desc = "Restore snapshot %s%s" % (snapshot['hash'], tagstr)
         commit_msg_fn = lambda: desc
 
     if need_to_write_resources_file or create_new_hash:
-        plan.append(actions.GitCommit(workspace_dir,
-                                      message=commit_msg_fn,
-                                      verbose=verbose))
+        plan.append(actions.GitCommit(ns, verbose, workspace_dir,
+                                      commit_message=commit_msg_fn))
     click.echo(desc)
     def fmt_rlist(rnames):
         if len(rnames)>0:
@@ -240,5 +233,5 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
             raise UserAbort()
     actions.run_plan(plan, 'run this restore', 'run restore', batch, verbose)
     if create_new_hash:
-        click.echo("New snapshot is %s." % write_revised.snapshot_hash)
+        click.echo("New snapshot is %s." % ns.snapshot_hash)
     
