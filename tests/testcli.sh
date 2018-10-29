@@ -83,6 +83,13 @@ dws $VERBOSE $BATCH restore V1
 # Restore the git repo back to v2
 dws $VERBOSE $BATCH restore --only code-git V2
 
+# Now make a change to the local dir
+echo "Removing f1"
+rm local_files/f1
+# Should fail
+dws $VERBOSE $BATCH restore V1 || echo 'Test failed as expected'
+echo 'File 1' > local_files/f1
+
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then
     echo "test cleanup..."

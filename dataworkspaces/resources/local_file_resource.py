@@ -14,10 +14,10 @@ from . import hashtree
 LOCAL_FILE = 'file'
 
 class LocalFileResource(Resource):
-    def __init__(self, name, url, role, workspace_dir, local_path):
+    def __init__(self, name, url, role, workspace_dir, local_path, ignore=[]):
         super().__init__(LOCAL_FILE, name, url, role, workspace_dir)
         self.local_path = local_path
-
+        self.ignore = ignore
 
     def to_json(self):
         d = super().to_json()
@@ -47,8 +47,17 @@ class LocalFileResource(Resource):
 
     def snapshot(self):
         rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
-        h = hashtree.generate_hashes(rsrcdir, self.local_path)
+        h = hashtree.generate_hashes(rsrcdir, self.local_path, ignore=self.ignore)
         return h.strip()
+
+    def restore_prechecks(self, hashval):
+        rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
+        rc = hashtree.check_hashes(hashval, rsrcdir, self.local_path, ignore=self.ignore)
+        if not rc:
+            raise ConfigurationError("Local file structure not compatible with saved hash")
+
+    def restore(self, hashval):
+        pass # local files: do nothing to restore
 
     def __str__(self):
         return "Local directory %s in role '%s'" % (self.local_path, self.role)

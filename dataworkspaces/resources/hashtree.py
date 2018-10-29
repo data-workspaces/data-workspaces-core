@@ -205,6 +205,7 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
                 # print("Line from hash file ", h, kind, name)
                 if kind == BLOB:
                     f, f_index = _get_next_element(files, f_index, ignore) 
+                    print("f = ", f, " name =", name)
                     if f != name:
                         print("File mismatch:", f, " and (hash says)", name)
                         return False
@@ -214,6 +215,7 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
                         return False
                 elif kind == TREE:
                     d, d_index = _get_next_element(dirs, d_index, ignore)
+                    print("d = ", d, " name = ", name)
                     if d != name:
                         print("Dir mismatch: ", d, " and (hash says)", name)
                         return False
