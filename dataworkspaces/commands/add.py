@@ -1,12 +1,13 @@
 
 from os.path import isabs, join, exists
+import json
 
 import click
 
-from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.errors import ConfigurationError, InternalError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import get_resource_from_command_line,\
-    suggest_resource_name, CurrentResources
+    suggest_resource_name, CurrentResources, get_local_params_file_path
 
 
 
@@ -31,7 +32,8 @@ class AddResourceToFile(actions.Action):
         # A given resource should resolve to a unique name, so this is the best way
         # to check for duplication.
         if current_resources.is_a_current_name(resource.name):
-            raise ConfigurationError("Resource '%s' already in workspace" % resource.name)
+            raise ConfigurationError("Resource '%s' already in workspace" %
+                                     resource.name)
 
     def run(self):
         self.current_resources.add_resource(self.resource)
@@ -40,7 +42,23 @@ class AddResourceToFile(actions.Action):
     def __str__(self):
         return "Add '%s' to resources.json file" % str(self.resource)
 
+class UpdateLocalParams(actions.Action):
+    def __init__(self, ns, verbose, resource, workspace_dir):
+        self.rname = resource.name
+        self.local_params_fpath = get_local_params_file_path(workspace_dir)
+        if not exists(self.local_params_fpath):
+            raise InternalError("Missing file %s" % self.local_params_fpath)
+        with open(self.local_params_fpath, 'r') as f:
+            self.local_params_data = json.load(f)
+        self.local_params_data[resource.name] = resource.local_params_to_json()
 
+    def run(self):
+        with open(self.local_params_fpath, 'w') as f:
+            json.dump(self.local_params_data, f, indent=2)
+
+    def __str__(self):
+        return "Add local parameters for %s to %s" % \
+            (self.rname, self.local_params_fpath)
 class AddResourceToGitIgnore(actions.Action):
     """The resource is under the workspace's git repo, so we add it to
     .gitignore
@@ -126,4 +144,5 @@ def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
                                workspace_dir, git_add_files))
     plan.append(actions.GitCommit(ns, verbose,
                                   workspace_dir, 'Added resource %s'%str(r)))
+    plan.append(UpdateLocalParams(ns, verbose, r, workspace_dir))
     actions.run_plan(plan, 'Add %s to workspace'%str(r), 'Added %s to workspace'%str(r), batch, verbose)

@@ -55,6 +55,10 @@ cd ..
 
 cd $WORKDIR
 dws $VERBOSE init
+echo "code-origin/" >>.gitignore
+git add .gitignore
+git commit -m "Keep core-origin out of the dws repo"
+
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE add git --role=results --name=results-git ./results_git
@@ -93,6 +97,9 @@ dws $VERBOSE $BATCH restore V1 || echo 'Test failed as expected'
 echo 'File 1' > local_files/f1
 
 dws $VERBOSE status
+
+# verify that the dws git repo is not dirty
+git diff --exit-code --quiet
 
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then

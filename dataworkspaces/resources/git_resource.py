@@ -32,7 +32,6 @@ class GitRepoResource(Resource):
 
     def to_json(self):
         d = super().to_json()
-        d['local_path'] = self.local_path
         d['remote_origin_url'] = self.remote_origin_url
         return d
 
@@ -127,7 +126,7 @@ class GitRepoFactory(ResourceFactory):
         assert json_data['resource_type']=='git'
         return GitRepoResource(json_data['name'], json_data['role'],
                                workspace_dir, json_data['remote_origin_url'],
-                               json_data['local_path'],
+                               local_params['local_path'],
                                verbose)
 
     def suggest_name(self, local_path):
