@@ -14,8 +14,8 @@ from . import hashtree
 LOCAL_FILE = 'file'
 
 class LocalFileResource(Resource):
-    def __init__(self, name, url, role, workspace_dir, local_path, ignore=[]):
-        super().__init__(LOCAL_FILE, name, url, role, workspace_dir)
+    def __init__(self, name, role, workspace_dir, local_path, ignore=[]):
+        super().__init__(LOCAL_FILE, name, role, workspace_dir)
         self.local_path = local_path
         self.ignore = ignore
 
@@ -66,13 +66,12 @@ class LocalFileFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace_dir, batch, verbose,
                           local_path):
         """Instantiate a resource object from the add command's arguments"""
-        url = LOCAL_FILE + ':' + local_path
-        return LocalFileResource(name, url, role, workspace_dir, local_path)
+        return LocalFileResource(name, role, workspace_dir, local_path)
 
-    def from_json(self, json_data, workspace_dir, batch, verbose):
+    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']==LOCAL_FILE
-        return LocalFileResource(json_data['name'], json_data['url'],
+        return LocalFileResource(json_data['name'],
                                  json_data['role'], workspace_dir, json_data['local_path'])
 
     def suggest_name(self, local_path):

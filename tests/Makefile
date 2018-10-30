@@ -8,3 +8,5 @@ test:
 
 clean:
 	rm -rf ./test ./testresources
+
+.PHONY: test help clean

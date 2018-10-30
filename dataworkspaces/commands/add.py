@@ -26,10 +26,10 @@ class AddResourceToFile(actions.Action):
         super().__init__(ns, verbose)
         self.resource = resource
         self.current_resources = current_resources
-        # A given resource should resolve to a unique URL, so this is the best way
+        # A given resource should resolve to a unique name, so this is the best way
         # to check for duplication.
-        if resource.url in current_resources.urls:
-            raise ConfigurationError("Resource '%s' already in workspace" % resource.url)
+        if current_resources.is_a_current_name(resource.name):
+            raise ConfigurationError("Resource '%s' already in workspace" % resource.name)
 
     def run(self):
         self.current_resources.add_resource(self.resource)

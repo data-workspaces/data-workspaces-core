@@ -21,8 +21,8 @@ def is_git_dirty(cwd):
 DOT_GIT_RE=re.compile(re.escape('.git'))
 
 class GitRepoResource(Resource):
-    def __init__(self, name, url, role, workspace_dir, local_path, verbose=False):
-        super().__init__('git', name, url, role, workspace_dir)
+    def __init__(self, name, role, workspace_dir, local_path, verbose=False):
+        super().__init__('git', name, role, workspace_dir)
         self.local_path = local_path
         self.verbose = verbose
 
@@ -30,6 +30,9 @@ class GitRepoResource(Resource):
         d = super().to_json()
         d['local_path'] = self.local_path
         return d
+
+    def local_params_to_json(self):
+        return {'local_path':self.local_path}
 
     def add_prechecks(self):
         if not actions.is_git_repo(self.local_path):
@@ -96,13 +99,13 @@ class GitRepoFactory(ResourceFactory):
         """Instantiate a resource object from the add command's
         arguments"""
         url = 'git:' + local_path
-        return GitRepoResource(name, url, role, workspace_dir,
+        return GitRepoResource(name, role, workspace_dir,
                                local_path, verbose)
 
-    def from_json(self, json_data, workspace_dir, batch, verbose):
+    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']=='git'
-        return GitRepoResource(json_data['name'], json_data['url'], json_data['role'],
+        return GitRepoResource(json_data['name'], json_data['role'],
                                workspace_dir, json_data['local_path'],
                                verbose)
 
