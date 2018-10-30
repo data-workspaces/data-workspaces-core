@@ -88,6 +88,12 @@ class Resource:
     def snapshot(self):
         pass
 
+    def verify_snapshot(self, hashval):
+        """Return true if the current state of the resource corresponds
+        to the hash value, false otherwise.
+        """
+        return False
+    
     def restore_prechecks(self, hashval):
         pass
 
