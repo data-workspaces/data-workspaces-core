@@ -252,6 +252,7 @@ def test():
     print("\n\nChecking hashes again (should fail)")
     b = check_hashes(h, './tmp', '..', ignore=['tmp', '__pycache__'])
     print(b)
+    os.remove('log')
     
         
 if __name__ == '__main__':

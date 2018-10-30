@@ -90,10 +90,13 @@ rm local_files/f1
 dws $VERBOSE $BATCH restore V1 || echo 'Test failed as expected'
 echo 'File 1' > local_files/f1
 
+dws $VERBOSE status
+
 cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then
     echo "test cleanup..."
     rm -rf ./test
+    rm -rf ./testresources
 fi
 echo "Test successful."
 exit 0

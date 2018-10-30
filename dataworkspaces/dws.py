@@ -14,6 +14,7 @@ from .commands.init import init_command
 from .commands.add import add_command
 from .commands.snapshot import snapshot_command
 from .commands.restore import restore_command
+from .commands.status import status_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -217,10 +218,12 @@ cli.add_command(restore)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--limit', type=int, default=0, help='Number of previous snapshots to show (most recent first)')
 @click.pass_context
-def status(ctx, workspace_dir):
+def status(ctx, workspace_dir, limit):
     """Show the history of snapshots"""
-    pass
+    ns = ctx.obj
+    status_command(workspace_dir, limit, ns.batch, ns.verbose)
 
 cli.add_command(status)
 
