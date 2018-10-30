@@ -26,6 +26,9 @@ class LocalFileResource(Resource):
         d['local_path'] = self.local_path
         return d
 
+    def get_local_path_if_any(self):
+        return self.local_path
+    
     def add_prechecks(self):
         if not(os.path.isdir(self.local_path)):
             raise ConfigurationError(self.local_path + ' does not exist')

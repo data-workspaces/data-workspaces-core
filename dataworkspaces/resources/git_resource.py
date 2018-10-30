@@ -34,6 +34,9 @@ class GitRepoResource(Resource):
     def local_params_to_json(self):
         return {'local_path':self.local_path}
 
+    def get_local_path_if_any(self):
+        return self.local_path
+    
     def add_prechecks(self):
         if not actions.is_git_repo(self.local_path):
             raise ConfigurationError(self.local_path + ' is not a git repository')

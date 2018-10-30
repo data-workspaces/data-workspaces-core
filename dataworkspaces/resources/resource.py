@@ -50,6 +50,14 @@ class Resource:
         """
         return {}
 
+    def get_local_path_if_any(self):
+        """If the resource has an associated local path on the system,
+        return it. Othewise, return None. This is used for determining
+        whether the local path is under the same directory
+        as the data workspace. In that case, we add it to .gitignore
+        """
+        return None
+
     def add_prechecks(self):
         pass
 
