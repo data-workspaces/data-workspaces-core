@@ -7,6 +7,7 @@ import dataworkspaces.commands.actions as actions
 from dataworkspaces import __version__
 
 SNAPSHOT_HISTORY_FILE = '.dataworkspace/snapshots/snapshot_history.json'
+RESOURCE_FILE = '.dataworkspace/resources.json'
 
 
 class ReadSnapshotHistory(actions.Action):
@@ -27,18 +28,24 @@ class ReadSnapshotHistory(actions.Action):
     def __str__(self):
         return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
 
-def status_command(workspace_dir, limit, batch, verbose):
+
+def show_snapshot_history(ns, workspace_dir, limit, batch, verbose):
     snapshot_file = os.path.join(workspace_dir, SNAPSHOT_HISTORY_FILE)
     if not os.path.exists(snapshot_file):
         if verbose:
             click.echo('No snapshot file')
         return
 
-    ns = actions.Namespace()
     plan = [ ]
     output_history = ReadSnapshotHistory(ns, verbose, snapshot_file, limit=limit)
     plan.append(output_history)
     actions.run_plan(plan, "Output recent snapshots", "done", batch=batch, verbose=verbose) 
 
-
+def show_current_status(ns, workspace_dir, batch, verbose):
+    rsrc_file = os.path.join
+def status_command(workspace_dir, history, limit, batch, verbose):
+    ns = actions.Namespace()
+    show_current_status(ns, workspace_dir, batch, verbose)
+    if history:
+        show_snapshot_history(ns, workspace_dir, limit, batch, verbose)
 
