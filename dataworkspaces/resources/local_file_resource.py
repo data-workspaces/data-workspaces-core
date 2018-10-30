@@ -10,6 +10,7 @@ from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
 from .resource import Resource, ResourceFactory
 from . import hashtree
+from .results_utils import move_current_files_local_fs
 
 LOCAL_FILE = 'file'
 
@@ -44,6 +45,11 @@ class LocalFileResource(Resource):
 
     def snapshot_prechecks(self):
         pass
+
+
+    def results_move_current_files(self, rel_dest_root, exclude_files,
+                                   exclude_dirs_re):
+        moved_files = move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
 
     def snapshot(self):
         rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
