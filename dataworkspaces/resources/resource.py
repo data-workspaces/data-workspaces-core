@@ -1,11 +1,9 @@
 """
 Base classes for resoures
 """
-import re
 import json
 import copy
-from urllib.parse import urlparse
-from os.path import expanduser, isdir, abspath, join, exists
+from os.path import join, exists
 
 
 from dataworkspaces.errors import InternalError
@@ -26,10 +24,9 @@ RESOURCE_ROLE_CHOICES = [
 
 class Resource:
     """Base class for all resources"""
-    def __init__(self, scheme, name, url, role, workspace_dir):
+    def __init__(self, scheme, name, role, workspace_dir):
         self.scheme = scheme
         self.name = name
-        self.url = url
         self.role = role
         self.workspace_dir = workspace_dir
 
@@ -44,9 +41,22 @@ class Resource:
         return {
             'resource_type': self.scheme,
             'name': self.name,
-            'url': self.url,
             'role': self.role
         }
+
+    def local_params_to_json(self):
+        """Return a dict of local parameters in a format that can be serialized directly
+        to json. This will be saved in the file resource_local_params.json.
+        """
+        return {}
+
+    def get_local_path_if_any(self):
+        """If the resource has an associated local path on the system,
+        return it. Othewise, return None. This is used for determining
+        whether the local path is under the same directory
+        as the data workspace. In that case, we add it to .gitignore
+        """
+        return None
 
     def add_prechecks(self):
         pass
@@ -96,7 +106,7 @@ class ResourceFactory:
         arguments"""
         pass
 
-    def from_json(self, json_data, workspace_dir, batch, verbose):
+    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         pass
 
@@ -114,17 +124,31 @@ RESOURCE_TYPES = {
     
 }
 
+def get_resource_file_path(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/resources.json')
+
+def get_local_params_file_path(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/resource_local_params.json')
+
+def get_snapshot_hash_file_path(workspace_dir, snapshot_hash):
+    return join(workspace_dir,
+                '.dataworkspace/snapshots/snapshot-%s.json'% snapshot_hash)
 class ResourceCollection:
     """A collection of resources, with a json representation.
     Base class for resources.json and snapshot manifests.
     """
-    def __init__(self, resources_json_file, workspace_dir, batch, verbose):
+    def __init__(self, resources_json_file, local_params_file, workspace_dir, batch, verbose):
         with open(resources_json_file, 'r') as f:
             self.json_data = json.load(f)
-        self.resources = [get_resource_from_json(rdata, workspace_dir, batch, verbose)
+        with open(local_params_file, 'r') as f:
+            self.local_params = json.load(f)
+        def get_local_params(rname):
+            return self.local_params[rname] if rname in self.local_params else {}
+        self.resources = [get_resource_from_json(rdata,
+                                                 get_local_params(rdata['name']),
+                                                 workspace_dir, batch, verbose)
                           for rdata in self.json_data]
         self.by_name = {r.name:r for r in self.resources}
-        self.urls = set([r.url for r in self.resources])
 
     def is_a_current_name(self, name):
         return name in self.by_name
@@ -137,58 +161,63 @@ class ResourceCollection:
         self.resources.append(r)
         self.json_data.append(r.to_json())
         self.by_name[r.name] = r
-        self.urls.add(r.url)
 
 class CurrentResources(ResourceCollection):
     """In-memory representation of resources.json - the list of resources in the
     workspace.
     """
-    def __init__(self, resources_json_file, workspace_dir, batch, verbose):
-        super().__init__(resources_json_file, workspace_dir, batch, verbose)
+    def __init__(self, resources_json_file, local_params_file, workspace_dir, batch, verbose):
+        super().__init__(resources_json_file, local_params_file,
+                         workspace_dir, batch, verbose)
         self.json_file = resources_json_file
 
     def write_current_resources(self):
         with open(self.json_file, 'w') as f:
             json.dump(self.json_data, f, indent=2)
 
-    def write_snapshot_manifest(self, snapshot_filepath, url_to_hashval):
+    def write_snapshot_manifest(self, snapshot_filepath, name_to_hashval):
         sn_json = copy.deepcopy(self.json_data)
         for rdata in sn_json:
-            rdata['hash'] = url_to_hashval[rdata['url']]
+            rdata['hash'] = name_to_hashval[rdata['name']]
         with open(snapshot_filepath, 'w') as f:
             json.dump(sn_json, f, indent=2)
 
     def __str__(self):
-        resources = ['%s[%s]' % (rname, self.by_name[rname].url)
-                     for rname in sorted(self.by_name.keys())]
+        resources = sorted(self.by_name.keys())
         return 'CurrentResources(%s)' % ', '.join(resources)
         
     @staticmethod
     def read_current_resources(workspace_dir, batch, verbose):
-        resource_file = join(workspace_dir, '.dataworkspace/resources.json')
+        resource_file = get_resource_file_path(workspace_dir)
         if not exists(resource_file):
             raise InternalError("Missing current resources file %s" % resource_file)
-        return CurrentResources(resource_file, workspace_dir, batch, verbose)
+        local_params_file = get_local_params_file_path(workspace_dir)
+        if not exists(local_params_file):
+            raise InternalError("Missing resource local params file %s" %
+                                local_params_file)
+        return CurrentResources(resource_file, local_params_file, workspace_dir, batch, verbose)
 
 
 class SnapshotResources(ResourceCollection):
     """In-memory represtation of a snapshot file. The JSON representation is
     the same as resources.json, but we add the hash for each resource.
     """
-    def __init__(self, snapshot_json_file, workspace_dir, batch, verbose):
-        super().__init__(snapshot_json_file, workspace_dir, batch, verbose)
-        self.url_to_hashval = {rdata['url']:rdata['hash'] for rdata in self.json_data}
+    def __init__(self, snapshot_json_file, local_params_file,
+                 workspace_dir, batch, verbose):
+        super().__init__(snapshot_json_file, local_params_file,
+                         workspace_dir, batch, verbose)
+        self.name_to_hashval = {rdata['name']:rdata['hash'] for rdata in self.json_data}
         self.json_file = snapshot_json_file
-        self.resources_file = join(workspace_dir, '.dataworkspace/resources.json')
+        self.resources_file = get_resource_file_path(workspace_dir)
 
-    def write_revised_snapshot_manifest(self, snapshot_filepath, url_to_hashval):
+    def write_revised_snapshot_manifest(self, snapshot_filepath, name_to_hashval):
         sn_json = copy.deepcopy(self.json_data)
         for rdata in sn_json:
             # only new resources will need hash entries added
             if 'hash' not in rdata:
-                hashval = url_to_hashval[rdata['url']]
+                hashval = name_to_hashval[rdata['name']]
                 rdata['hash'] = hashval
-                self.url_to_hashval[rdata['url']] = hashval
+                self.name_to_hashval[rdata['name']] = hashval
         with open(snapshot_filepath, 'w') as f:
             json.dump(sn_json, f, indent=2)
 
@@ -204,10 +233,15 @@ class SnapshotResources(ResourceCollection):
 
     @staticmethod
     def read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose):
-        filepath = join(workspace_dir, '.dataworkspace/snapshots/snapshot-%s.json'% snapshot_hash)
+        filepath = get_snapshot_hash_file_path(workspace_dir, snapshot_hash)
         if not exists(filepath):
             raise InternalError("Missing snapshot manifest file %s" % filepath)
-        return SnapshotResources(filepath, workspace_dir, batch, verbose)
+        local_params_file = get_local_params_file_path(workspace_dir)
+        if not exists(local_params_file):
+            raise InternalError("Missing resource local params file %s"%
+                                local_params_file)
+        return SnapshotResources(filepath, local_params_file,
+                                 workspace_dir, batch, verbose)
 
 
 def get_factory_by_scheme(scheme):
@@ -239,7 +273,7 @@ def get_resource_from_command_line(scheme, role, name,
     return factory.from_command_line(role, name, workspace_dir, batch, verbose,
                                      *args)
 
-def get_resource_from_json(json_data, workspace_dir, batch, verbose):
+def get_resource_from_json(json_data, local_params, workspace_dir, batch, verbose):
     factory = get_factory_by_scheme(json_data['resource_type'])
-    return factory.from_json(json_data, workspace_dir, batch, verbose)
+    return factory.from_json(json_data, local_params, workspace_dir, batch, verbose)
 

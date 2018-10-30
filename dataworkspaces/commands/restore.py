@@ -14,7 +14,7 @@ class RestoreResource(actions.Action):
     def __init__(self, ns, verbose, resource, snapshot_resources):
         super().__init__(ns, verbose)
         self.resource = resource
-        self.hashval = snapshot_resources.url_to_hashval[resource.url]
+        self.hashval = snapshot_resources.name_to_hashval[resource.name]
         self.resource.restore_prechecks(self.hashval)
 
     def run(self):
@@ -40,10 +40,10 @@ class AddResourceToSnapshot(actions.Action):
         super().__init__(ns, verbose)
         self.resource = resource
         self.snapshot_resources = snapshot_resources
-        # A given resource should resolve to a unique URL, so this is the best way
+        # A given resource should resolve to a unique name, so this is the best way
         # to check for duplication.
-        if resource.url in snapshot_resources.urls:
-            raise ConfigurationError("A resource with url '%s' already in snapshot" % resource.url)
+        if snapshot_resources.is_a_current_name(resource.name):
+            raise ConfigurationError("A resource with name '%s' already in snapshot" % resource.url)
 
     def run(self):
         self.snapshot_resources.add_resource(self.resource)

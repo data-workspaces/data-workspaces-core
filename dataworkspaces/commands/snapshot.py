@@ -25,7 +25,7 @@ class TakeResourceSnapshot(actions.Action):
         self.resource.snapshot_prechecks()
 
     def run(self):
-        self.ns.map_of_hashes[self.resource.url] = self.resource.snapshot()
+        self.ns.map_of_hashes[self.resource.name] = self.resource.snapshot()
 
     def __str__(self):
         return "Run snapshot actions for %s" % str(self.resource)
