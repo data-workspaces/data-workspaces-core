@@ -218,10 +218,10 @@ cli.add_command(restore)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
-@click.option('--history', type=bool, default=False, help='Show previous snapshots')
+@click.option('--history', is_flag=True, default=False, help='Show previous snapshots')
 @click.option('--limit', type=int, default=0, help='Number of previous snapshots to show (most recent first)')
 @click.pass_context
-def status(ctx, workspace_dir, limit):
+def status(ctx, workspace_dir, history, limit):
     """Show the history of snapshots"""
     ns = ctx.obj
     status_command(workspace_dir, history, limit, ns.batch, ns.verbose)
