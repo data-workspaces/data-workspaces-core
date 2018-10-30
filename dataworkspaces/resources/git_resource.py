@@ -5,6 +5,8 @@ import subprocess
 from os.path import realpath, basename
 import re
 
+import click
+
 from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
 from .resource import Resource, ResourceFactory
@@ -21,14 +23,17 @@ def is_git_dirty(cwd):
 DOT_GIT_RE=re.compile(re.escape('.git'))
 
 class GitRepoResource(Resource):
-    def __init__(self, name, role, workspace_dir, local_path, verbose=False):
+    def __init__(self, name, role, workspace_dir, remote_origin_url,
+                 local_path, verbose=False):
         super().__init__('git', name, role, workspace_dir)
         self.local_path = local_path
+        self.remote_origin_url = remote_origin_url
         self.verbose = verbose
 
     def to_json(self):
         d = super().to_json()
         d['local_path'] = self.local_path
+        d['remote_origin_url'] = self.remote_origin_url
         return d
 
     def local_params_to_json(self):
@@ -36,12 +41,9 @@ class GitRepoResource(Resource):
 
     def get_local_path_if_any(self):
         return self.local_path
-    
+
     def add_prechecks(self):
-        if not actions.is_git_repo(self.local_path):
-            raise ConfigurationError(self.local_path + ' is not a git repository')
-        if realpath(self.local_path)==realpath(self.workspace_dir):
-            raise ConfigurationError("Cannot add the entire workspace as a git resource")
+        pass
 
     def add(self):
         pass
@@ -95,21 +97,37 @@ class GitRepoResource(Resource):
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
 
+def get_remote_origin(local_path, verbose=False):
+    args = [actions.GIT_EXE_PATH, 'config', '--get', 'remote.origin.url']
+    if verbose:
+        click.echo(" ".join(args) + " [run in %s]" % local_path)
+    cp = subprocess.run(args, cwd=local_path, encoding='utf-8',
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if cp.returncode!=0:
+        click.echo("Remote origin not found for git repo at %s" % local_path)
+        return None
+    return cp.stdout.rstrip()
+
 
 class GitRepoFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace_dir, batch, verbose,
                           local_path):
         """Instantiate a resource object from the add command's
         arguments"""
-        url = 'git:' + local_path
+        if not actions.is_git_repo(local_path):
+            raise ConfigurationError(local_path + ' is not a git repository')
+        if realpath(local_path)==realpath(workspace_dir):
+            raise ConfigurationError("Cannot add the entire workspace as a git resource")
+        remote_origin = get_remote_origin(local_path, verbose=verbose)
         return GitRepoResource(name, role, workspace_dir,
-                               local_path, verbose)
+                               remote_origin, local_path, verbose)
 
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']=='git'
         return GitRepoResource(json_data['name'], json_data['role'],
-                               workspace_dir, json_data['local_path'],
+                               workspace_dir, json_data['remote_origin_url'],
+                               json_data['local_path'],
                                verbose)
 
     def suggest_name(self, local_path):
