@@ -15,6 +15,7 @@ from .commands.add import add_command
 from .commands.snapshot import snapshot_command
 from .commands.restore import restore_command
 from .commands.status import status_command
+from .commands.show import show_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -227,6 +228,15 @@ def status(ctx, workspace_dir, limit):
 
 cli.add_command(status)
 
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.pass_context
+def show(ctx, workspace_dir, limit):
+    """Show the current state of the workspace"""
+    ns = ctx.obj
+    show_command(workspace_dir, limit, ns.batch, ns.verbose)
+
+cli.add_command(show)
 
 
 if __name__=='__main__':

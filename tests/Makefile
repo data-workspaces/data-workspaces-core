@@ -7,6 +7,6 @@ test:
 	python test_move_results.py
 
 clean:
-	rm -rf ./test ./testresources
+	rm -rf ./test
 
 .PHONY: test help clean
