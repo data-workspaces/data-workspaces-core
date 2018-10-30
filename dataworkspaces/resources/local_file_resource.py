@@ -19,6 +19,7 @@ class LocalFileResource(Resource):
         super().__init__(LOCAL_FILE, name, url, role, workspace_dir)
         self.local_path = local_path
         self.ignore = ignore
+        self.rsrcdir = os.path.abspath(self.workspace_dir + '/.dataworkspace/' + LOCAL_FILE + '/' + self.role + '/' + self.name)
 
     def to_json(self):
         d = super().to_json()
@@ -36,8 +37,8 @@ class LocalFileResource(Resource):
 
     def add(self):
         try:
-            rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
-            os.makedirs(rsrcdir)
+            # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
+            os.makedirs(self.rsrcdir)
         except OSError as exc:
             if exc.errno == EEXIST and os.path.isdir(rsrcdir):
                 pass
@@ -52,13 +53,12 @@ class LocalFileResource(Resource):
         moved_files = move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
 
     def snapshot(self):
-        rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
-        h = hashtree.generate_hashes(rsrcdir, self.local_path, ignore=self.ignore)
+        # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
+        h = hashtree.generate_hashes(self.rsrcdir, self.local_path, ignore=self.ignore)
         return h.strip()
 
     def restore_prechecks(self, hashval):
-        rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.local_path)
-        rc = hashtree.check_hashes(hashval, rsrcdir, self.local_path, ignore=self.ignore)
+        rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)
         if not rc:
             raise ConfigurationError("Local file structure not compatible with saved hash")
 
