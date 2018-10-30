@@ -25,13 +25,15 @@ cd ./test
 WORKDIR=`pwd`
 
 # create a small git repo
-mkdir -p code
-cd code
+mkdir -p code-origin
+cd code-origin
 git init
 echo "print('test')" >test.py
 git add test.py
 git commit -m "initial version"
 cd ..
+# clone our repo so that it has a "remote" origin
+git clone code-origin/.git code
 
 # create a local directory structure
 mkdir -p local_files
