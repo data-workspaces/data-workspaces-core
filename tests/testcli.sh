@@ -2,21 +2,35 @@
 # A simple test case
 set -e
 KEEP=0
-VERBOSE=""
-BATCH=""
+ARGS=""
+VERBOSE="no"
 for arg in $*; do
   echo $arg
   if [[ "$arg" == "--keep" ]]; then
     KEEP=1
   fi
   if [[ "$arg" == "--verbose" ]]; then
-    VERBOSE="--verbose"
+    ARGS="--verbose"
+    VERBOSE="yes"
   fi
   if [[ "$arg" == "--batch" ]]; then
-    BATCH="--batch"
+    ARGS="$ARGS --batch"
   fi
 done
   
+# Run a command, potentially print it before execution
+function run {
+  if [[ "$VERBOSE" == "yes" ]]; then
+    echo $*
+  fi
+  $*        
+}
+
+function debug {
+  if [[ "$VERBOSE" == "yes" ]]; then
+    echo $*
+  fi
+}
 
 TESTSDIR=`pwd`
 rm -rf ./test
@@ -28,6 +42,17 @@ rm -rf ./remotes
 mkdir ./remotes # remote origins for our git repos
 cd ./remotes
 REMOTE=`pwd`
+cd $TESTSDIR
+rm -rf ./clones
+mkdir ./clones # keep other clones of our repos
+cd ./clones
+CLONES=`pwd`
+
+debug "TESTSDIR=$TESTSDIR"
+debug "WORKDIR=$WORKDIR"
+debug "REMOTE=$REMOTE"
+debug "CLONES=$CLONES"
+debug
 
 # create a small git repo
 cd $REMOTE
@@ -67,14 +92,14 @@ git remote add origin $REMOTE/results_git.git
 cd $REMOTE
 git init --bare test.git
 
-cd $WORKDIR
-dws $VERBOSE init
-git remote add origin $REMOTE/test.git
-dws $VERBOSE add git --role=code --name=code-git ./code
-dws $VERBOSE add local-files --role=code --name=code-local ./local_files
-dws $VERBOSE add git --role=results --name=results-git ./results_git
-echo dws $VERBOSE snapshot -m "first version" V1
-dws $VERBOSE snapshot -m "first version" V1
+run cd $WORKDIR
+run dws $ARGS init
+run git remote add origin $REMOTE/test.git
+run dws $ARGS add git --role=code --name=code-git ./code
+run dws $ARGS add local-files --role=code --name=code-local ./local_files
+run dws $ARGS add git --role=results --name=results-git ./results_git
+echo dws $ARGS snapshot -m "first version" V1
+dws $ARGS snapshot -m "first version" V1
 
 # make some changes in the git repo
 cd code
@@ -92,34 +117,48 @@ git commit -m "second version"
 cd ..
 
 # take a snapshot and then restore to v1
-echo dws $VERBOSE snapshot -m "second version" V2
-dws $VERBOSE snapshot -m "second version" V2
-echo dws $VERBOSE restore V1
-dws $VERBOSE $BATCH restore V1
+echo dws $ARGS snapshot -m "second version" V2
+dws $ARGS snapshot -m "second version" V2
+echo dws $ARGS restore V1
+dws $ARGS restore V1
 
 # Restore the git repo back to v2
-dws $VERBOSE $BATCH restore --only code-git V2
+echo dws $ARGS restore --only code-git V2
+dws $ARGS restore --only code-git V2
 
 # Now make a change to the local dir
 echo "Removing f1"
 rm local_files/f1
 # Should fail
-dws $VERBOSE $BATCH restore V1 || echo 'Test failed as expected'
+run dws $ARGS restore V1 || echo 'Test failed as expected'
 echo 'File 1' > local_files/f1
 
-dws $VERBOSE status
+run dws $ARGS status
 
-echo -n "verify that repo is not dirty..."
+echo -n "verify that dws repo is not dirty..."
 git diff --exit-code --quiet
 echo "ok"
 
-dws $VERBOSE push
+run dws $ARGS push
+
+# create a clone of code and make some updates
+cd $CLONES
+git clone $REMOTE/code.git
+cd ./code
+echo "this is a test" >README.txt
+git add README.txt
+git commit -m 'added readme'
+git push origin master
+
+run cd $WORKDIR
+run dws $ARGS pull
 
 cd $TESTSDIR
 if [[ "$KEEP" == 0 ]]; then
     echo "test cleanup..."
     rm -rf ./test
     rm -rf ./remotes
+    rm -rf ./clones
 fi
 echo "Test successful."
 exit 0

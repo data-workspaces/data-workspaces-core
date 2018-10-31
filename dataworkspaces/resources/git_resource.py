@@ -126,6 +126,17 @@ class GitRepoResource(Resource):
         actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
                                 cwd=self.local_path, verbose=self.verbose)
 
+    def pull_prechecks(self):
+        if is_git_dirty(self.local_path):
+            raise ConfigurationError(
+                "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %
+                self.local_path)
+
+    def pull(self):
+        """Pull from remote origin, if any"""
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
+                                cwd=self.local_path, verbose=self.verbose)
+
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
 

@@ -101,6 +101,13 @@ class Resource:
         """Push to remote origin, if any"""
         pass
 
+    def pull_prechecks(self):
+        pass
+
+    def pull(self):
+        """Pull from remote origin, if any"""
+        pass
+
     def __str__(self):
         return 'Resource %s in role %s' % (self.name, self.role)
 
