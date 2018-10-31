@@ -20,6 +20,23 @@ def is_git_dirty(cwd):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, cwd=cwd)
     return result.returncode!=0
 
+def is_pull_needed_from_remote(cwd, verbose):
+    """Do check whether we need a pull, we get the hash of the HEAD
+    of the remote's master branch. Then, we see if we have this object locally.
+    """
+    cmd = [actions.GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/master']
+    try:
+        hashval = actions.call_subprocess(cmd, cwd, verbose).rstrip()
+        if hashval=='':
+            return False # remote has not commits
+    except Exception as e:
+        raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
+                                 cwd) from e
+    #cmd = [actions.GIT_EXE_PATH, 'show', '--oneline', hashval]
+    cmd = [actions.GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
+    rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
+    return rc!=0
+
 DOT_GIT_RE=re.compile(re.escape('.git'))
 
 class GitRepoResource(Resource):
@@ -98,10 +115,14 @@ class GitRepoResource(Resource):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.local_path)
+        if is_pull_needed_from_remote(self.local_path, self.verbose):
+            raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
+                                     self.name)
 
     def push(self):
         """Push to remote origin, if any"""
-        pass
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
+                                cwd=self.local_path, verbose=self.verbose)
 
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)

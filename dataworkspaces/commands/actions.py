@@ -47,7 +47,6 @@ def call_subprocess_for_rc(args, cwd, verbose=False):
     return cp.returncode
 
 
-
 def find_exe(exe_name, additional_search_locations=[]):
     """Find an executable, first checking in the current path
     (as would be done by the shell), and then searching including
@@ -130,10 +129,11 @@ class Namespace(dict):
     def __getattr__(self, name):
         if name in self:
             v = self[name]
-            if isinstance(v, Promise):
-                raise AttributeError("Attribute '%s' is still a promise from '%s' for a %s" % (name, v.action_name, v.expected_type))
-            else:
-                return v
+            return v
+            # if isinstance(v, Promise):
+            #     raise AttributeError("Attribute '%s' is still a promise from '%s' for a %s" % (name, v.action_name, v.expected_type))
+            # else:
+            #     return v
         else:
             raise AttributeError("No such attribute: " + name)
 
@@ -185,7 +185,7 @@ class NamespaceRef:
         return self.ns[self.property_name]
 
     def __str__(self):
-        return "Value stored in namespace property %s" % self.property_name
+        return "Value stored in namespace property %s" % self.xproperty_name
 
     def __repr__(self):
         return "NamespaceRef(%s)" % self.property_name
@@ -285,10 +285,10 @@ class GitAdd(GitBaseAction):
                         self.base_directory, verbose=self.verbose)
 
     def __str__(self):
+        filelist = ', '.join(self.files_to_add) if not callable(self.files_to_add) \
+                   else self.files_to_add()
         return "Add files to git repository at %s: %s" % \
-            (self.base_directory, ', '.join(self.files_to_add))
-
-
+            (self.base_directory, filelist)
 
 class GitCommit(GitBaseAction):
     """Commit the current transaction. The commit message

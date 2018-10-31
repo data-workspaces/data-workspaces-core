@@ -4,7 +4,8 @@ import click
 from dataworkspaces.errors import ConfigurationError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import CurrentResources
-from dataworkspaces.resources.git_resource import is_git_dirty
+from dataworkspaces.resources.git_resource import \
+    is_git_dirty, is_pull_needed_from_remote
 
 class PushResource(actions.Action):
     def __init__(self, ns, verbose, r):
@@ -27,11 +28,17 @@ class PushWorkspace(actions.Action):
         if is_git_dirty(workspace_dir):
             raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing." %
                                      workspace_dir)
+        if is_pull_needed_from_remote(workspace_dir, self.verbose):
+            raise ConfigurationError("Data workspace at %s requires a pull from remote origin"%
+                                     workspace_dir)
+
     def run(self):
         click.echo("Pushing workspace...")
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
+                                cwd=self.workspace_dir, verbose=self.verbose)
 
     def __str__(self):
-        return "PUsh state of data workspace metadata to origin"
+        return "Push state of data workspace metadata to origin"
 
 
 def push_command(workspace_dir, batch=False, verbose=False,

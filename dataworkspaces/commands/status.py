@@ -40,14 +40,14 @@ class ReadResources(actions.Action):
             click.echo(' '*indent, nl=False)
             click.echo('git repo %s' % rsrc['name'])
             if self.verbose:
-                click.echo(' '*(indent+2), 'Url=%s LocalPath=%s' % (rsrc['url'], rsrc['local_path']))
+                click.echo(' '*(indent+2)+ ('Remote=%s' % rsrc['remote_origin_url']))
             return
         if rsrc['resource_type'] == 'file':
             click.echo(' '*indent, nl=False)
             click.echo('local files %s' % rsrc['name'])
             if self.verbose:
                 click.echo(' '*(indent+2), nl=False)
-                click.echo('Url=%s LocalPath=%s' % (rsrc['url'], rsrc['local_path']))
+                click.echo('LocalPath=%s' % rsrc['local_path'])
             return
 
     def run(self):
@@ -71,7 +71,7 @@ class ReadResources(actions.Action):
 
 
     def __str__(self):
-        return ("Read snapshot metadata from %s" % self.snapshot_history_file)
+        return ("Read resources from %s" % self.resource_file)
 
 
 def show_snapshot_history(ns, workspace_dir, limit, batch, verbose):

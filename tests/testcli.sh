@@ -21,13 +21,13 @@ done
 TESTSDIR=`pwd`
 rm -rf ./test
 mkdir ./test
+cd ./test
+WORKDIR=`pwd`
+cd $TESTSDIR
 rm -rf ./remotes
 mkdir ./remotes # remote origins for our git repos
 cd ./remotes
-REMOTEDIR=`pwd`
-cd ..
-cd ./test
-WORKDIR=`pwd`
+REMOTE=`pwd`
 
 # create a small git repo
 cd $REMOTE
@@ -39,7 +39,7 @@ git init
 echo "print('test')" >test.py
 git add test.py
 git commit -m "initial version"
-git remote add origin $REMOTEDIR/code.git
+git remote add origin $REMOTE/code.git
 
 # create a local directory structure
 cd $WORKDIR
@@ -61,15 +61,15 @@ echo "File 1" >f1
 echo "File 2" >f2
 git add f1 f2
 git commit -m "initial version"
-git remote add origin $REMOTEDIR/results_git.git
+git remote add origin $REMOTE/results_git.git
 
 # create a git repo to serve as the origin for our data workspace
-cd $REMOTEDIR
+cd $REMOTE
 git init --bare test.git
 
 cd $WORKDIR
 dws $VERBOSE init
-git remote add origin $REMOTEDIR/test.git
+git remote add origin $REMOTE/test.git
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE add git --role=results --name=results-git ./results_git
@@ -109,10 +109,11 @@ echo 'File 1' > local_files/f1
 
 dws $VERBOSE status
 
-echo "verify that repo is not dirty"
+echo -n "verify that repo is not dirty..."
 git diff --exit-code --quiet
+echo "ok"
 
-dws push
+dws $VERBOSE push
 
 cd $TESTSDIR
 if [[ "$KEEP" == 0 ]]; then
