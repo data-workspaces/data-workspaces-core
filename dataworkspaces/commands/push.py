@@ -41,14 +41,38 @@ class PushWorkspace(actions.Action):
         return "Push state of data workspace metadata to origin"
 
 
+def get_resources_to_process(current_resources, only, skip):
+    if only is not None:
+        only_names = only.split(',')
+        for name in only_names:
+            if not current_resources.is_a_current_name(name):
+                raise click.UsageError("No resource '%s' exists in current workspace" % name)
+        return only_names
+    elif skip is not None:
+        skip_names = set(skip.split(','))
+        for skip_name in skip_names:
+            if not current_resources.is_a_current_name(skip_name):
+                raise clickUsageError("NO resource '%s' exists in current workspace "%
+                                      skip_name)
+        names_to_push = []
+        for name in current_resources.get_names():
+            if name not in skip_names:
+                names_to_push.append(name)
+        return names_to_push
+    else:
+        return current_resources.get_names()
+
 def push_command(workspace_dir, batch=False, verbose=False,
                  only=None, skip=None, only_workspace=False):
     plan = []
     ns = actions.Namespace()
-    current_resources = CurrentResources.read_current_resources(workspace_dir,
-                                                                batch, verbose)
-    for r in current_resources.resources:
-        plan.append(PushResource(ns, verbose, r))
+    if not only_workspace:
+        current_resources = CurrentResources.read_current_resources(workspace_dir,
+                                                                    batch, verbose)
+        for name in get_resources_to_process(current_resources, only, skip):
+            r = current_resources.by_name[name]
+            plan.append(PushResource(ns, verbose, r))
+
     plan.append(PushWorkspace(ns, verbose, workspace_dir))
     actions.run_plan(plan, "push state to origins",
                      "pushed state to origins", batch=batch, verbose=verbose)
