@@ -18,27 +18,31 @@ for arg in $*; do
 done
   
 
-SAVEDIR=`pwd`
+TESTSDIR=`pwd`
 rm -rf ./test
 mkdir ./test
+rm -rf ./remotes
 mkdir ./remotes # remote origins for our git repos
+cd ./remotes
+REMOTEDIR=`pwd`
+cd ..
 cd ./test
 WORKDIR=`pwd`
 
 # create a small git repo
-cd $SAVEDIR
-mkdir -p remotes/code-origin
-cd remotes/code-origin
+cd $REMOTE
+git init --bare code.git
+cd $WORKDIR
+mkdir code
+cd code
 git init
 echo "print('test')" >test.py
 git add test.py
 git commit -m "initial version"
-cd ..
-# clone our repo so that it has a "remote" origin
-cd $WORKDIR
-git clone ../remotes/code-origin/.git code
+git remote add origin $REMOTEDIR/code.git
 
 # create a local directory structure
+cd $WORKDIR
 mkdir -p local_files
 echo 'File 1' > local_files/f1
 echo 'File 2' > local_files/f2
@@ -47,6 +51,9 @@ echo 'File 3' > local_files/dir/f3
 ls
 
 # create a git repo for storing results
+cd $REMOTE
+git init --bare results_git.git
+cd $WORKDIR
 mkdir -p results_git
 cd results_git
 git init
@@ -54,10 +61,15 @@ echo "File 1" >f1
 echo "File 2" >f2
 git add f1 f2
 git commit -m "initial version"
-cd ..
+git remote add origin $REMOTEDIR/results_git.git
+
+# create a git repo to serve as the origin for our data workspace
+cd $REMOTEDIR
+git init --bare test.git
 
 cd $WORKDIR
 dws $VERBOSE init
+git remote add origin $REMOTEDIR/test.git
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE add git --role=results --name=results-git ./results_git
@@ -97,10 +109,12 @@ echo 'File 1' > local_files/f1
 
 dws $VERBOSE status
 
-# verify that the dws git repo is not dirty
+echo "verify that repo is not dirty"
 git diff --exit-code --quiet
 
-cd $SAVEDIR
+dws push
+
+cd $TESTSDIR
 if [[ "$KEEP" == 0 ]]; then
     echo "test cleanup..."
     rm -rf ./test

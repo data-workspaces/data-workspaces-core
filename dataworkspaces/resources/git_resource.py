@@ -93,6 +93,16 @@ class GitRepoResource(Resource):
         actions.call_subprocess([actions.GIT_EXE_PATH, 'reset', '--hard', hashval],
                                 cwd=self.local_path, verbose=self.verbose)
 
+    def push_prechecks(self):
+        if is_git_dirty(self.local_path):
+            raise ConfigurationError(
+                "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
+                self.local_path)
+
+    def push(self):
+        """Push to remote origin, if any"""
+        pass
+
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
 

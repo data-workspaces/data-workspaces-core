@@ -118,14 +118,6 @@ def init(ctx, name):
 
 cli.add_command(init)
 
-@click.command()
-@click.pass_context
-def clone(ctx):
-    """Initialize a workspace from a remote source"""
-    pass
-
-cli.add_command(clone)
-
 
 # The add command has subcommands for each resource type.
 # This should be dynamically extensible, but we will hard
@@ -192,6 +184,12 @@ add.add_command(git)
 def snapshot(ctx, workspace_dir, message, tag):
     """Take a snapshot of the current workspace's state"""
     ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
     snapshot_command(workspace_dir, ns.batch, ns.verbose, tag, message)
 
 cli.add_command(snapshot)
@@ -217,6 +215,12 @@ def restore(ctx, workspace_dir, only, leave, no_new_snapshot, tag_or_hash):
     ns = ctx.obj
     if (only is not None) and (leave is not None):
         raise click.BadOptionUsage(message="Please specify either --only or --leave, but not both")
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
     restore_command(workspace_dir, ns.batch, ns.verbose, tag_or_hash,
                     only=only, leave=leave, no_new_snapshot=no_new_snapshot)
 
@@ -241,6 +245,12 @@ def push(ctx, workspace_dir, only, skip, only_workspace):
                  (1 if only_workspace else 0)
     if option_cnt>1:
         raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
     push_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
                  only_workspace=only_workspace)
 
@@ -265,6 +275,12 @@ def pull(ctx, workspace_dir, only, skip, only_workspace):
                  (1 if only_workspace else 0)
     if option_cnt>1:
         raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
     pull_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
                  only_workspace=only_workspace)
 
@@ -291,6 +307,12 @@ cli.add_command(clone)
 def status(ctx, workspace_dir, history, limit):
     """Show the history of snapshots"""
     ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
     status_command(workspace_dir, history, limit, ns.batch, ns.verbose)
 
 cli.add_command(status)

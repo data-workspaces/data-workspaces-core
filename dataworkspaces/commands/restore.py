@@ -8,7 +8,8 @@ import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
     CurrentResources, SnapshotResources
-from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory
+from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
+                      get_snapshot_history_file_path
 
 class RestoreResource(actions.Action):
     def __init__(self, ns, verbose, resource, snapshot_resources):
@@ -123,7 +124,7 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
 def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                     only=None, leave=None, no_new_snapshot=False):
     # First, find the history entry
-    sh_file = join(workspace_dir, '.dataworkspace/snapshots/snapshot_history.json')
+    sh_file = get_snapshot_history_file_path(workspace_dir)
     with open(sh_file, 'r') as f:
         sh_data = json.load(f)
     is_hash = actions.is_a_git_hash(tag_or_hash)

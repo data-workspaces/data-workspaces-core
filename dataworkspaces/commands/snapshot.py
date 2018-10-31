@@ -102,6 +102,9 @@ class AppendSnapshotHistory(actions.Action):
     def __str__(self):
         return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
 
+def get_snapshot_history_file_path(workspace_dir):
+    return join(workspace_dir,
+                '.dataworkspace/snapshots/snapshot_history.json')
 
 def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     print("snapshot of %s, tag=%s, message=%s" % (workspace_dir, tag, message))
@@ -113,8 +116,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     ns = actions.Namespace()
     ns.map_of_hashes = actions.Promise(dict, "TakeResourceSnapshot")
 
-    snapshot_history_file = join(workspace_dir,
-                                 '.dataworkspace/snapshots/snapshot_history.json')
+    snapshot_history_file = get_snapshot_history_file_path(workspace_dir)
     if not exists(snapshot_history_file):
         raise InternalError("Missing snapshot history file at %s" %
                             snapshot_history_file)
