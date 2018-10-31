@@ -29,6 +29,8 @@ def is_pull_needed_from_remote(cwd, verbose):
         hashval = actions.call_subprocess(cmd, cwd, verbose).rstrip()
         if hashval=='':
             return False # remote has not commits
+        else:
+            hashval = hashval.split()[0]
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
