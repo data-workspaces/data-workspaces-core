@@ -15,6 +15,9 @@ from .commands.add import add_command
 from .commands.snapshot import snapshot_command
 from .commands.restore import restore_command
 from .commands.status import status_command
+from .commands.push import push_command
+from .commands.pull import pull_command
+from .commands.clone import clone_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -196,10 +199,13 @@ cli.add_command(snapshot)
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
 @click.option('--only', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
               help="Comma-separated list of resource names that you wish to revert to the specified snapshot. The rest will be left as-is.")
 @click.option('--leave', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
               help="Comma-separated list of resource names that you wish to leave in their current state. The rest will be restored to the specified snapshot.")
 @click.option('--no-new-snapshot', is_flag=True, default=False,
+              metavar="RESOURCE1[,RESOURCE2,...]",
               help="By default, a new snapshot will be taken if the restore leaves the "+
                    "workspace in a different state than the requested shapshot (e.g. due "+
                    "to --only or --leave or added resources). If --no-new-snapshot is "+
@@ -215,6 +221,67 @@ def restore(ctx, workspace_dir, only, leave, no_new_snapshot, tag_or_hash):
                     only=only, leave=leave, no_new_snapshot=no_new_snapshot)
 
 cli.add_command(restore)
+
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--only', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
+              help="Comma-separated list of resource names that you wish to push to the origin, if applicable. The rest will be skipped.")
+@click.option('--skip', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
+              help="Comma-separated list of resource names that you wish to skip when pushing. The rest will be pushed to their remote origins, if applicable.")
+@click.option('--only-workspace', is_flag=True, default=False,
+              help="Only push the workspace's metadata, skipping the individual resources")
+@click.pass_context
+def push(ctx, workspace_dir, only, skip, only_workspace):
+    """Push the state of the workspace and its resources to their origins."""
+    ns = ctx.obj
+    option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
+                 (1 if only_workspace else 0)
+    if option_cnt>1:
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+    push_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
+                 only_workspace=only_workspace)
+
+cli.add_command(push)
+
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--only', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
+              help="Comma-separated list of resource names that you wish to pull from the origin, if applicable. The rest will be skipped.")
+@click.option('--skip', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
+              help="Comma-separated list of resource names that you wish to skip when pulling. The rest will be pulled from their remote origins, if applicable.")
+@click.option('--only-workspace', is_flag=True, default=False,
+              help="Only pull the workspace's metadata, skipping the individual resources")
+@click.pass_context
+def pull(ctx, workspace_dir, only, skip, only_workspace):
+    """Pull the latest state of the workspace and its resources from their origins."""
+    ns = ctx.obj
+    option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
+                 (1 if only_workspace else 0)
+    if option_cnt>1:
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+    pull_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
+                 only_workspace=only_workspace)
+
+cli.add_command(pull)
+
+
+@click.command()
+@click.argument('repository', type=str, default=None, required=True)
+@click.argument('directory', type=str, default=None, required=False)
+@click.pass_context
+def clone(ctx, repository, directory):
+    """Clone the specified data workspace."""
+    ns = ctx.obj
+    clone_command(repository, directory, ns.batch, ns.verbose)
+
+cli.add_command(clone)
+
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)

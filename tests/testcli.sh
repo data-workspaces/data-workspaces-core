@@ -21,19 +21,22 @@ done
 SAVEDIR=`pwd`
 rm -rf ./test
 mkdir ./test
+mkdir ./remotes # remote origins for our git repos
 cd ./test
 WORKDIR=`pwd`
 
 # create a small git repo
-mkdir -p code-origin
-cd code-origin
+cd $SAVEDIR
+mkdir -p remotes/code-origin
+cd remotes/code-origin
 git init
 echo "print('test')" >test.py
 git add test.py
 git commit -m "initial version"
 cd ..
 # clone our repo so that it has a "remote" origin
-git clone code-origin/.git code
+cd $WORKDIR
+git clone ../remotes/code-origin/.git code
 
 # create a local directory structure
 mkdir -p local_files
@@ -55,10 +58,6 @@ cd ..
 
 cd $WORKDIR
 dws $VERBOSE init
-echo "code-origin/" >>.gitignore
-git add .gitignore
-git commit -m "Keep core-origin out of the dws repo"
-
 dws $VERBOSE add git --role=code --name=code-git ./code
 dws $VERBOSE add local-files --role=code --name=code-local ./local_files
 dws $VERBOSE add git --role=results --name=results-git ./results_git
@@ -105,7 +104,7 @@ cd $SAVEDIR
 if [[ "$KEEP" == 0 ]]; then
     echo "test cleanup..."
     rm -rf ./test
-    rm -rf ./testresources
+    rm -rf ./remotes
 fi
 echo "Test successful."
 exit 0
