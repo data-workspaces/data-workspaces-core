@@ -3,8 +3,10 @@ Base classes for resoures
 """
 import json
 import copy
-from os.path import join, exists
+import os
+from os.path import join, exists, abspath, expanduser, dirname, isdir
 
+import click
 
 from dataworkspaces.errors import InternalError
 
@@ -62,6 +64,9 @@ class Resource:
         pass
 
     def add(self):
+        pass
+
+    def add_from_remote(self):
         pass
 
     def snapshot_prechecks(self):
@@ -123,6 +128,15 @@ class ResourceFactory:
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         pass
+
+    def from_json_remote(self, json_data, workspace_dir, batch, verbose):
+        """Instantiate a resource object from the parsed resources.json file
+        that came from the remote origin. We don't yet have local params,
+        since this resource is not yet on the local machine. If not in batch
+        mode, this method can ask the user for any additional information needed
+        (e.g. a local path). In batch mode, should either come up with a reasonable
+        default or error out if not enough information is available."""
+        raise InternalError("from_json_remote() not implemented for %s" % self.__class__.__name__)
 
     def suggest_name(self, *args):
         """Given the arguments passed in to create a resource,
@@ -290,4 +304,28 @@ def get_resource_from_command_line(scheme, role, name,
 def get_resource_from_json(json_data, local_params, workspace_dir, batch, verbose):
     factory = get_factory_by_scheme(json_data['resource_type'])
     return factory.from_json(json_data, local_params, workspace_dir, batch, verbose)
+
+def get_resource_from_json_remote(json_data, workspace_dir, batch, verbose):
+    factory = get_factory_by_scheme(json_adta['resource_type'])
+    return factory.from_json_remote(json_data, workspace_dir, batch, verbose)
+
+
+class LocalPathType(click.Path):
+    """A subclass of click's Path input parameter type used to validate a local path
+    where we are going to put a resource. The path does not necessarily exist yet, but
+    we need to validate that the parent directory exists and is writable.
+    """
+    def __init__(self):
+        super().__init__(exists=False, file_okay=False, dir_okay=True, writable=True)
+
+    def convert(self, value, param, ctx):
+        rv = super().convert(value, param, ctx)
+        parent = dirname(rv)
+        if not exists(parent):
+            self.fail('%s "%s" does not exist.' % (self.path_type, parent), param, ctx)
+        if not isdir(parent):
+            self.fail('%s "%s" is a file.' % (self.path_type, parent), param, ctx)
+        if not os.access(parent, os.W_OK):
+            self.fail('%s "%s" is not writable.' % (self.path_type, parent), param, ctx)
+        return abspath(expanduser(rv))
 

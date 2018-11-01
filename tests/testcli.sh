@@ -135,10 +135,6 @@ echo 'File 1' > local_files/f1
 
 run dws $ARGS status
 
-echo -n "verify that dws repo is not dirty..."
-git diff --exit-code --quiet
-echo "ok"
-
 run dws $ARGS push
 
 # create a clone of code and make some updates
@@ -152,6 +148,12 @@ git push origin master
 
 run cd $WORKDIR
 run dws $ARGS pull
+
+################# End of Tests ###########
+echo -n "verify that dws repo is not dirty..."
+git diff --exit-code --quiet
+echo "ok"
+
 
 cd $TESTSDIR
 if [[ "$KEEP" == 0 ]]; then
