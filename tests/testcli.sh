@@ -10,7 +10,7 @@ for arg in $*; do
     KEEP=1
   fi
   if [[ "$arg" == "--verbose" ]]; then
-    ARGS="--verbose"
+    ARGS="$ARGS --verbose"
     VERBOSE="yes"
   fi
   if [[ "$arg" == "--batch" ]]; then
@@ -148,6 +148,9 @@ git push origin master
 
 run cd $WORKDIR
 run dws $ARGS pull
+
+run cd $CLONES
+run dws clone $REMOTE/test.git
 
 ################# End of Tests ###########
 echo -n "verify that dws repo is not dirty..."

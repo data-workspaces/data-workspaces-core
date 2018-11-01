@@ -8,6 +8,7 @@ import click
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
+from .init import get_config_file_path
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .push import get_resources_to_process
 from dataworkspaces.resources.git_resource import is_git_dirty
@@ -57,22 +58,25 @@ class PullWorkspace(actions.Action):
     def __str__(self):
         return "Pull state of data workspace metadata to origin"
 
-def get_resources_from_remote(workspace_dir, batch, verbose):
-    """We want to read the resources.json file from the remote without pulling or fetching.
-    We can do that by creating an archive with just the resources.json file.
-    """
+def get_json_file_from_remote(relpath, workspace_dir, batch, verbose):
     try:
         with tempfile.TemporaryDirectory() as tdir:
             tarpath = join(tdir, 'test.tgz')
             cmd = [actions.GIT_EXE_PATH, 'archive', '-o', tarpath, '--remote=origin',
-                   'refs/heads/master', '.dataworkspace/resources.json']
+                   'refs/heads/master', relpath]
             actions.call_subprocess(cmd, workspace_dir, verbose)
             with tarfile.open(name=tarpath) as tf:
-                tf.extract('.dataworkspace/resources.json', path=tdir)
-            with open(join(tdir, '.dataworkspace/resources.json'), 'r') as f:
+                tf.extract(relpath, path=tdir)
+            with open(join(tdir, relpath), 'r') as f:
                 return json.load(f)
     except Exception as e:
-        raise ConfigurationError("Problem retrieving .dataworkspace/resources.json file from remote") from e
+        raise ConfigurationError("Problem retrieving file %s from remote"%relpath) from e
+
+def get_resources_from_remote(workspace_dir, batch, verbose):
+    """We want to read the resources.json file from the remote without pulling or fetching.
+    We can do that by creating an archive with just the resources.json file.
+    """
+    return get_json_file_from_remote('.dataworkspace/resources.json', workspace_dir, batch, verbose)
 
 
 def pull_command(workspace_dir, batch=False, verbose=False,
