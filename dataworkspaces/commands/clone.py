@@ -7,9 +7,12 @@ import json
 
 import click
 
-from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
+from dataworkspaces.resources.resource import \
+    get_resource_file_path, get_local_params_file_path
 import dataworkspaces.commands.actions as actions
 from .init import get_config_file_path
+from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .pull import AddRemoteResource
 
 
@@ -63,9 +66,41 @@ def clone_command(repository, directory=None, batch=False, verbose=False):
         if (directory is not None) and isdir(directory):
             shutil.rmtree(directory)
         raise
-    
 
+    # ok, now we have the main repo, so we can clone all the resources
+    local_params_file = get_local_params_file_path(directory)
+    with open(local_params_file, 'w') as f:
+        json.dump({}, f, indent=2)
+    resources_file = get_resource_file_path(directory)
+    with open(resources_file, 'r') as f:
+        resources_json = json.load(f)
 
+    add_to_gi = None
+    try:
+        for resource_json in resources_json:
+            add_remote_action = AddRemoteResource(ns, verbose, batch, directory, resource_json)
+            plan.append(add_remote_action)
+            plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, directory))
+            add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
+                                                             directory)
+            if add_to_gi:
+                plan.append(add_to_gi)
+                gitignore_path = add_to_gi.gitignore_path
+        if gitignore_path:
+            plan.append(actions.GitAdd(ns, verbose, directory, [gitignore_path]))
+            plan.append(actions.GitCommit(ns, verbose, directory, "Added new resources to gitignore"))
+    except:
+        # since we had to create the main repo before doing the sanity chacks
+        # on the resources, we delete the main repo if there's an error.
+        shutil.rmtree(directory)
+        raise
+
+    try:
+        actions.run_plan(plan, "clone data workspace",
+                         "cloned data workspace", batch=batch, verbose=verbose)
+    except UserAbort:
+        shutil.rmtree(directory)
+        raise
 
 
 

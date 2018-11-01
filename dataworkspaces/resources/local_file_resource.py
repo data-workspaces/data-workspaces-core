@@ -46,6 +46,9 @@ class LocalFileResource(Resource):
             if exc.errno == EEXIST and os.path.isdir(rsrcdir):
                 pass
             else: raise
+    
+    def add_from_remote(self):
+        self.add()
 
     def snapshot_prechecks(self):
         pass
@@ -80,6 +83,13 @@ class LocalFileFactory(ResourceFactory):
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']==LOCAL_FILE
+        return LocalFileResource(json_data['name'],
+                                 json_data['role'], workspace_dir, json_data['local_path'])
+
+    def from_json_remote(self, json_data, workspace_dir, batch, verbose):
+        """Instantiate a resource object from the parsed resources.json file"""
+        assert json_data['resource_type']==LOCAL_FILE
+        # XXX need to convert local path to be stored in local params
         return LocalFileResource(json_data['name'],
                                  json_data['role'], workspace_dir, json_data['local_path'])
 

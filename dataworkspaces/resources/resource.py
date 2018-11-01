@@ -168,8 +168,11 @@ class ResourceCollection:
     def __init__(self, resources_json_file, local_params_file, workspace_dir, batch, verbose):
         with open(resources_json_file, 'r') as f:
             self.json_data = json.load(f)
-        with open(local_params_file, 'r') as f:
-            self.local_params = json.load(f)
+        if local_params_file is not None:
+            with open(local_params_file, 'r') as f:
+                self.local_params = json.load(f)
+        else:
+            self.local_params = {}
         def get_local_params(rname):
             return self.local_params[rname] if rname in self.local_params else {}
         self.resources = [get_resource_from_json(rdata,
@@ -213,7 +216,7 @@ class CurrentResources(ResourceCollection):
     def __str__(self):
         resources = sorted(self.by_name.keys())
         return 'CurrentResources(%s)' % ', '.join(resources)
-        
+
     @staticmethod
     def read_current_resources(workspace_dir, batch, verbose):
         resource_file = get_resource_file_path(workspace_dir)
@@ -306,7 +309,7 @@ def get_resource_from_json(json_data, local_params, workspace_dir, batch, verbos
     return factory.from_json(json_data, local_params, workspace_dir, batch, verbose)
 
 def get_resource_from_json_remote(json_data, workspace_dir, batch, verbose):
-    factory = get_factory_by_scheme(json_adta['resource_type'])
+    factory = get_factory_by_scheme(json_data['resource_type'])
     return factory.from_json_remote(json_data, workspace_dir, batch, verbose)
 
 

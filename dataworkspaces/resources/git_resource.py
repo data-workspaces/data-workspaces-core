@@ -2,7 +2,7 @@
 Resource for git repositories
 """
 import subprocess
-from os.path import realpath, basename, isdir, join
+from os.path import realpath, basename, isdir, join, dirname, exists, basename
 import re
 
 import click
@@ -71,7 +71,7 @@ class GitRepoResource(Resource):
         parent = dirname(self.local_path)
         if not exists(self.local_path):
             # cloning a fresh repository
-            cmd = [actions.GIT_EXE_PATH, 'clone', self.remote_origin_url, basname(self.local_path)]
+            cmd = [actions.GIT_EXE_PATH, 'clone', self.remote_origin_url, basename(self.local_path)]
             actions.call_subprocess(cmd, parent, self.verbose)
         else:
             # the repo already exists locally, and we've alerady verified that then

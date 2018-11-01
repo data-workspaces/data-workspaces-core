@@ -150,17 +150,18 @@ run cd $WORKDIR
 run dws $ARGS pull
 
 run cd $CLONES
-run dws clone $REMOTE/test.git
+run dws $ARGS clone $REMOTE/test.git
 
 ################# End of Tests ###########
 echo -n "verify that dws repo is not dirty..."
-git diff --exit-code --quiet
+run cd $WORKDIR
+run git diff --exit-code --quiet
 echo "ok"
 
 
 cd $TESTSDIR
 if [[ "$KEEP" == 0 ]]; then
-    echo "test cleanup..."
+    echo "Cleanup after test..."
     rm -rf ./test
     rm -rf ./remotes
     rm -rf ./clones
