@@ -18,6 +18,7 @@ from .commands.status import status_command
 from .commands.push import push_command
 from .commands.pull import pull_command
 from .commands.clone import clone_command
+from .commands.run import run_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -317,6 +318,29 @@ def status(ctx, workspace_dir, history, limit):
 
 cli.add_command(status)
 
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--step-name', default=None,
+              help="Name of step to associate with this command (defaults to base name of command without file extension)")
+@click.option('--cwd', default=CURR_DIR,
+              type=click.Path(exists=True, file_okay=False, dir_okay=True, readable=True, resolve_path=True),
+              help="Directory to use as current working directory when running command (defaults to %s)"%CURR_DIR)
+@click.argument('command', type=str, required=True)
+@click.argument('command_arguments', type=str, nargs=-1)
+@click.pass_context
+def run(ctx, workspace_dir, step_name, cwd, command, command_arguments):
+    """Run a data pipeline step from the command line, recording lineage information."""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    run_command(workspace_dir, step_name, cwd, command, command_arguments, ns.batch, ns.verbose)
+
+cli.add_command(run)
 # from .commands.show import show_command
 # @click.command()
 # @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
