@@ -63,6 +63,9 @@ cd code
 git init
 echo "print('test')" >test.py
 git add test.py
+cp $TESTSDIR/transform_data1.py .
+cp $TESTSDIR/transform_data2.py .
+git add transform_data1.py transform_data2.py
 git commit -m "initial version"
 git remote add origin $REMOTE/code.git
 
@@ -73,7 +76,13 @@ echo 'File 1' > local_files/f1
 echo 'File 2' > local_files/f2
 mkdir -p local_files/dir
 echo 'File 3' > local_files/dir/f3
+# data file to be used in lineage tests
+cp $TESTSDIR/data.csv $WORKDIR/local_files/data.csv
 ls
+
+# create a local directory for storing intermediate data
+cd $WORKDIR
+mkdir workspace
 
 # create a git repo for storing results
 cd $REMOTE
@@ -96,7 +105,8 @@ run cd $WORKDIR
 run dws $ARGS init
 run git remote add origin $REMOTE/test.git
 run dws $ARGS add git --role=code --name=code-git ./code
-run dws $ARGS add local-files --role=code --name=code-local ./local_files
+run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
+run dws $ARGS add local-files --role=intermediate-data --name=worksapce ./workspace
 run dws $ARGS add git --role=results --name=results-git ./results_git
 echo dws $ARGS snapshot -m "first version" V1
 dws $ARGS snapshot -m "first version" V1
@@ -151,6 +161,18 @@ run dws $ARGS pull
 
 run cd $CLONES
 run dws $ARGS clone $REMOTE/test.git
+
+# validate the run command and lineage
+run cd $WORKDIR
+run dws run python code/transform_data1.py local_files/data.csv workspace/data1.csv 5
+run dws run python code/transform_data2.py workspace/data1.csv results_git/results.csv
+run cd ./results_git
+run git add results.csv
+echo git commit -m "results of lineage1 test"
+git commit -m "results of lineage1 test"
+run cd ..
+echo dws snapshot -m "Test case of lineage commands" LINEAGE1
+dws snapshot -m "Test case of lineage commands" LINEAGE1
 
 ################# End of Tests ###########
 echo -n "verify that dws repo is not dirty..."
