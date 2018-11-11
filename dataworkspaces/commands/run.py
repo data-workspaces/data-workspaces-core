@@ -60,6 +60,8 @@ def remove_extension(fname):
     except ValueError:
         return fname
 
+def get_current_lineage_dir(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/current_lineage')
 
 def run_command(workspace_dir, step_name, cwd, command, args, batch, verbose):
     ns = actions.Namespace()
@@ -86,7 +88,7 @@ def run_command(workspace_dir, step_name, cwd, command, args, batch, verbose):
         else:
             step_name = remove_extension(basename(command_path))
 
-    lineage_file = join(workspace_dir, '.dataworkspace/current_lineage/%s.json' % step_name)
+    lineage_file = join(get_current_lineage_dir(workspace_dir), '%s.json' % step_name)
 
     lineage_data = {
         'step_name':step_name,

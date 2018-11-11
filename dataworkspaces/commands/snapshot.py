@@ -1,16 +1,20 @@
 
-from os.path import join, exists
+import os
+from os.path import join, exists, isdir
 import re
 import json
 import datetime
 import getpass
 import socket
+import shutil
 
+import click
 
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.results_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
 import dataworkspaces.commands.actions as actions
+from .run import get_current_lineage_dir
 from dataworkspaces.errors import InternalError, ConfigurationError
 
 # template for result paths. TODO: Make this a user-changable setting
@@ -102,6 +106,45 @@ class AppendSnapshotHistory(actions.Action):
     def __str__(self):
         return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
 
+def get_snapshot_lineage_dir(workspace_dir, snapshot_hash):
+    return join(workspace_dir, '.dataworkspace/snapshot_lineage/%s' % snapshot_hash)
+
+class SaveLineageData(actions.Action):
+    @actions.requires_from_ns('snapshot_hash', str)
+    @actions.provides_to_ns('lineage_files', list)
+    def __init__(self, ns, verbose, workspace_dir):
+        super().__init__(ns, verbose)
+        self.workspace_dir = workspace_dir
+        self.current_lineage_dir = get_current_lineage_dir(workspace_dir)
+        if not isdir(self.current_lineage_dir):
+            self.basenames = None # indicates that there are no lineage files
+        else:
+            self.basenames = [f for f in os.listdir(self.current_lineage_dir) if f.endswith('.json')]
+            if len(self.basenames)==0:
+                self.basenames = None
+
+    def has_lineage_files(self):
+        return self.basenames is not None
+
+    def run(self):
+        snapshot_hash = self.ns.snapshot_hash
+        lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
+        lineage_files = []
+        os.makedirs(lineage_dir)
+        for basename in self.basenames:
+            src = join(self.current_lineage_dir, basename)
+            dest = join(lineage_dir, basename)
+            if self.verbose:
+                click.echo(" Copy %s => %s"% (src, dest))
+            shutil.copy(src, dest)
+            lineage_files.append(dest)
+        self.ns.lineage_files = lineage_files
+
+    def __str__(self):
+        return "Copy lineage %d files from current workspace to snapshot lineage" % \
+            len(self.basenames)
+
+
 def get_snapshot_history_file_path(workspace_dir):
     return join(workspace_dir,
                 '.dataworkspace/snapshots/snapshot_history.json')
@@ -143,6 +186,12 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                lambda:[ns.snapshot_filename,
                                        snapshot_history_file]))
+    # see if we need to add lineage files
+    save_lineage = SaveLineageData(ns, verbose, workspace_dir)
+    if save_lineage.has_lineage_files():
+        plan.append(save_lineage)
+        plan.append(actions.GitAdd(ns, verbose, workspace_dir,
+                                   actions.NamespaceRef('lineage_files', list, ns)))
     plan.append(actions.GitCommit(ns, verbose, workspace_dir,
                                   commit_message=lambda:"Snapshot "+ns.snapshot_hash))
     ns.map_of_hashes = {}

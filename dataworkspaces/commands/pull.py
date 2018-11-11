@@ -1,5 +1,5 @@
 import tempfile
-from os.path import join
+from os.path import join, isdir
 import tarfile
 import json
 
@@ -10,7 +10,9 @@ from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
 from .init import get_config_file_path
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
+from .restore import ClearLineageDir
 from .push import get_resources_to_process
+from .run import get_current_lineage_dir
 from dataworkspaces.resources.git_resource import is_git_dirty
 from dataworkspaces.errors import ConfigurationError
 
@@ -108,6 +110,12 @@ def pull_command(workspace_dir, batch=False, verbose=False,
         if gitignore_path:
             plan.append(actions.GitAdd(ns, verbose, workspace_dir, [gitignore_path]))
             plan.append(actions.GitCommit(ns, verbose, workspace_dir, "Added new resources to gitignore"))
+        current_lineage_dir = get_current_lineage_dir(workspace_dir)
+        if isdir(current_lineage_dir):
+            # Since we are not currently tracking the relationships between resources
+            # and pipeline steps, we have to invalidate the entire current lineage data.
+            # TODO: track the full lineage graph and invalidate only those resources changed.
+            plan.append(ClearLineageDir(ns, verbose, current_lineage_dir))
     else:
         plan.append(PullWorkspace(ns, verbose, workspace_dir))
     actions.run_plan(plan, "pull state from origins",

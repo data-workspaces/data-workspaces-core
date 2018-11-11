@@ -1,6 +1,8 @@
 import json
-from os.path import join
+import os
+from os.path import join, isdir
 import datetime
+import shutil
 
 import click
 
@@ -9,7 +11,9 @@ from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
     CurrentResources, SnapshotResources
 from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
-                      get_snapshot_history_file_path
+                      get_snapshot_history_file_path,\
+                      get_snapshot_lineage_dir
+from .run import get_current_lineage_dir
 
 class RestoreResource(actions.Action):
     def __init__(self, ns, verbose, resource, snapshot_resources):
@@ -36,7 +40,7 @@ class SkipResource(actions.Action):
     def __str__(self):
         return 'Skipping resource %s, %s' % (str(self.resource), self.reason)
 
-class AddResourceToSnapshot(actions.Action):
+class AddResourceToSnapshotResourceList(actions.Action):
     def __init__(self, ns, verbose, resource, snapshot_resources):
         super().__init__(ns, verbose)
         self.resource = resource
@@ -48,7 +52,7 @@ class AddResourceToSnapshot(actions.Action):
 
     def run(self):
         self.snapshot_resources.add_resource(self.resource)
-        self.snapshot_resources.write_snapshot_resources()
+        #self.snapshot_resources.write_snapshot_resources()
 
     def __str__(self):
         return "Add '%s' to resources.json file" % str(self.resource)
@@ -86,6 +90,39 @@ class WriteRevisedResourceFile(actions.Action):
 
     def __str__(self):
         return "Write revised resources.json file"
+
+class ClearLineageDir(actions.Action):
+    def __init__(self, ns, verbose, current_lineage_dir):
+        super().__init__(ns, verbose)
+        self.current_lineage_dir = current_lineage_dir
+
+    def run(self):
+        shutil.rmtree(self.current_lineage_dir)
+
+    def __str__(self):
+        return "Delete the (invalid) current lineage directory %s" %\
+            self.current_lineage_dir
+
+class CopyLineageFilesToCurrent(actions.Action):
+    def __init__(self, ns, verbose, current_lineage_dir, snapshot_lineage_dir):
+        super().__init__(ns, verbose)
+        self.current_lineage_dir = current_lineage_dir
+        self.snapshot_lineage_dir = snapshot_lineage_dir
+
+    def run(self):
+        if isdir(self.current_lineage_dir):
+            shutil.rmtree(self.current_lineage_dir)
+        os.makedirs(self.current_lineage_dir)
+        basenames = os.listdir(self.snapshot_lineage_dir)
+        for basename in basenames:
+            src = join(self.snapshot_lineage_dir, basename)
+            dest = join(self.current_lineage_dir, basename)
+            if self.verbose:
+                click.echo(" Copy %s => %s" % (src, dest))
+            shutil.copy(src, dest)
+
+    def __str__(self):
+        return "Copy lineage files from snapshot to current lineage"
 
 
 def process_names(current_names, snapshot_names, only=None, leave=None):
@@ -148,7 +185,8 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     (names_to_restore, names_to_add, names_to_leave) = \
         process_names(original_current_resource_names, snapshot_resources.get_names(), only, leave)
     plan = []
-    create_new_hash = False
+    creating_new_snapshot = False # True if we are creating a new snapshot and hash
+    need_to_clear_lineage = False # True if we did a partial restore and we need to clear out lineage data
     ns = actions.Namespace()
     ns.map_of_hashes = {}
     for name in names_to_restore:
@@ -175,15 +213,18 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         # if we are adding a current resource to the restored snapshot, we actually
         # have to snapshot the resource itself.
         r = current_resources.by_name[name]
-        if not snapshot_resources.is_a_current_name(name):
-            plan.append(AddResourceToSnapshot(ns, verbose, r, snapshot_resources))
+        if snapshot_resources.is_a_current_name(name):
+            # we are leaving a resource in common between current and snapshot
+            need_to_clear_lineage = True
+        else:
+            # we are just leaving a resource added since snapshot was taken
+            plan.append(AddResourceToSnapshotResourceList(ns, verbose, r, snapshot_resources))
         if not no_new_snapshot:
-            # XXX Need to handle Results resource - should move files
             plan.append(TakeResourceSnapshot(ns, verbose, r))
-            create_new_hash = True
+            creating_new_snapshot = True
     need_to_write_resources_file = \
         original_current_resource_names!=snapshot_resources.get_names()
-    if create_new_hash:
+    if creating_new_snapshot:
         write_revised = WriteRevisedSnapshotFile(ns, verbose, workspace_dir,
                                                  snapshot_resources)
         plan.append(write_revised)
@@ -204,8 +245,19 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                    [snapshot_resources.resource_file]))
 
+    # handling of lineage
+    current_lineage_dir = get_current_lineage_dir(workspace_dir)
+    snapshot_lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot['hash'])
+    if need_to_clear_lineage:
+        if isdir(current_lineage_dir):
+            plan.append(ClearLineageDir(ns, verbose, current_lineage_dir))
+    elif isdir(snapshot_lineage_dir):
+        plan.append(CopyLineageFilesToCurrent(ns, verbose, current_lineage_dir,
+                                              snapshot_lineage_dir))
+    
+
     tagstr = ', tag=%s' % snapshot['tag'] if snapshot['tag'] else ''
-    if create_new_hash:
+    if creating_new_snapshot:
         desc = "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
                 (snapshot['hash'], tagstr)
         commit_msg_fn = lambda: desc + " " + ns.snapshot_hash
@@ -213,7 +265,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         desc = "Restore snapshot %s%s" % (snapshot['hash'], tagstr)
         commit_msg_fn = lambda: desc
 
-    if need_to_write_resources_file or create_new_hash:
+    if need_to_write_resources_file or creating_new_snapshot:
         plan.append(actions.GitCommit(ns, verbose, workspace_dir,
                                       commit_message=commit_msg_fn))
     click.echo(desc)
@@ -233,6 +285,6 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         if resp.lower()!='y' and resp!='':
             raise UserAbort()
     actions.run_plan(plan, 'run this restore', 'run restore', batch, verbose)
-    if create_new_hash:
+    if creating_new_snapshot:
         click.echo("New snapshot is %s." % ns.snapshot_hash)
     
