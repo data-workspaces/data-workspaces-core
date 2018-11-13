@@ -189,6 +189,7 @@ git commit -m "results of lineage2 test"
 run cd ..
 echo dws snapshot -m "Test case of lineage commands, part 2" LINEAGE2
 dws snapshot -m "Test case of lineage commands, part 2" LINEAGE2
+dws diff LINEAGE1 LINEAGE2
 
 
 ################# End of Tests ###########

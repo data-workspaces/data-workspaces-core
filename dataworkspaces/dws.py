@@ -19,6 +19,7 @@ from .commands.push import push_command
 from .commands.pull import pull_command
 from .commands.clone import clone_command
 from .commands.run import run_command
+from .commands.diff import diff_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
 
@@ -341,6 +342,26 @@ def run(ctx, workspace_dir, step_name, cwd, command, command_arguments):
     run_command(workspace_dir, step_name, cwd, command, command_arguments, ns.batch, ns.verbose)
 
 cli.add_command(run)
+
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.argument('snapshot_or_tag1', metavar='SNAPSHOT_OR_TAG1', type=str)
+@click.argument('snapshot_or_tag2', metavar='SNAPSHOT_OR_TAG2', type=str)
+@click.pass_context
+def diff(ctx, workspace_dir, snapshot_or_tag1, snapshot_or_tag2):
+    """List differences between two snapshots"""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, ns.batch, ns.verbose)
+
+cli.add_command(diff)
+
 # from .commands.show import show_command
 # @click.command()
 # @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)

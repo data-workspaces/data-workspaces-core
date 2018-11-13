@@ -158,28 +158,26 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
                 names_to_leave.add(name)
     return (sorted(names_to_restore), sorted(names_to_add), sorted(names_to_leave))
 
+def find_snapshot(tag_or_hash, sh_data):
+    is_hash = actions.is_a_git_hash(tag_or_hash)
+    for snapshot in sh_data:
+        if is_hash and snapshot['hash']==tag_or_hash:
+            return (tag_or_hash, snapshot['tag'])
+        elif (not is_hash) and snapshot['tag']==tag_or_hash:
+            return (snapshot['hash'], snapshot['tag'])
+    if is_hash:
+        raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
+    else:
+        raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
+
 def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                     only=None, leave=None, no_new_snapshot=False):
     # First, find the history entry
     sh_file = get_snapshot_history_file_path(workspace_dir)
     with open(sh_file, 'r') as f:
         sh_data = json.load(f)
-    is_hash = actions.is_a_git_hash(tag_or_hash)
-    found = False
-    for snapshot in sh_data:
-        if is_hash and snapshot['hash']==tag_or_hash:
-            found = True
-            break
-        elif (not is_hash) and snapshot['tag']==tag_or_hash:
-            found = True
-            break
-    if not found:
-        if is_hash:
-            raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
-        else:
-            raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
-
-    snapshot_resources = SnapshotResources.read_shapshot_manifest(snapshot['hash'], workspace_dir, batch, verbose)
+    (snapshot_hash, snapshot_tag) = find_snapshot(tag_or_hash, sh_data)
+    snapshot_resources = SnapshotResources.read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     original_current_resource_names = current_resources.get_names()
     (names_to_restore, names_to_add, names_to_leave) = \
@@ -247,7 +245,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
 
     # handling of lineage
     current_lineage_dir = get_current_lineage_dir(workspace_dir)
-    snapshot_lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot['hash'])
+    snapshot_lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot_hash)
     if need_to_clear_lineage:
         if isdir(current_lineage_dir):
             plan.append(ClearLineageDir(ns, verbose, current_lineage_dir))
@@ -256,13 +254,13 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                                               snapshot_lineage_dir))
     
 
-    tagstr = ', tag=%s' % snapshot['tag'] if snapshot['tag'] else ''
+    tagstr = ', tag=%s' % snapshot_tag if snapshot_tag else ''
     if creating_new_snapshot:
         desc = "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
-                (snapshot['hash'], tagstr)
+                (snapshot_hash, tagstr)
         commit_msg_fn = lambda: desc + " " + ns.snapshot_hash
     else:
-        desc = "Restore snapshot %s%s" % (snapshot['hash'], tagstr)
+        desc = "Restore snapshot %s%s" % (snapshot_hash, tagstr)
         commit_msg_fn = lambda: desc
 
     if need_to_write_resources_file or creating_new_snapshot:
