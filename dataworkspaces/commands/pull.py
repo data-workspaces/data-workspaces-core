@@ -8,7 +8,6 @@ import click
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
-from .init import get_config_file_path
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .restore import ClearLineageDir
 from .push import get_resources_to_process

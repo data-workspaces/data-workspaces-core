@@ -52,7 +52,7 @@ def get_resources_to_process(current_resources, only, skip):
         skip_names = set(skip.split(','))
         for skip_name in skip_names:
             if not current_resources.is_a_current_name(skip_name):
-                raise clickUsageError("NO resource '%s' exists in current workspace "%
+                raise click.UsageError("No resource '%s' exists in current workspace "%
                                       skip_name)
         names_to_push = []
         for name in current_resources.get_names():

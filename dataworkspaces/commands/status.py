@@ -4,7 +4,6 @@ import json
 import click
 
 import dataworkspaces.commands.actions as actions
-from dataworkspaces import __version__
 
 from dataworkspaces.resources.resource import RESOURCE_ROLE_CHOICES 
 

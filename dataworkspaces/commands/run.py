@@ -4,7 +4,6 @@ import shutil
 import json
 import datetime
 
-import click
 
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError

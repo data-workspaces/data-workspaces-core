@@ -108,8 +108,28 @@ run dws $ARGS add git --role=code --name=code-git ./code
 run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
 run dws $ARGS add local-files --role=intermediate-data --name=worksapce ./workspace
 run dws $ARGS add git --role=results --name=results-git ./results_git
+
+# Add a git subdirectory resource
+cd $WORKDIR
+mkdir results
+echo "This is a git subdirectory resource" >$WORKDIR/results/README.txt
+echo "A,B">$WORKDIR/results/results.csv
+git add results/README.txt results/results.csv
+git commit -m "Added results subdirectory"
+run dws $ARGS add git --role=results --name=results ./results
+
 echo dws $ARGS snapshot -m "first version" V1
 dws $ARGS snapshot -m "first version" V1
+
+# check files in git subdirectory
+if [ ! -f $WORKDIR/results/README.txt ]; then
+    echo "Missing file $WORKDIR/results/README.txt"
+    exit 1
+fi
+if [ -f $WORKDIR/results/results.csv ]; then
+    echo "File $WORKDIR/results/results.csv should have been moved to a subdirectory upon snapshot"
+    exit 1
+fi
 
 # make some changes in the git repo
 cd code
@@ -146,6 +166,7 @@ echo 'File 1' > local_files/f1
 run dws $ARGS status
 
 run dws $ARGS push
+
 
 # create a clone of code and make some updates
 cd $CLONES

@@ -5,8 +5,6 @@ import uuid
 import shutil
 import json
 
-import click
-
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_local_params_file_path

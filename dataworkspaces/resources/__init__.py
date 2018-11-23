@@ -9,8 +9,9 @@ def register_resource_type(scheme, factory):
     assert isinstance(factory, ResourceFactory)
     RESOURCE_TYPES[scheme] = factory
 
-from ..resources.git_resource import GitRepoFactory
+from ..resources.git_resource import GitRepoFactory, GitRepoSubdirFactory
 register_resource_type('git', GitRepoFactory)
+register_resource_type('git-subdirectory', GitRepoSubdirFactory)
 
 from ..resources.local_file_resource import LocalFileFactory
 register_resource_type('file', LocalFileFactory)

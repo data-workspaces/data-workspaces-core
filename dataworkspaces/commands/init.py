@@ -7,6 +7,7 @@ import click
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_local_params_file_path
 import dataworkspaces.commands.actions as actions
+from .params import get_all_defaults
 from dataworkspaces import __version__
 
 def get_config_file_path(workspace_dir):
@@ -19,6 +20,7 @@ def get_snapshot_history_file_path(workspace_dir):
     return join(get_snapshot_dir_path(workspace_dir),
                 "snapshot_history.json")
 
+
 class MakeWorkSpaceConfig(actions.Action):
     def __init__(self, ns, verbose, workspace_dir, workspace_name):
         super().__init__(ns, verbose)
@@ -27,7 +29,7 @@ class MakeWorkSpaceConfig(actions.Action):
         self.resources_fpath = get_resource_file_path(workspace_dir)
         self.local_params_fpath = get_local_params_file_path(workspace_dir)
         self.gitignore_fpath = join(workspace_dir, '.dataworkspace/.gitignore')
-        self.snapshots_dir = get_snapshot_dir_path(workspace_dir)
+        self.snapshots_dir  = get_snapshot_dir_path(workspace_dir)
         self.snapshots_fpath =  get_snapshot_history_file_path(workspace_dir)
         self.workspace_name = workspace_name
         if isdir(self.dataworkspace_dir):
@@ -38,8 +40,9 @@ class MakeWorkSpaceConfig(actions.Action):
         os.mkdir(self.dataworkspace_dir)
         os.mkdir(self.snapshots_dir)
         with open(self.config_fpath, 'w') as f:
-            json.dump({'name':self.workspace_name, 'dws-version':__version__}, f,
-                      indent=2)
+            json.dump({'name':self.workspace_name, 'dws-version':__version__,
+                       'global_params':get_all_defaults()},
+                      f, indent=2)
         with open(self.resources_fpath, 'w') as f:
             json.dump([], f, indent=2)
         with open(self.local_params_fpath, 'w') as f:
@@ -48,6 +51,7 @@ class MakeWorkSpaceConfig(actions.Action):
             json.dump([], f, indent=2)
         with open(self.gitignore_fpath, 'w') as f:
             f.write("%s\n" % basename(self.local_params_fpath))
+            f.write("current_lineage/\n")
 
     def __str__(self):
         return "Initialize .dataworkspace directory for workspace '%s'" %\

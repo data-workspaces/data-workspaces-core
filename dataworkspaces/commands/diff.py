@@ -4,7 +4,6 @@ import json
 
 import click
 
-import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import SnapshotResources
 from .snapshot import get_snapshot_history_file_path,\
                       get_snapshot_lineage_dir
@@ -39,7 +38,7 @@ def compare_lineage_files(f1, f2):
     if len(differences)>0:
         return '  Step %s has lineage differences:\n' % data1['step_name'] + differences
     else:
-        return '  Step %s has no lineage differences.\n' % data['step_name']
+        return '  Step %s has no lineage differences.\n' % data1['step_name']
 
 
 def diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, batch, verbose):

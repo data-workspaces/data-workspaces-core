@@ -14,11 +14,12 @@ from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.results_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
 import dataworkspaces.commands.actions as actions
+from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\
+                    get_config_param_value
+from .init import get_config_file_path
 from .run import get_current_lineage_dir
 from dataworkspaces.errors import InternalError, ConfigurationError
 
-# template for result paths. TODO: Make this a user-changable setting
-RESULTS_DIR_TEMPLATE="snapshots/{YEAR}-{MONTH}/{SHORT_MONTH}-{DAY}-{HOUR}:{MIN}:{SEC}-{TAG}"
 
 class TakeResourceSnapshot(actions.Action):
     """Will store the hash in the namespace property map_of_hashes,
@@ -59,6 +60,7 @@ class WriteSnapshotFile(actions.Action):
 
     def __str__(self):
         return 'Create and hash snapshot file'
+
 
 class MoveCurrentFilesForResults(actions.Action):
     def __init__(self, ns, verbose, resource, exclude_files,
@@ -168,12 +170,16 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     # Snapshot numbers are just assigned based on where they are in the
     # history file. Counting starts at 1.
     snapshot_number = len(snapshot_history_data)+1
+    with open(get_config_file_path(workspace_dir), 'r') as f:
+        config_data = json.load(f)
+    exclude_files = set(get_config_param_value(config_data, RESULTS_MOVE_EXCLUDE_FILES))
+    results_dir_template = get_config_param_value(config_data, RESULTS_DIR_TEMPLATE)
 
 
     for r in current_resources.resources:
         if r.has_results_role():
-            plan.append(MoveCurrentFilesForResults(ns, verbose, r, set(),
-                                                   RESULTS_DIR_TEMPLATE,
+            plan.append(MoveCurrentFilesForResults(ns, verbose, r, exclude_files,
+                                                   results_dir_template,
                                                    snapshot_timestamp,
                                                    snapshot_number,
                                                    tag))

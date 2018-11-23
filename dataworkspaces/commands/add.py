@@ -81,6 +81,8 @@ def add_local_dir_to_gitignore_if_needed(ns, verbose, resource, workspace_dir):
     git repo, which needs to be added to .gitignore. If so, return an
     action instance which will do it.
     """
+    if resource.scheme=='git-subdirectory':
+        return None # this is always a part of the dataworkspace's repo
     local_path = resource.get_local_path_if_any()
     if local_path is None:
         return None
