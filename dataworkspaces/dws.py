@@ -163,9 +163,11 @@ add.add_command(local_files)
 @click.option('--role', type=ROLE_PARAM)
 @click.option('--name', type=str, default=None,
               help="Short name for this resource")
-@click.argument('path', type=DIRECTORY_PARAM)
+@click.option('--branch', type=str, default='master',
+              help="Branch of the repo to use, defaults to master.")
+@click.argument('path', type=str)
 @click.pass_context
-def git(ctx, role, name, path): 
+def git(ctx, role, name, branch, path): 
     """Local git repository"""
     ns = ctx.obj
     if role is None:
@@ -173,7 +175,8 @@ def git(ctx, role, name, path):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path)
+    path = abspath(expanduser(path))
+    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, branch)
 
 add.add_command(git)
 

@@ -160,7 +160,6 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
 
 def _get_next_element(dl, startindex, ignore):
     index = startindex
-    found = False
     for d in dl[startindex:]:
         index = index + 1 
         if d in ignore:

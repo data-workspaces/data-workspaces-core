@@ -1,13 +1,11 @@
 """
 Resource for files living in a local directory 
 """
-import subprocess
 from errno import EEXIST
 import os
 import os.path 
 
 from dataworkspaces.errors import ConfigurationError
-import dataworkspaces.commands.actions as actions
 from .resource import Resource, ResourceFactory
 from . import hashtree
 from .results_utils import move_current_files_local_fs
@@ -43,7 +41,7 @@ class LocalFileResource(Resource):
             # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
             os.makedirs(self.rsrcdir)
         except OSError as exc:
-            if exc.errno == EEXIST and os.path.isdir(rsrcdir):
+            if exc.errno == EEXIST and os.path.isdir(self.rsrcdir):
                 pass
             else: raise
     
@@ -56,7 +54,7 @@ class LocalFileResource(Resource):
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
-        moved_files = move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
+        move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
 
     def snapshot(self):
         # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)

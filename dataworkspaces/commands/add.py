@@ -112,7 +112,7 @@ def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
     if batch:
         if name==None:
             name = suggest_resource_name(scheme, role, current_names,
-                                         **args)
+                                         *args)
         else:
             if name in current_names:
                 raise ConfigurationError("Resource name '%s' already in use"%

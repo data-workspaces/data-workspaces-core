@@ -28,7 +28,7 @@ class PushWorkspace(actions.Action):
         if is_git_dirty(workspace_dir):
             raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing." %
                                      workspace_dir)
-        if is_pull_needed_from_remote(workspace_dir, self.verbose):
+        if is_pull_needed_from_remote(workspace_dir, 'master', self.verbose):
             raise ConfigurationError("Data workspace at %s requires a pull from remote origin"%
                                      workspace_dir)
 

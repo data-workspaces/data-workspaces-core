@@ -165,9 +165,35 @@ echo 'File 1' > local_files/f1
 
 run dws $ARGS status
 
+# create a code repo that is on a branch different than master
+echo "Creating and initializing code-other-branch repo"
+cd $REMOTE
+git init --bare code-other-branch.git
+cd $WORKDIR
+mkdir code-other-branch
+cd code-other-branch
+git init
+echo "print('test')" >test.py
+git add test.py
+cp $TESTSDIR/transform_data1.py .
+cp $TESTSDIR/transform_data2.py .
+git add transform_data1.py transform_data2.py
+git commit -m "initial version"
+git remote add origin $REMOTE/code-other-branch.git
+git push origin master
+git branch other-branch
+git checkout other-branch
+echo "print('other branch')" >>test.py
+git add test.py
+git commit -m "add a commit to other branch"
+git push origin other-branch
+git checkout master
+cd $WORKDIR
+run dws $ARGS add git --role=code --branch=other-branch ./code-other-branch
+
+
+
 run dws $ARGS push
-
-
 # create a clone of code and make some updates
 cd $CLONES
 git clone $REMOTE/code.git

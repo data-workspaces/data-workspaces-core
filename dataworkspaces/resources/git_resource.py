@@ -2,6 +2,7 @@
 Resource for git repositories
 """
 import subprocess
+import os
 from os.path import realpath, basename, isdir, join, dirname, exists
 import re
 
@@ -20,20 +21,28 @@ def is_git_dirty(cwd):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, cwd=cwd)
     return result.returncode!=0
 
-def is_pull_needed_from_remote(cwd, verbose):
-    """Do check whether we need a pull, we get the hash of the HEAD
-    of the remote's master branch. Then, we see if we have this object locally.
-    """
-    cmd = [actions.GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/master']
+def get_remote_head_hash(cwd, branch, verbose):
+    cmd = [actions.GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/'+branch]
     try:
-        hashval = actions.call_subprocess(cmd, cwd, verbose).rstrip()
-        if hashval=='':
-            return False # remote has not commits
+        output = actions.call_subprocess(cmd, cwd, verbose).split('\n')[0].strip()
+        print("output='%s'" % output) # XXX
+        if output=='':
+            return None # remote has not commits
         else:
-            hashval = hashval.split()[0]
+            hashval = output.split()[0]
+            print("Hashval=%s" % hashval) # XXX
+            return hashval
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
+
+def is_pull_needed_from_remote(cwd, branch, verbose):
+    """Do check whether we need a pull, we get the hash of the HEAD
+    of the remote's master branch. Then, we see if we have this object locally.
+    """
+    hashval = get_remote_head_hash(cwd, branch, verbose)
+    if hashval is None:
+        return False
     #cmd = [actions.GIT_EXE_PATH, 'show', '--oneline', hashval]
     cmd = [actions.GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
     rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
@@ -44,15 +53,17 @@ DOT_GIT_RE=re.compile(re.escape('.git'))
 
 class GitRepoResource(Resource):
     def __init__(self, name, role, workspace_dir, remote_origin_url,
-                 local_path, verbose=False):
+                 local_path, branch, verbose=False):
         super().__init__('git', name, role, workspace_dir)
         self.local_path = local_path
         self.remote_origin_url = remote_origin_url
+        self.branch = branch
         self.verbose = verbose
 
     def to_json(self):
         d = super().to_json()
         d['remote_origin_url'] = self.remote_origin_url
+        d['branch'] = self.branch
         return d
 
     def local_params_to_json(self):
@@ -62,10 +73,18 @@ class GitRepoResource(Resource):
         return self.local_path
 
     def add_prechecks(self):
-        pass
+        if exists(self.local_path):
+            (current, other) = get_branch_info(self.local_path, self.verbose)
+            if self.branch!=current and self.branch not in other:
+                raise ConfigurationError("Requested branch '%s' is not available for git repository at %s"%
+                                         (self.branch, self.local_path))
+            if is_git_dirty(self.local_path) and self.branch!=current:
+                click.echo("WARNING: Git repo is currently on branch %s and branch %s was requested. However, the current branch has uncommitted changes. Will skip changing the branch after adding the repo to workspace." % (current, self.branch))
 
     def add(self):
-        pass
+        (current, others) = get_branch_info(self.local_path, self.verbose)
+        if self.branch!=current and not is_git_dirty(self.local_path):
+            switch_git_branch(self.local_path, self.branch, self.verbose)
 
     def add_from_remote(self):
         parent = dirname(self.local_path)
@@ -78,9 +97,12 @@ class GitRepoResource(Resource):
             # remote is correct
             cmd = [actions.GIT_EXE_PATH, 'pull', 'origin', 'master']
             actions.call_subprocess(cmd, self.local_path, self.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose, ok_if_not_present=True)
+
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         def git_move(srcpath, destpath):
             actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
                                      srcpath, destpath],
@@ -108,12 +130,17 @@ class GitRepoResource(Resource):
 
     def snapshot(self):
         # Todo: handle tags
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         hashval = actions.call_subprocess([actions.GIT_EXE_PATH, 'rev-parse',
                                            'HEAD'],
                                           cwd=self.local_path, verbose=False)
         return hashval.strip()
 
     def restore_prechecks(self, hashval):
+        if is_git_dirty(self.local_path):
+            raise ConfigurationError(
+                "Git repo at %s has uncommitted changes. Please commit your changes before restoring" %
+                self.local_path)
         rc = actions.call_subprocess_for_rc([actions.GIT_EXE_PATH, 'cat-file', '-e',
                                      hashval+"^{commit}"],
                                             cwd=self.local_path,
@@ -122,6 +149,7 @@ class GitRepoResource(Resource):
             raise ConfigurationError("No commit found with hash '%s' in %s" %
                                      (hashval, str(self)))
     def restore(self, hashval):
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         actions.call_subprocess([actions.GIT_EXE_PATH, 'reset', '--hard', hashval],
                                 cwd=self.local_path, verbose=self.verbose)
 
@@ -130,13 +158,14 @@ class GitRepoResource(Resource):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.local_path)
-        if is_pull_needed_from_remote(self.local_path, self.verbose):
+        if is_pull_needed_from_remote(self.local_path, self.branch, self.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
 
     def push(self):
         """Push to remote origin, if any"""
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', self.branch],
                                 cwd=self.local_path, verbose=self.verbose)
 
     def pull_prechecks(self):
@@ -147,6 +176,7 @@ class GitRepoResource(Resource):
 
     def pull(self):
         """Pull from remote origin, if any"""
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
                                 cwd=self.local_path, verbose=self.verbose)
 
@@ -164,6 +194,43 @@ def get_remote_origin(local_path, verbose=False):
         return None
     return cp.stdout.rstrip()
 
+def get_branch_info(local_path, verbose=False):
+    data = actions.call_subprocess([actions.GIT_EXE_PATH, 'branch'],
+                                   cwd=local_path, verbose=verbose)
+    current = None
+    other = []
+    for line in data.split('\n'):
+        line = line.strip()
+        if len(line)==0:
+            continue
+        if line.startswith('*'):
+            assert current is None
+            current = line[2:]
+        else:
+            other.append(line)
+    if current is None:
+        raise InternalError("Problem obtaining branch information for local git repo at %s" %
+                            local_path)
+    else:
+        return (current, other)
+
+def switch_git_branch(local_path, branch, verbose):
+    try:
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'checkout', branch],
+                                cwd=local_path, verbose=verbose)
+    except Exception as e:
+        raise ConfigurationError("Unable to switch git repo at %s to branch %s"
+                                 % (local_path, branch)) from e
+
+def switch_git_branch_if_needed(local_path, branch, verbose, ok_if_not_present=False):
+    (current, others) = get_branch_info(local_path, verbose)
+    if branch==current:
+        return
+    else:
+        if (branch not in others) and (not ok_if_not_present) :
+            raise InternalError("Trying to switch to branch %s not in repo at %s"%
+                                (branch, others))
+        switch_git_branch(local_path, branch, verbose)
 
 class GitLocalPathType(LocalPathType):
     def __init__(self, remote_url, verbose):
@@ -186,13 +253,15 @@ class GitLocalPathType(LocalPathType):
 
 class GitRepoFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace_dir, batch, verbose,
-                          local_path):
+                          local_path, branch):
         """Instantiate a resource object from the add command's
         arguments"""
         lpr = realpath(local_path)
         wdr = realpath(workspace_dir)
         if not actions.is_git_repo(local_path):
             if lpr.startswith(wdr):
+                if branch!='master':
+                    raise ConfigurationError("Only the branch 'master' is available for resources that are within the workspace's git repository")
                 return GitRepoSubdirFactory().from_command_line(role, name,
                                                                 workspace_dir, batch, verbose,
                                                                 local_path)
@@ -201,15 +270,16 @@ class GitRepoFactory(ResourceFactory):
         if lpr==wdr:
             raise ConfigurationError("Cannot add the entire workspace as a git resource")
         remote_origin = get_remote_origin(local_path, verbose=verbose)
+
         return GitRepoResource(name, role, workspace_dir,
-                               remote_origin, local_path, verbose)
+                               remote_origin, local_path, branch, verbose)
 
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']=='git'
         return GitRepoResource(json_data['name'], json_data['role'],
                                workspace_dir, json_data['remote_origin_url'],
-                               local_params['local_path'],
+                               local_params['local_path'], json_data['branch'],
                                verbose)
 
     def from_json_remote(self, json_data, workspace_dir, batch, verbose):
@@ -217,6 +287,7 @@ class GitRepoFactory(ResourceFactory):
         rname = json_data['name']
         remote_origin_url = json_data['remote_origin_url']
         default_local_path = join(workspace_dir, rname)
+        branch = json_data['branch']
         if not batch:
             # ask the user for a local path
             local_path = \
@@ -235,9 +306,9 @@ class GitRepoFactory(ResourceFactory):
             local_path = default_local_path
         return GitRepoResource(rname, json_data['role'],
                                workspace_dir, remote_origin_url,
-                               local_path, verbose)
+                               local_path, branch, verbose)
 
-    def suggest_name(self, local_path):
+    def suggest_name(self, local_path, branch):
         return basename(local_path)
 
 
@@ -324,7 +395,7 @@ class GitRepoSubdirResource(Resource):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.local_path)
-        if is_pull_needed_from_remote(self.local_path, self.verbose):
+        if is_pull_needed_from_remote(self.local_path, 'master', self.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
 
@@ -349,6 +420,23 @@ class GitRepoSubdirResource(Resource):
     def __str__(self):
         return "Git repository subdirectory %s in role '%s'" % (self.relative_path, self.role)
 
+CONFIRM_SUBDIR_MSG=\
+"The subdirectory %s does not currently exist, but must be a part of the workspace's git repo in order"+\
+" to be used as a resource. Do you want it to be created and added to git?"
+
+def create_results_subdir(workspace_dir, full_path, relative_path, verbose):
+    os.makedirs(full_path)
+    with open(join(full_path, 'README.txt'), 'w') as f:
+        f.write("This directory is for experimental results. Upon each snapshot, the current contents will be moved to a new subdirectory.\n")
+        f.write("This README file ensures the directory is added to the git repository, as git does not support empty directories.\n")
+    actions.call_subprocess([actions.GIT_EXE_PATH, 'add', relative_path],
+                            cwd=workspace_dir, verbose=verbose)
+    actions.call_subprocess([actions.GIT_EXE_PATH, 'commit', '-m',
+                             'Add %s to repo for storing results'%relative_path],
+                            cwd=workspace_dir, verbose=verbose)
+    click.echo("Added %s to git repository" % relative_path)
+
+
 class GitRepoSubdirFactory(ResourceFactory):
     """This is a version of a git repo resource where we are just
     storing in a subdirectory of a repo rather than the full repo.
@@ -370,6 +458,12 @@ class GitRepoSubdirFactory(ResourceFactory):
         if role != ResourceRoles.RESULTS:
             raise ConfigurationError("Probem creating resource '%s': Role %s is not premitted for a git subdirectory, only the results role"
                                      % (name, role))
+        if not exists(local_path):
+            if not batch:
+                click.confirm(CONFIRM_SUBDIR_MSG%relative_path, abort=True)
+                create_results_subdir(workspace_dir, local_path, relative_path, verbose)
+            else:
+                raise ConfigurationError("Cannot create a resource from a git subdirectory if the directory does not already exist.")
         return GitRepoSubdirResource(name, workspace_dir, relative_path, verbose)
 
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
@@ -389,6 +483,6 @@ class GitRepoSubdirFactory(ResourceFactory):
                                      (relative_path, rname, local_path))
         return GitRepoSubdirResource(rname, workspace_dir, relative_path, verbose)
 
-    def suggest_name(self, local_path):
+    def suggest_name(self, local_path, *args):
         return basename(local_path)
 

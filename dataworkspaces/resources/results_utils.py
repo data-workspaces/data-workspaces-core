@@ -4,7 +4,7 @@ We need to move files into a unique subdirectory each time a snapshot
 is taken.
 """
 import os
-from os.path import expanduser, isdir, abspath, join, exists
+from os.path import join, exists
 import re
 
 import click
