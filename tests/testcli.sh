@@ -1,5 +1,6 @@
 #!/bin/bash
 # A simple test case
+# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 set -e
 KEEP=0
 ARGS=""

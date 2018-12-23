@@ -1,3 +1,4 @@
+# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
 Utilities for dealing with resources of the results role.
 We need to move files into a unique subdirectory each time a snapshot

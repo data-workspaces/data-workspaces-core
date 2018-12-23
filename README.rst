@@ -237,3 +237,7 @@ as well.
    $ dws snapshot v3
    Created snapshot with hash 'A3838492B3' and tag 'v3'.
 
+License
+=======
+This code is copyright 2018 by the Max Planck Institute for Software Systems and Data-ken
+Research. It is licensed under the Apache 2.0 license. See the file LICENSE.txt for details.

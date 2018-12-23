@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Test script to transform data
+# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 
 import sys
 from os.path import exists

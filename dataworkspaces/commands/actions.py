@@ -1,3 +1,4 @@
+# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
 Actions are the steps of a command that change the state of a system.
 A typical command is implemented by checking the environment to see what
