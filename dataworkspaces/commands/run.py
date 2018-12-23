@@ -3,7 +3,9 @@ from os.path import isabs, exists, expanduser, basename, dirname, isdir, join
 import shutil
 import json
 import datetime
+import subprocess
 
+import click
 
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError
@@ -24,25 +26,37 @@ class RemovePreviousLineage(actions.Action):
 
 
 class RunCommand(actions.Action):
+    @actions.provides_to_ns('start_ts', datetime.datetime)
+    @actions.provides_to_ns('end_ts', datetime.datetime)
     def __init__(self, ns, verbose, command_and_args, cwd):
         super().__init__(ns, verbose)
         self.command_and_args = command_and_args
         self.cwd = cwd
 
     def run(self):
-        actions.call_subprocess(self.command_and_args, self.cwd, verbose=self.verbose)
+        self.ns.start_ts = datetime.datetime.now()
+        if self.verbose:
+            click.echo(" ".join(self.command_and_args + "[run in %s]"%self.cwd))
+        cp = subprocess.run(self.command_and_args, cwd=self.cwd, encoding='utf-8')
+        cp.check_returncode()
+        self.ns.end_ts = datetime.datetime.now()
 
     def __str__(self):
         return "Run %s from directory %s" % (self.command_and_args, self.cwd)
 
 
 class WriteLineage(actions.Action):
+    @actions.requires_from_ns('start_ts', datetime.datetime)
+    @actions.requires_from_ns('end_ts', datetime.datetime)
     def __init__(self, ns, verbose, lineage_file, lineage_data):
         super().__init__(ns, verbose)
         self.lineage_file = lineage_file
         self.lineage_data = lineage_data
 
     def run(self):
+        self.lineage_data['timestamp'] = self.ns.start_ts.isoformat()
+        self.lineage_data['elapsed_time_seconds'] = \
+            round((self.ns.end_ts-self.ns.start_ts).total_seconds(), 1)
         parent_dir = dirname(self.lineage_file)
         if not isdir(parent_dir):
             os.mkdir(parent_dir)
@@ -88,13 +102,11 @@ def run_command(workspace_dir, step_name, cwd, command, args, batch, verbose):
             step_name = remove_extension(basename(command_path))
 
     lineage_file = join(get_current_lineage_dir(workspace_dir), '%s.json' % step_name)
-
     lineage_data = {
         'step_name':step_name,
         'command_path':command_path,
         'args': args,
         'cwd': cwd,
-        'timestamp':datetime.datetime.now().isoformat()
     }
     plan.append(RemovePreviousLineage(ns, verbose, lineage_file))
     plan.append(RunCommand(ns, verbose, command_and_args, cwd))
