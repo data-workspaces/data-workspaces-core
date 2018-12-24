@@ -75,6 +75,7 @@ def clone_command(repository, directory=None, batch=False, verbose=False):
         resources_json = json.load(f)
 
     add_to_gi = None
+    gitignore_path = None
     try:
         for resource_json in resources_json:
             add_remote_action = AddRemoteResource(ns, verbose, batch, directory, resource_json)
