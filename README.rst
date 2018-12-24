@@ -33,17 +33,18 @@ which should have been installed into your environment by ``pip install``.
 
 Just run ``dws --help`` for a list of global options and subcommands.
 
-Here is a summary of the (planned) subcommands:
+Here is a summary of the key subcommands:
 
 * ``init`` - initialize a new workspace in the current directory
 * ``add`` - add a *resource* (a git repo, a directory, an s3 bucket, etc.)
   to the current workspace
 * ``snapshot`` - take a snapshot of the current state of the workspace
 * ``restore`` - restore the state to a prior snapshot
-* ``run`` - run a command and capture the lineage. This will be done by
-  inspecting the arguments and asking the user interactively to provide
-  any missing information. This information is saved in a file for
-  future calls to the same command.
+* ``push`` - push a workspace and all resources to their (remote) origins
+* ``pull`` - pull the workspace and all resources from their (remote) origins
+* ``clone`` - clone a workspace and all the associated resources to the local machine
+* ``run`` - run a command and capture the lineage. This information is saved in a file for
+  future calls to the same command. *(not yet fully implemented)*
 
 Design
 ======
