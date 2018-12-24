@@ -26,12 +26,10 @@ def get_remote_head_hash(cwd, branch, verbose):
     cmd = [actions.GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/'+branch]
     try:
         output = actions.call_subprocess(cmd, cwd, verbose).split('\n')[0].strip()
-        print("output='%s'" % output) # XXX
         if output=='':
             return None # remote has not commits
         else:
             hashval = output.split()[0]
-            print("Hashval=%s" % hashval) # XXX
             return hashval
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
