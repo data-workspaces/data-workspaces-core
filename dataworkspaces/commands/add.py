@@ -49,13 +49,23 @@ class UpdateLocalParams(actions.Action):
         self.local_params_fpath = get_local_params_file_path(workspace_dir)
         if not exists(self.local_params_fpath):
             raise InternalError("Missing file %s" % self.local_params_fpath)
-        with open(self.local_params_fpath, 'r') as f:
-            self.local_params_data = json.load(f)
-        self.local_params_data[resource.name] = resource.local_params_to_json()
+        self.local_params_for_resource = resource.local_params_to_json()
 
     def run(self):
+        """We have to load and update the file at run time rather than at init type.
+        Otherwise, if we are updating multiple resources (e.g. for the clone command),
+        we will write over earlier resources with the later resources. By reading and
+        updating for each resource, we ensure we are always updating based on the latest
+        version.
+
+        TODO: A more efficient implementation might gather up all the changes in a
+        namespace variable and apply them in a separate action at the end.
+        """
+        with open(self.local_params_fpath, 'r') as f:
+            local_params_data = json.load(f)
+        local_params_data[self.rname] = self.local_params_for_resource
         with open(self.local_params_fpath, 'w') as f:
-            json.dump(self.local_params_data, f, indent=2)
+            json.dump(local_params_data, f, indent=2)
 
     def __str__(self):
         return "Add local parameters for %s to %s" % \
