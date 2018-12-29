@@ -15,6 +15,7 @@ from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
                       get_snapshot_history_file_path,\
                       get_snapshot_lineage_dir
 from .run import get_current_lineage_dir
+from .params import get_local_param_from_file, HOSTNAME
 
 class RestoreResource(actions.Action):
     def __init__(self, ns, verbose, resource, snapshot_resources):
@@ -223,13 +224,20 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
             creating_new_snapshot = True
     need_to_write_resources_file = \
         original_current_resource_names!=snapshot_resources.get_names()
+    tagstr = ', tag=%s' % snapshot_tag if snapshot_tag else ''
     if creating_new_snapshot:
+        new_snapshot_desc = \
+            "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
+            (snapshot_hash, tagstr) 
         write_revised = WriteRevisedSnapshotFile(ns, verbose, workspace_dir,
                                                  snapshot_resources)
         plan.append(write_revised)
-        history_action = AppendSnapshotHistory(ns, verbose, sh_file, sh_data, None,
-                                               "Revert creating a new hash",
-                                               datetime.datetime.now())
+        hostname = get_local_param_from_file(workspace_dir, HOSTNAME)
+        history_action = \
+            AppendSnapshotHistory(ns, verbose, sh_file, sh_data, None,
+                                  new_snapshot_desc,
+                                  datetime.datetime.now(),
+                                  rel_dest_root=None, hostname=hostname)
         plan.append(history_action)
         if need_to_write_resources_file:
             plan.append(WriteRevisedResourceFile(ns, verbose, snapshot_resources))
@@ -255,11 +263,9 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                                               snapshot_lineage_dir))
     
 
-    tagstr = ', tag=%s' % snapshot_tag if snapshot_tag else ''
     if creating_new_snapshot:
-        desc = "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
-                (snapshot_hash, tagstr)
-        commit_msg_fn = lambda: desc + " " + ns.snapshot_hash
+        commit_msg_fn = lambda: new_snapshot_desc + " " + ns.snapshot_hash
+        desc = new_snapshot_desc
     else:
         desc = "Restore snapshot %s%s" % (snapshot_hash, tagstr)
         commit_msg_fn = lambda: desc

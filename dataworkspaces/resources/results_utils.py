@@ -26,18 +26,18 @@ TEMPLATE_VAR_PATS = {
     'MIN':r'\d\d',
     'SEC':r'\d\d',
     'DAY_OF_WEEK':r'\w+',
-    'TAG':r'\w*',
-    'TAGBOTH':r'\-(\w+\-)?',
-    'TAGLEFT':r'(\-\w+)?',
-    'TAGRIGHT':r'(\w+\-)?'
+    'TAG':r'\w+',
+    #'TAGBOTH':r'\-(\w+\-)?',
+    #'TAGLEFT':r'(\-\w+)?',
+    #'TAGRIGHT':r'(\w+\-)?'
 }
 TEMPLATE_VAR_RE = re.compile('\\{\w+\\}')
 
 VALID_TEMPLATE_VARS=set(TEMPLATE_VAR_PATS.keys())
 # remove the 'internal' template variables
-VALID_TEMPLATE_VARS.remove('TAGBOTH')
-VALID_TEMPLATE_VARS.remove('TAGLEFT')
-VALID_TEMPLATE_VARS.remove('TAGRIGHT')
+#VALID_TEMPLATE_VARS.remove('TAGBOTH')
+#VALID_TEMPLATE_VARS.remove('TAGLEFT')
+#VALID_TEMPLATE_VARS.remove('TAGRIGHT')
 
 def validate_template(template):
     for mo in TEMPLATE_VAR_RE.finditer(template):
@@ -46,19 +46,20 @@ def validate_template(template):
             raise ConfigurationError("Unknown variable '%s' in results directory template '%s'"%
                                      (tvar, template))
 
-def _translate_tag_vars(template):
-    """The {TAG} template variable is optional, so we treat it as a
-    special case to avoid generated paths like foo/bar- or fooo/bar--baz
-    when the tag is not present. We replace any occurrances of a {TAG}
-    that has dashes on either side with one a template variable that
-    indicates where the dashes are.
-    """
-    return template.replace('-{TAG}-', '{TAGBOTH}')\
-                   .replace('-{TAG}', '{TAGLEFT}')\
-                   .replace('{TAG}-', '{TAGRIGHT}')
+
+# def _translate_tag_vars(template):
+#     """The {TAG} template variable is optional, so we treat it as a
+#     special case to avoid generated paths like foo/bar- or fooo/bar--baz
+#     when the tag is not present. We replace any occurrances of a {TAG}
+#     that has dashes on either side with one a template variable that
+#     indicates where the dashes are.
+#     """
+#     return template.replace('-{TAG}-', '{TAGBOTH}')\
+#                    .replace('-{TAG}', '{TAGLEFT}')\
+#                    .replace('{TAG}-', '{TAGRIGHT}')
 
 def make_re_pattern_for_dir_template(template):
-    template = _translate_tag_vars(template)
+    #template = _translate_tag_vars(template)
     # we escape the template and then "unescape" the braces
     escaped = re.escape(template).replace('\\{', '{').replace('\\}', '}')
     def repl(tvar_mo):
@@ -74,7 +75,7 @@ SHORT_MONTHS=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
 
 def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
                         snapshot_tag=None):
-    template = _translate_tag_vars(template)
+    #template = _translate_tag_vars(template)
     values = {
         'USERNAME':username,
         'HOSTNAME':hostname,
@@ -91,12 +92,13 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
     }
     if snapshot_tag is not None:
         values['TAG'] = snapshot_tag
-        values['TAGBOTH'] = '-' + snapshot_tag + '-'
-        values['TAGLEFT'] = '-' + snapshot_tag
-        values['TAGRIGHT'] = snapshot_tag + '-'
+        #values['TAGBOTH'] = '-' + snapshot_tag + '-'
+        #values['TAGLEFT'] = '-' + snapshot_tag
+        #values['TAGRIGHT'] = snapshot_tag + '-'
     else:
-        values['TAG'] = values['TAGLEFT'] = values['TAGRIGHT'] = ''
-        values['TAGBOTH'] = '-'
+        #values['TAG'] = values['TAGLEFT'] = values['TAGRIGHT'] = ''
+        #values['TAGBOTH'] = '-'
+        values['TAG'] = '%03d'%snapshot_no # if the tag isn't present, use the snapshot number
     def repl(tvar_mo):
         tvar = tvar_mo.group(0)[1:-1]
         assert tvar in values, \

@@ -8,7 +8,7 @@ import click
 from dataworkspaces.errors import ConfigurationError, InternalError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import get_resource_from_command_line,\
-    suggest_resource_name, CurrentResources, get_local_params_file_path
+    suggest_resource_name, CurrentResources, get_resource_local_params_file_path
 
 
 
@@ -46,7 +46,7 @@ class AddResourceToFile(actions.Action):
 class UpdateLocalParams(actions.Action):
     def __init__(self, ns, verbose, resource, workspace_dir):
         self.rname = resource.name
-        self.local_params_fpath = get_local_params_file_path(workspace_dir)
+        self.local_params_fpath = get_resource_local_params_file_path(workspace_dir)
         if not exists(self.local_params_fpath):
             raise InternalError("Missing file %s" % self.local_params_fpath)
         self.local_params_for_resource = resource.local_params_to_json()

@@ -8,14 +8,15 @@ import json
 
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 from dataworkspaces.resources.resource import \
-    get_resource_file_path, get_local_params_file_path
+    get_resource_file_path, get_resource_local_params_file_path
 import dataworkspaces.commands.actions as actions
 from .init import get_config_file_path
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .pull import AddRemoteResource
+from .params import get_local_defaults, get_local_params_file_path
 
 
-def clone_command(repository, directory=None, batch=False, verbose=False):
+def clone_command(repository, hostname, directory=None, batch=False, verbose=False):
     plan = []
     ns = actions.Namespace()
 
@@ -67,8 +68,9 @@ def clone_command(repository, directory=None, batch=False, verbose=False):
         raise
 
     # ok, now we have the main repo, so we can clone all the resources
-    local_params_file = get_local_params_file_path(directory)
-    with open(local_params_file, 'w') as f:
+    with open(get_local_params_file_path(directory), 'w') as f:
+        json.dump(get_local_defaults(hostname), f, indent=2)
+    with open(get_resource_local_params_file_path(directory), 'w') as f:
         json.dump({}, f, indent=2)
     resources_file = get_resource_file_path(directory)
     with open(resources_file, 'r') as f:

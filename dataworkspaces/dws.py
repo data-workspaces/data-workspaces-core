@@ -10,6 +10,7 @@ import click
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
+import socket
 
 from .commands.init import init_command
 from .commands.add import add_command
@@ -26,6 +27,7 @@ from .errors import BatchModeError
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
+DEFAULT_HOSTNAME=socket.gethostname().split('.')[0]
 
 # we are going to store the verbose mode
 # in a global here and wrap it in a function
@@ -112,11 +114,20 @@ def cli(ctx, batch, verbose):
 
 
 @click.command()
+@click.option('--hostname', type=str, default=None,
+              help="Hostname to identify this machine in snapshot directory paths, "+
+                   "defaults to " + DEFAULT_HOSTNAME)
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
-def init(ctx, name):
+def init(ctx, hostname, name):
     """Initialize a new workspace"""
-    init_command(name, **vars(ctx.obj))
+    if hostname is None:
+        if not ctx.obj.batch:
+            hostname = click.prompt("What name do you want to use for this machine in snapshot directory paths?",
+                                    default=DEFAULT_HOSTNAME, type=str)
+        else:
+            hostname = DEFAULT_HOSTNAME
+    init_command(name, hostname, **vars(ctx.obj))
 
 
 cli.add_command(init)
@@ -294,13 +305,22 @@ cli.add_command(pull)
 
 
 @click.command()
+@click.option('--hostname', type=str, default=None,
+              help="Hostname to identify this machine in snapshot directory paths, "+
+                   "defaults to " + DEFAULT_HOSTNAME)
 @click.argument('repository', type=str, default=None, required=True)
 @click.argument('directory', type=str, default=None, required=False)
 @click.pass_context
-def clone(ctx, repository, directory):
+def clone(ctx, hostname, repository, directory):
     """Clone the specified data workspace."""
     ns = ctx.obj
-    clone_command(repository, directory, ns.batch, ns.verbose)
+    if hostname is None:
+        if not ns.batch:
+            hostname = click.prompt("What name do you want to use for this machine in snapshot directory paths?",
+                                    default=DEFAULT_HOSTNAME, type=str)
+        else:
+            hostname = DEFAULT_HOSTNAME
+    clone_command(repository, hostname, directory, ns.batch, ns.verbose)
 
 cli.add_command(clone)
 

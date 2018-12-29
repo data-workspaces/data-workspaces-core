@@ -2,11 +2,16 @@
 """
 Definition of configuration parameters
 """
-
-from dataworkspaces.resources.results_utils import validate_template
+import json
+import socket
+from os.path import join
+from dataworkspaces.resources.results_utils import \
+    validate_template
 from dataworkspaces.errors import ConfigurationError
 
+
 PARAM_DEFS = {}
+LOCAL_PARAM_DEFS = {}
 
 class ParamDef:
     def __init__(self, name, default_value, help, validation_fn=None):
@@ -26,12 +31,14 @@ class ParamDef:
 
 def define_param(name, default_value, help, validation_fn=None):
     global PARAM_DEFS
+    assert name not in PARAM_DEFS
+    assert name not in LOCAL_PARAM_DEFS # don't want duplicates across local and global
     PARAM_DEFS[name] = ParamDef(name, default_value, help, validation_fn)
     return name
 
 RESULTS_DIR_TEMPLATE=define_param(
     'results.dir_template',
-    "snapshots/{YEAR}-{MONTH}/{SHORT_MONTH}-{DAY}-{HOUR}:{MIN}:{SEC}-{TAG}",
+    "snapshots/{HOSTNAME}-{TAG}",
     "Template describing where results files will be moved during snapshot",
     validate_template
 )
@@ -63,3 +70,50 @@ def get_all_defaults():
     the initial config file.
     """
     return {param:PARAM_DEFS[param].default_value for param in PARAM_DEFS.keys()}
+
+#########################################################
+#                  Local Params                         #
+#########################################################
+# These are parameters local to the current install, and not
+# tracked through git. The local params file also contains per-resource params
+# as well.
+
+def define_local_param(name, default_value, help, validation_fn=None):
+    global LOCAL_PARAM_DEFS
+    assert name not in LOCAL_PARAM_DEFS
+    assert name not in PARAM_DEFS # don't want duplicates across local and global
+    LOCAL_PARAM_DEFS[name] = ParamDef(name, default_value, help, validation_fn)
+    return name
+
+def get_local_param_value(local_config, param_name):
+    assert param_name in LOCAL_PARAM_DEFS
+    if 'all_resource_params' not in local_config:
+        return LOCAL_PARAM_DEFS[param_name].default_value
+    params = local_config['all_resource_params']
+    return params.get(param_name, PARAM_DEFS[param_name].default_value)
+
+def get_local_param_from_file(workspace_dir, param_name):
+    with open(get_local_params_file_path(workspace_dir), 'r') as f:
+        local_config = json.load(f)
+        return get_local_param_value(local_config, param_name)
+
+def get_local_defaults(hostname=None):
+    """Return a mapping of all default values for use in generating
+    the initial config file. The hostname is usually provided explicitly
+    by the user
+    """
+    defaults = {param:LOCAL_PARAM_DEFS[param].default_value
+                for param in LOCAL_PARAM_DEFS.keys()}
+    if hostname is not None:
+        defaults[HOSTNAME] = hostname
+    return defaults
+
+def get_local_params_file_path(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/local_params.json')
+
+
+HOSTNAME=define_local_param(
+    'hostname',
+    socket.gethostname().split('.')[0],
+    help="Hostname to identify this machine in snapshots."
+)

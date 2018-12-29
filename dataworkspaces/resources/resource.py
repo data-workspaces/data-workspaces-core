@@ -156,7 +156,7 @@ RESOURCE_TYPES = {
 def get_resource_file_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/resources.json')
 
-def get_local_params_file_path(workspace_dir):
+def get_resource_local_params_file_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/resource_local_params.json')
 
 def get_snapshot_hash_file_path(workspace_dir, snapshot_hash):
@@ -223,7 +223,7 @@ class CurrentResources(ResourceCollection):
         resource_file = get_resource_file_path(workspace_dir)
         if not exists(resource_file):
             raise InternalError("Missing current resources file %s" % resource_file)
-        local_params_file = get_local_params_file_path(workspace_dir)
+        local_params_file = get_resource_local_params_file_path(workspace_dir)
         if not exists(local_params_file):
             raise InternalError("Missing resource local params file %s" %
                                 local_params_file)
@@ -268,7 +268,7 @@ class SnapshotResources(ResourceCollection):
         filepath = get_snapshot_hash_file_path(workspace_dir, snapshot_hash)
         if not exists(filepath):
             raise InternalError("Missing snapshot manifest file %s" % filepath)
-        local_params_file = get_local_params_file_path(workspace_dir)
+        local_params_file = get_resource_local_params_file_path(workspace_dir)
         if not exists(local_params_file):
             raise InternalError("Missing resource local params file %s"%
                                 local_params_file)

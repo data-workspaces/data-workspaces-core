@@ -6,7 +6,6 @@ import re
 import json
 import datetime
 import getpass
-import socket
 import shutil
 
 import click
@@ -16,7 +15,8 @@ from dataworkspaces.resources.results_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
 import dataworkspaces.commands.actions as actions
 from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\
-                    get_config_param_value
+                    get_config_param_value, get_local_param_from_file,\
+                    HOSTNAME
 from .init import get_config_file_path
 from .run import get_current_lineage_dir
 from dataworkspaces.errors import InternalError, ConfigurationError
@@ -64,19 +64,14 @@ class WriteSnapshotFile(actions.Action):
 
 
 class MoveCurrentFilesForResults(actions.Action):
-    def __init__(self, ns, verbose, resource, exclude_files,
-                 template, timestamp, snapshot_no, snapshot_tag=None):
+    def __init__(self, ns, verbose, workspace_dir, resource, exclude_files,
+                 rel_dest_root, exclude_dirs_re):
         super().__init__(ns, verbose)
         assert resource.has_results_role()
         self.resource = resource
         self.exclude_files = exclude_files
-        username = getpass.getuser()
-        hostname = socket.gethostname()
-        validate_template(template)
-        self.rel_dest_root = expand_dir_template(template, username, hostname,
-                                                 timestamp, snapshot_no,
-                                                 snapshot_tag)
-        self.exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(template))
+        self.rel_dest_root = rel_dest_root
+        self.exclude_dirs_re = exclude_dirs_re
 
     def run(self):
         self.resource.results_move_current_files(self.rel_dest_root,
@@ -92,16 +87,20 @@ class MoveCurrentFilesForResults(actions.Action):
 class AppendSnapshotHistory(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
     def __init__(self, ns, verbose, snapshot_history_file,
-                 snapshot_history_data, tag, message, timestamp):
+                 snapshot_history_data, tag, message, timestamp, rel_dest_root,
+                 hostname):
         super().__init__(ns, verbose)
-        self.snapshot_data = {'tag':tag, 'message':message}
-        self.timestamp = timestamp
+        self.snapshot_data = {
+            'tag':tag, 'message':message,
+            'relative_destination_path':rel_dest_root,
+            'hostname':hostname,
+            'timestamp':timestamp.isoformat()
+        }
         self.snapshot_history_file = snapshot_history_file
         self.snapshot_history_data = snapshot_history_data
 
     def run(self):
         self.snapshot_data['hash'] = self.ns.snapshot_hash
-        self.snapshot_data['timestamp'] = self.timestamp.isoformat()
         self.snapshot_history_data.append(self.snapshot_data)
         with open(self.snapshot_history_file, 'w') as f:
             json.dump(self.snapshot_history_data, f, indent=2)
@@ -175,21 +174,29 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
         config_data = json.load(f)
     exclude_files = set(get_config_param_value(config_data, RESULTS_MOVE_EXCLUDE_FILES))
     results_dir_template = get_config_param_value(config_data, RESULTS_DIR_TEMPLATE)
+    username = getpass.getuser()
+    hostname = get_local_param_from_file(workspace_dir, HOSTNAME)
+    validate_template(results_dir_template)
+    # relative path to which we will mvoe results files
+    rel_dest_root = expand_dir_template(results_dir_template, username, hostname,
+                                        snapshot_timestamp, snapshot_number,
+                                        tag)
+    exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(results_dir_template))
 
 
     for r in current_resources.resources:
         if r.has_results_role():
-            plan.append(MoveCurrentFilesForResults(ns, verbose, r, exclude_files,
-                                                   results_dir_template,
-                                                   snapshot_timestamp,
-                                                   snapshot_number,
-                                                   tag))
+            plan.append(MoveCurrentFilesForResults(ns, verbose, workspace_dir, r,
+                                                   exclude_files,
+                                                   rel_dest_root,
+                                                   exclude_dirs_re))
         plan.append(
             TakeResourceSnapshot(ns, verbose, r))
     plan.append(WriteSnapshotFile(ns, verbose, workspace_dir, current_resources))
     plan.append(AppendSnapshotHistory(ns, verbose, snapshot_history_file,
                                       snapshot_history_data, tag, message,
-                                      snapshot_timestamp))
+                                      snapshot_timestamp, rel_dest_root,
+                                      hostname))
     plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                lambda:[ns.snapshot_filename,
                                        snapshot_history_file]))
