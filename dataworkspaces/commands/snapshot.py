@@ -11,7 +11,7 @@ import shutil
 import click
 
 from dataworkspaces.resources.resource import CurrentResources
-from dataworkspaces.resources.results_utils import \
+from dataworkspaces.resources.snapshot_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
 import dataworkspaces.commands.actions as actions
 from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\

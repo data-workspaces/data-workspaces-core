@@ -9,7 +9,7 @@ import os.path
 from dataworkspaces.errors import ConfigurationError
 from .resource import Resource, ResourceFactory
 from . import hashtree
-from .results_utils import move_current_files_local_fs
+from .snapshot_utils import move_current_files_local_fs
 
 LOCAL_FILE = 'file'
 

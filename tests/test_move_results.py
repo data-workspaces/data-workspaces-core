@@ -10,15 +10,18 @@ import os.path
 import shutil
 import re
 import datetime
+import subprocess
 
 try:
     import dataworkspaces
 except ImportError:
     sys.path.append(os.path.abspath(".."))
 
-from dataworkspaces.resources.results_utils import \
+from dataworkspaces.resources.snapshot_utils import \
     move_current_files_local_fs, make_re_pattern_for_dir_template,\
     expand_dir_template
+from dataworkspaces.resources.git_resource import \
+    git_move_and_add, is_file_tracked_by_git
 
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 EXCLUDE_DIRS_RE=re.compile(r'^.+\-.+\/.+\/.+\-\d\d\:\d\d$')
@@ -38,15 +41,15 @@ class TestDirTemplateRe(unittest.TestCase):
 
     def test1(self):
         self._test_pat('{ISO_TIMESTAMP}/{USERNAME}-{SNAPSHOT_NO}',
-                       r'^\d\d\d\d\-\d\d\-\d\dT\d\d:\d\d:\d\d\/\w+\-\d\d+$')
+                       r'^\d\d\d\d\-\d\d\-\d\dT\d\d:\d\d:\d\d\/\w([\w\-\.])*\-\d\d+$')
 
     def test2(self):
         self._test_pat('{YEAR}-{MONTH}/{DAY}-{MIN}:{SEC}-{TAG}',
-                       r'^\d\d\d\d\-\d\d\/\d\d\-\d\d\:\d\d\-\w+$')
+                       r'^\d\d\d\d\-\d\d\/\d\d\-\d\d\:\d\d\-\w([\w\-\.])*$')
 
     def test3(self):
         self._test_pat('saved-results/{ISO_TIMESTAMP}-{TAG}-{SNAPSHOT_NO}',
-                       r'^saved\-results\/\d\d\d\d\-\d\d\-\d\dT\d\d:\d\d:\d\d\-\w+\-\d\d+$')
+                       r'^saved\-results\/\d\d\d\d\-\d\d\-\d\dT\d\d:\d\d:\d\d\-\w([\w\-\.])*\-\d\d+$')
 
 TIMESTAMP=datetime.datetime(2018, 9, 30, 18, 19, 54, 951829)
 
@@ -123,6 +126,73 @@ class TestMoveResults(unittest.TestCase):
         print("Adding second batch of files")
         makefile('test.log')
         makefile('test2.log')
+        os.mkdir(subdir)
+        makefile('subdir/output.csv')
+        mapping = move_current_files_local_fs('test',
+                                              TEMPDIR, '2018-09/19/jfischer-11:50',
+                                              set(['results.csv']),
+                                              EXCLUDE_DIRS_RE,
+                                              verbose=True)
+        self.assertEqual([('test.log', '2018-09/19/jfischer-11:50/test.log'),
+                          ('test2.log', '2018-09/19/jfischer-11:50/test2.log'),
+                          ('subdir/output.csv',
+                           '2018-09/19/jfischer-11:50/subdir/output.csv')],
+                         mapping)
+        self._assert_exists('2018-09/19/jfischer-11:50/test.log')
+        self._assert_exists('2018-09/19/jfischer-11:50/test2.log')
+        self._assert_exists('2018-09/19/jfischer-11:50/subdir/output.csv')
+        self._assert_exists('results.csv')
+
+
+class TestMoveResultsGit(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEMPDIR):
+            shutil.rmtree(TEMPDIR)
+        os.mkdir(TEMPDIR)
+        subprocess.check_call(['/usr/bin/git', 'init'],
+                              cwd=TEMPDIR)
+
+    def tearDown(self):
+        if os.path.exists(TEMPDIR):
+            shutil.rmtree(TEMPDIR)
+
+    def _assert_exists(self, relpath, should_be_in_git=False):
+        abspath = os.path.join(TEMPDIR, relpath)
+        self.assertTrue(os.path.exists(abspath),
+                        "File %s (relpath %s) does not exist" %
+                        (abspath, relpath))
+        if should_be_in_git:
+            self.assertTrue(is_file_tracked_by_git(relpath, TEMPDIR, True))
+
+    def test_move(self):
+        # first set up some files
+        makefile('results.csv')
+        makefile('test.log')
+        subdir = os.path.join(TEMPDIR, 'subdir')
+        os.mkdir(subdir)
+        makefile('subdir/output.csv')
+        mapping = move_current_files_local_fs('test',
+                                              TEMPDIR, '2018-09/19/jfischer-11:45',
+                                              set(['results.csv']),
+                                              EXCLUDE_DIRS_RE,
+                                              move_fn=lambda src,dest:
+                                                        git_move_and_add(src, dest,
+                                                                         TEMPDIR,
+                                                                         True),
+                                              verbose=True)
+        self.assertEqual([('test.log', '2018-09/19/jfischer-11:45/test.log'),
+                          ('subdir/output.csv',
+                           '2018-09/19/jfischer-11:45/subdir/output.csv')],
+                         mapping)
+        self._assert_exists('2018-09/19/jfischer-11:45/test.log', True)
+        self._assert_exists('2018-09/19/jfischer-11:45/subdir/output.csv', True)
+        self._assert_exists('results.csv', False)
+
+        # now, add more files and move them
+        print("Adding second batch of files")
+        makefile('test.log')
+        makefile('test2.log')
+        os.mkdir(subdir)
         makefile('subdir/output.csv')
         mapping = move_current_files_local_fs('test',
                                               TEMPDIR, '2018-09/19/jfischer-11:50',

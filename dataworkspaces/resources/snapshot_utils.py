@@ -1,11 +1,11 @@
 # Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
-Utilities for dealing with resources of the results role.
-We need to move files into a unique subdirectory each time a snapshot
-is taken.
+Utilities for dealing with snapshots, particularly for resources where
+we move files into a unique snapshot subdirectory each time a
+snapshot is taken.
 """
 import os
-from os.path import join, exists
+from os.path import join, exists, dirname
 import re
 
 import click
@@ -14,8 +14,8 @@ from dataworkspaces.errors import ConfigurationError
 
 # Timestamps have the form '2018-09-30T14:09:05'
 TEMPLATE_VAR_PATS = {
-    'USERNAME':r'\w+',
-    'HOSTNAME':r'\w+',
+    'USERNAME':r'\w([\w\-\.])*',
+    'HOSTNAME':r'\w([\w\-\.])*',
     'SNAPSHOT_NO':r'\d\d+',
     'ISO_TIMESTAMP':r'\d\d\d\d\-\d\d\-\d\dT\d\d:\d\d:\d\d',
     'YEAR':r'\d\d\d\d',
@@ -26,7 +26,7 @@ TEMPLATE_VAR_PATS = {
     'MIN':r'\d\d',
     'SEC':r'\d\d',
     'DAY_OF_WEEK':r'\w+',
-    'TAG':r'\w+',
+    'TAG':r'\w([\w\-\.])*',
     #'TAGBOTH':r'\-(\w+\-)?',
     #'TAGLEFT':r'(\-\w+)?',
     #'TAGRIGHT':r'(\w+\-)?'
@@ -40,6 +40,8 @@ VALID_TEMPLATE_VARS=set(TEMPLATE_VAR_PATS.keys())
 #VALID_TEMPLATE_VARS.remove('TAGRIGHT')
 
 def validate_template(template):
+    if not template.startswith('snapshots/'):
+        raise ConfigurationError("Templates must start with 'snapshots/'")
     for mo in TEMPLATE_VAR_RE.finditer(template):
         tvar = mo.group(0)[1:-1]
         if tvar not in VALID_TEMPLATE_VARS:
@@ -107,6 +109,18 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
     return TEMPLATE_VAR_RE.sub(repl, template)
 
 
+def remove_dir_if_empty(path, base_dir, verbose=False):
+    """Remove now empty directories after the move.
+    """
+    if path==base_dir:
+        return
+    elif len(os.listdir(path))==0:
+        os.rmdir(path)
+        if verbose:
+            print("Removing (now) empty directory %s" % path)
+        remove_dir_if_empty(dirname(path), base_dir, verbose)
+
+DOT_GIT_RE = re.compile('^'+re.escape('.git')+'$')
 def move_current_files_local_fs(resource_name,
                                 base_dir, rel_dest_root, exclude_files,
                                 exclude_dirs_res, move_fn=os.rename,
@@ -115,14 +129,17 @@ def move_current_files_local_fs(resource_name,
     for when the files are stored on the local filesystem (e.g. local or git
     resources).
     exclude_dirs_res is either a single regular expression object or a list
-    of regular expression objects.
+    of regular expression objects. It should not include .git, as that will always
+    be appended to the list.
     This returns the list of (before, after) relative path pairs.
     """
     abs_dest_root = join(base_dir, rel_dest_root)
     created_dir = False # only create when we actually have a file to move
     moved_files = []
+    dirs_to_remove_if_empty = []
     if not isinstance(exclude_dirs_res, list):
         exclude_dirs_res = [exclude_dirs_res,]
+    exclude_dirs_res.append(DOT_GIT_RE)
     for (dirpath, dirnames, filenames) in os.walk(base_dir):
         assert dirpath.startswith(base_dir)
         rel_dirpath = dirpath[len(base_dir)+1:]
@@ -133,23 +150,28 @@ def move_current_files_local_fs(resource_name,
         # find directories we should skip, as they represent results from
         # prior runs
         skip = []
-        for (i, dirname) in enumerate(dirnames):
-            abs_dirpath = join(dirpath, dirname)
+        for (i, dir_name) in enumerate(dirnames):
+            abs_dirpath = join(dirpath, dir_name)
             rel_dirpath = abs_dirpath[len(base_dir)+1:]
             for exclude_dirs_re in exclude_dirs_res:
                 if exclude_dirs_re.match(rel_dirpath):
                     skip.append(i)
-                    print("Skipping directory %s" % rel_dirpath)
+                    if verbose:
+                        print("Skipping directory %s" % rel_dirpath)
         skip.reverse()
         for i in skip:
             del dirnames[i]
         # move files to our new directory
+        moved_files_out_of_this_dir = False
         for f in filenames:
             rel_src_file = join_rel_path(f)
             if rel_src_file in exclude_files:
                 if verbose:
                     click.echo("[%s] Leaving %s" % (resource_name, rel_src_file))
                 continue
+            assert not rel_src_file.startswith('snapshot/'),\
+                "Internal error: file %s should have been excluded from move"%\
+                rel_src_file
             rel_dest_file = join(rel_dest_root, join_rel_path(f))
             abs_src_file = join(dirpath, f)
             abs_dest_file = join(abs_dest_root, join_rel_path(f))
@@ -166,4 +188,9 @@ def move_current_files_local_fs(resource_name,
                 os.makedirs(dest_parent)
             move_fn(abs_src_file, abs_dest_file)
             moved_files.append((rel_src_file, rel_dest_file))
+            moved_files_out_of_this_dir = True
+        if moved_files_out_of_this_dir:
+            dirs_to_remove_if_empty.append(dirpath)
+    for dirpath in dirs_to_remove_if_empty:
+        remove_dir_if_empty(dirpath, base_dir, verbose=verbose)
     return moved_files

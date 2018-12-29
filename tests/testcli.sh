@@ -70,6 +70,28 @@ git add transform_data1.py transform_data2.py
 git commit -m "initial version"
 git remote add origin $REMOTE/code.git
 
+function assert_file_exists {
+    if [ ! -f $1 ]; then
+        echo "ERROR: file $1 does not exist"
+        exit 1
+    fi
+}
+
+function assert_file_not_exists {
+    if [ -f $1 ]; then
+        echo "ERROR: file $1 does exist, but should not."
+        exit 1
+    fi
+}
+
+function assert_dir_not_exists {
+    if [ -d $1 ]; then
+        echo "ERROR: directory $1 does exist, but should not."
+        exit 1
+    fi
+}
+
+
 # create a local directory structure
 cd $WORKDIR
 mkdir -p local_files
@@ -192,7 +214,24 @@ git checkout master
 cd $WORKDIR
 run dws $ARGS add git --role=code --branch=other-branch ./code-other-branch
 
-
+# test the fix for issue #1 - when moving files to a subdirectory during
+# a snapshot, we should be able to handle the case where the files are not
+# tracked by git (that should actually normally be the case).
+HOSTNAME=`hostname -s`
+echo "Testing fix for issue #1..."
+cd $WORKDIR/results_git
+echo "this is a test of an untracked file" >untracked.txt
+mkdir untracked_dir
+echo "this is another test of an untracked file" >untracked_dir/untracked2.txt
+assert_file_exists untracked.txt
+assert_file_exists untracked_dir/untracked2.txt
+dws snapshot issue1-test
+assert_file_not_exists untracked.txt
+assert_file_not_exists untracked_dir/untracked2.txt
+assert_dir_not_exists untracked_dir
+assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked.txt
+assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked_dir/untracked2.txt
+echo "Fix for issue #1 works."
 
 run dws $ARGS push
 # create a clone of code and make some updates

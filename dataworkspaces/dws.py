@@ -10,7 +10,6 @@ import click
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
-import socket
 
 from .commands.init import init_command
 from .commands.add import add_command
@@ -24,10 +23,10 @@ from .commands.run import run_command
 from .commands.diff import diff_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
+from .commands.params import DEFAULT_HOSTNAME, HOSTNAME_RE
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
-DEFAULT_HOSTNAME=socket.gethostname().split('.')[0]
 
 # we are going to store the verbose mode
 # in a global here and wrap it in a function
@@ -113,8 +112,20 @@ def cli(ctx, batch, verbose):
     VERBOSE_MODE = verbose
 
 
+
+class HostParamType(click.ParamType):
+    name = "Must start with a letter or number and only contain letters, numbers, '.', '_', or '-'"
+
+    def convert(self, value, param, ctx):
+        if not HOSTNAME_RE.match(value):
+            self.fail("Must start with a letter or number and only contain letters, numbers, '.', '_', or '-'")
+        return value
+
+HOST_PARAM = HostParamType()
+
+
 @click.command()
-@click.option('--hostname', type=str, default=None,
+@click.option('--hostname', type=HOST_PARAM, default=None,
               help="Hostname to identify this machine in snapshot directory paths, "+
                    "defaults to " + DEFAULT_HOSTNAME)
 @click.argument('name', default=CURR_DIRNAME)
@@ -124,7 +135,7 @@ def init(ctx, hostname, name):
     if hostname is None:
         if not ctx.obj.batch:
             hostname = click.prompt("What name do you want to use for this machine in snapshot directory paths?",
-                                    default=DEFAULT_HOSTNAME, type=str)
+                                    default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
     init_command(name, hostname, **vars(ctx.obj))
@@ -192,11 +203,12 @@ def git(ctx, role, name, branch, path):
 
 add.add_command(git)
 
+
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
 @click.option('--message', '-m', type=str, default='',
               help="Message describing the snapshot")
-@click.argument('tag', type=str, default=None, required=False)
+@click.argument('tag', type=HOST_PARAM, default=None, required=False)
 @click.pass_context
 def snapshot(ctx, workspace_dir, message, tag):
     """Take a snapshot of the current workspace's state"""
@@ -305,7 +317,7 @@ cli.add_command(pull)
 
 
 @click.command()
-@click.option('--hostname', type=str, default=None,
+@click.option('--hostname', type=HOST_PARAM, default=None,
               help="Hostname to identify this machine in snapshot directory paths, "+
                    "defaults to " + DEFAULT_HOSTNAME)
 @click.argument('repository', type=str, default=None, required=True)
@@ -317,7 +329,7 @@ def clone(ctx, hostname, repository, directory):
     if hostname is None:
         if not ns.batch:
             hostname = click.prompt("What name do you want to use for this machine in snapshot directory paths?",
-                                    default=DEFAULT_HOSTNAME, type=str)
+                                    default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
     clone_command(repository, hostname, directory, ns.batch, ns.verbose)

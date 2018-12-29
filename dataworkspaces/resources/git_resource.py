@@ -5,14 +5,12 @@ Resource for git repositories
 import subprocess
 import os
 from os.path import realpath, basename, isdir, join, dirname, exists
-import re
-
 import click
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 import dataworkspaces.commands.actions as actions
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles
-from .results_utils import move_current_files_local_fs
+from .snapshot_utils import move_current_files_local_fs
 
 
 def is_git_dirty(cwd):
@@ -47,8 +45,35 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
     rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
     return rc!=0
 
+def is_file_tracked_by_git(filepath, cwd, verbose):
+    cmd = [actions.GIT_EXE_PATH, 'ls-files', '--error-unmatch', filepath]
+    rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
+    return rc==0
 
-DOT_GIT_RE=re.compile(re.escape('.git'))
+def git_move_and_add(srcabspath, destabspath, git_root, verbose):
+    """
+    Move a file that might or might not be tracked by git to
+    a new location (snapshot directory) and make sure that it is
+    now tracked by git.
+    """
+    assert srcabspath.startswith(git_root)
+    assert destabspath.startswith(git_root)
+    srcrelpath = srcabspath[len(git_root)+1:]
+    destrelpath = destabspath[len(git_root)+1:]
+    if is_file_tracked_by_git(srcrelpath, git_root, verbose):
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
+                                 srcrelpath, destrelpath],
+                                cwd=git_root,
+                                verbose=verbose)
+    else:
+        # file is not tracked by git yet, just move and then add to git
+        os.rename(join(git_root, srcrelpath),
+                  join(git_root, destrelpath))
+        actions.call_subprocess([actions.GIT_EXE_PATH, 'add',
+                                 destrelpath],
+                                cwd=git_root,
+                                verbose=verbose)
+
 
 class GitRepoResource(Resource):
     def __init__(self, name, role, workspace_dir, remote_origin_url,
@@ -102,16 +127,12 @@ class GitRepoResource(Resource):
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        def git_move(srcpath, destpath):
-            actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
-                                     srcpath, destpath],
-                                    cwd=self.local_path,
-                                    verbose=self.verbose)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
-            [exclude_dirs_re, DOT_GIT_RE],
-            move_fn=git_move,
+            exclude_dirs_re,
+            move_fn=lambda src, dest: git_move_and_add(src, dest, self.local_path,
+                                                       self.verbose),
             verbose=self.verbose)
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
@@ -345,16 +366,12 @@ class GitRepoSubdirResource(Resource):
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
-        def git_move(srcpath, destpath):
-            actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
-                                     srcpath, destpath],
-                                    cwd=self.local_path,
-                                    verbose=self.verbose)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
-            [exclude_dirs_re, DOT_GIT_RE],
-            move_fn=git_move,
+            exclude_dirs_re,
+            move_fn=lambda src, dest: git_move_and_add(src, dest, self.local_path,
+                                                       self.verbose),
             verbose=self.verbose)
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot

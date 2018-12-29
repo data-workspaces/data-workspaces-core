@@ -2,10 +2,11 @@
 """
 Definition of configuration parameters
 """
+import re
 import json
 import socket
 from os.path import join
-from dataworkspaces.resources.results_utils import \
+from dataworkspaces.resources.snapshot_utils import \
     validate_template
 from dataworkspaces.errors import ConfigurationError
 
@@ -112,8 +113,16 @@ def get_local_params_file_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/local_params.json')
 
 
+HOSTNAME_RE=re.compile('^\w([\w\-\.])*$')
+
+def validate_hostname(name):
+    if not HOSTNAME_RE.match(name):
+        raise ConfigurationError("'%s' is not a valid hostname: must start with a letter and only contain letters, numbers, '-', '_', and '.'" % name)
+
+DEFAULT_HOSTNAME=socket.gethostname().split('.')[0]
 HOSTNAME=define_local_param(
     'hostname',
-    socket.gethostname().split('.')[0],
-    help="Hostname to identify this machine in snapshots."
+    DEFAULT_HOSTNAME,
+    help="Hostname to identify this machine in snapshots.",
+    validation_fn=validate_hostname
 )
