@@ -21,6 +21,12 @@ def is_git_dirty(cwd):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, cwd=cwd)
     return result.returncode!=0
 
+def get_local_head_hash(git_root, verbose=False):
+    hashval = actions.call_subprocess([actions.GIT_EXE_PATH, 'rev-parse',
+                                       'HEAD'],
+                                      cwd=git_root, verbose=verbose)
+    return hashval.strip()
+
 def get_remote_head_hash(cwd, branch, verbose):
     cmd = [actions.GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/'+branch]
     try:
@@ -46,6 +52,41 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
     rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
     return rc!=0
 
+def commit_changes_in_repo(local_path, message, verbose=False):
+    status = actions.call_subprocess([actions.GIT_EXE_PATH, 'status', '--porcelain'],
+                                     cwd=local_path, verbose=verbose)
+    maybe_delete_dirs = []
+    for line in status.split('\n'):
+        parts = line.strip().split()
+        if len(parts)==0:
+            continue
+        elif len(parts)!=2:
+            raise InternalError("Unexpected git status line: '%s'" % line)
+        if parts[0]=='??':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'add', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+        elif parts[0]=='D':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'rm', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+            maybe_delete_dirs.append(dirname(join(local_path, parts[1])))
+        elif parts[0]=='M':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'add', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+        elif verbose:
+            click.echo("Skipping git status line: '%s'" % line)
+    actions.call_subprocess([actions.GIT_EXE_PATH, 'commit', '-m', message],
+                            cwd=local_path, verbose=verbose)
+
+
+def checkout_and_apply_commit(local_path, commit_hash, verbose=False):
+    cmdstr = "%s diff HEAD %s | %s apply" % (actions.GIT_EXE_PATH, commit_hash, actions.GIT_EXE_PATH)
+    if verbose:
+        click.echo(cmdstr + "[run in %s]" % local_path)
+    cp = subprocess.run(cmdstr, cwd=local_path, shell=True)
+    cp.check_returncode()
+    commit_changes_in_repo(local_path, 'Revert to commit %s' % commit_hash,
+                           verbose=verbose)
+    
 def is_file_tracked_by_git(filepath, cwd, verbose):
     cmd = [actions.GIT_EXE_PATH, 'ls-files', '--error-unmatch', filepath]
     rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
@@ -155,10 +196,7 @@ class GitRepoResource(Resource):
     def snapshot(self):
         # Todo: handle tags
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        hashval = actions.call_subprocess([actions.GIT_EXE_PATH, 'rev-parse',
-                                           'HEAD'],
-                                          cwd=self.local_path, verbose=False)
-        return hashval.strip()
+        return get_local_head_hash(self.local_path, self.verbose)
 
     def restore_prechecks(self, hashval):
         if is_git_dirty(self.local_path):
