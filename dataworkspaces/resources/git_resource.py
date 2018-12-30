@@ -53,6 +53,9 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
     return rc!=0
 
 def commit_changes_in_repo(local_path, message, verbose=False):
+    """Figure out what has changed in the working tree relative to
+    HEAD and get those changes into HEAD.
+    """
     status = actions.call_subprocess([actions.GIT_EXE_PATH, 'status', '--porcelain'],
                                      cwd=local_path, verbose=verbose)
     maybe_delete_dirs = []
@@ -79,6 +82,8 @@ def commit_changes_in_repo(local_path, message, verbose=False):
 
 
 def checkout_and_apply_commit(local_path, commit_hash, verbose=False):
+    """Checkout the commit and apply the changes to HEAD.
+    """
     cmdstr = "%s diff HEAD %s | %s apply" % (actions.GIT_EXE_PATH, commit_hash, actions.GIT_EXE_PATH)
     if verbose:
         click.echo(cmdstr + "[run in %s]" % local_path)
@@ -86,7 +91,41 @@ def checkout_and_apply_commit(local_path, commit_hash, verbose=False):
     cp.check_returncode()
     commit_changes_in_repo(local_path, 'Revert to commit %s' % commit_hash,
                            verbose=verbose)
-    
+
+def commit_changes_in_repo_subdir(local_path, subdir, message, verbose=False):
+    """For only the specified subdirectory, figure out what has changed in the working tree relative to
+    HEAD and get those changes into HEAD.
+    """
+    if not subdir.endswith('/'):
+        subdir = subdir + '/'
+    status = actions.call_subprocess([actions.GIT_EXE_PATH, 'status', '--porcelain',
+                                      subdir],
+                                     cwd=local_path, verbose=verbose)
+    maybe_delete_dirs = []
+    for line in status.split('\n'):
+        parts = line.strip().split()
+        if len(parts)==0:
+            continue
+        elif len(parts)!=2:
+            raise InternalError("Unexpected git status line: '%s'" % line)
+        elif not parts[1].startswith(subdir):
+            raise InternalError("Git status line not in subdirectory %s: %s"%
+                                (subdir, line))
+        elif parts[0]=='??':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'add', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+        elif parts[0]=='D':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'rm', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+            maybe_delete_dirs.append(dirname(join(local_path, parts[1])))
+        elif parts[0]=='M':
+            actions.call_subprocess([actions.GIT_EXE_PATH, 'add', parts[1]],
+                                    cwd=local_path, verbose=verbose)
+        elif verbose:
+            click.echo("Skipping git status line: '%s'" % line)
+    actions.call_subprocess([actions.GIT_EXE_PATH, 'commit', '-m', message],
+                            cwd=local_path, verbose=verbose)
+
 def is_file_tracked_by_git(filepath, cwd, verbose):
     cmd = [actions.GIT_EXE_PATH, 'ls-files', '--error-unmatch', filepath]
     rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)

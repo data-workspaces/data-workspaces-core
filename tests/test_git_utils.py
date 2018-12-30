@@ -20,7 +20,7 @@ except ImportError:
 
 from dataworkspaces.resources.git_resource import \
     commit_changes_in_repo, checkout_and_apply_commit, is_git_dirty,\
-    get_local_head_hash
+    get_local_head_hash, commit_changes_in_repo_subdir
 from dataworkspaces.commands.actions import GIT_EXE_PATH
 
 
@@ -91,6 +91,7 @@ class TestCommit(BaseCase):
         self.assert_file_exists('to_be_added.txt')
         self.assert_file_not_exists('to_be_deleted.txt')
 
+
 class TestCheckoutAndApplyCommit(BaseCase):
     def test_checkout_and_apply_commit(self):
         # First, do all the setup
@@ -141,6 +142,32 @@ class TestCheckoutAndApplyCommit(BaseCase):
                                         "Adding a third to file!")
         self.assert_file_not_exists("to_be_deleted.txt")
 
+
+class TestSubdirCommit(BaseCase):
+    def test_commit(self):
+        os.mkdir(join(TEMPDIR, 'subdir'))
+        makefile('subdir/to_be_deleted.txt', 'this file will be deleted')
+        makefile('subdir/to_be_left_alone.txt', 'this file to be left alone')
+        makefile('subdir/to_be_modified.txt', 'this file to be modified')
+        makefile('root_file1.txt', 'this should not be changed')
+        self._git_add(['subdir/to_be_deleted.txt', 'subdir/to_be_left_alone.txt',
+                       'subdir/to_be_modified.txt',
+                       'root_file1.txt'])
+        self._run(['commit', '-m', 'initial version'])
+        os.remove(join(TEMPDIR, 'subdir/to_be_deleted.txt'))
+        with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
+            f.write("Adding another line to file!\n")
+        makefile('subdir/to_be_added.txt', 'this file was added')
+        commit_changes_in_repo_subdir(TEMPDIR, 'subdir', 'testing applied changes',
+                                      verbose=True)
+        self.assertFalse(is_git_dirty(TEMPDIR), "Git still dirty after commit!")
+        self.assert_file_exists('subdir/to_be_left_alone.txt')
+        self.assert_file_exists('subdir/to_be_modified.txt')
+        self.assert_file_exists('subdir/to_be_added.txt')
+        self.assert_file_not_exists('subdir/to_be_deleted.txt')
+        self.assert_file_exists('root_file1.txt')
+
+    
 if __name__ == '__main__':
     unittest.main()
 
