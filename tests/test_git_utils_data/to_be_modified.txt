@@ -1,2 +1,1 @@
-this file to be modifiedAdding another line to file!
-Adding a third to file!
+this file to be modified
