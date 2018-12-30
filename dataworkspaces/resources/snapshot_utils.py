@@ -7,6 +7,7 @@ snapshot is taken.
 import os
 from os.path import join, exists, dirname
 import re
+import stat
 
 import click
 
@@ -120,10 +121,15 @@ def remove_dir_if_empty(path, base_dir, verbose=False):
             print("Removing (now) empty directory %s" % path)
         remove_dir_if_empty(dirname(path), base_dir, verbose)
 
+def move_file_and_set_readonly(src, dest):
+    os.rename(src, dest)
+    mode = os.stat(dest)[stat.ST_MODE]
+    os.chmod(dest, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+
 DOT_GIT_RE = re.compile('^'+re.escape('.git')+'$')
 def move_current_files_local_fs(resource_name,
                                 base_dir, rel_dest_root, exclude_files,
-                                exclude_dirs_res, move_fn=os.rename,
+                                exclude_dirs_res, move_fn=move_file_and_set_readonly,
                                 verbose=False):
     """Utility for impelementing Resource.results_move_current_file()
     for when the files are stored on the local filesystem (e.g. local or git
@@ -131,6 +137,10 @@ def move_current_files_local_fs(resource_name,
     exclude_dirs_res is either a single regular expression object or a list
     of regular expression objects. It should not include .git, as that will always
     be appended to the list.
+
+    The move function should also set file to read-only. For git, this should
+    be done before adding the file to the staging area.
+
     This returns the list of (before, after) relative path pairs.
     """
     abs_dest_root = join(base_dir, rel_dest_root)
@@ -194,3 +204,4 @@ def move_current_files_local_fs(resource_name,
     for dirpath in dirs_to_remove_if_empty:
         remove_dir_if_empty(dirpath, base_dir, verbose=verbose)
     return moved_files
+

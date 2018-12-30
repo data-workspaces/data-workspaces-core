@@ -5,6 +5,7 @@ Resource for git repositories
 import subprocess
 import os
 from os.path import realpath, basename, isdir, join, dirname, exists
+import stat
 import click
 
 from dataworkspaces.errors import ConfigurationError, InternalError
@@ -53,8 +54,8 @@ def is_file_tracked_by_git(filepath, cwd, verbose):
 def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     """
     Move a file that might or might not be tracked by git to
-    a new location (snapshot directory) and make sure that it is
-    now tracked by git.
+    a new location (snapshot directory), set it to read-only and make sure
+    that it is now tracked by git.
     """
     assert srcabspath.startswith(git_root)
     assert destabspath.startswith(git_root)
@@ -69,10 +70,13 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
         # file is not tracked by git yet, just move and then add to git
         os.rename(join(git_root, srcrelpath),
                   join(git_root, destrelpath))
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'add',
-                                 destrelpath],
-                                cwd=git_root,
-                                verbose=verbose)
+    # either way, we change the permissions and then do an add at the end
+    mode = os.stat(destabspath)[stat.ST_MODE]
+    os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+    actions.call_subprocess([actions.GIT_EXE_PATH, 'add',
+                             destrelpath],
+                            cwd=git_root,
+                            verbose=verbose)
 
 
 class GitRepoResource(Resource):
