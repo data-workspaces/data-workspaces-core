@@ -18,9 +18,11 @@ try:
 except ImportError:
     sys.path.append(os.path.abspath(".."))
 
-from dataworkspaces.resources.git_resource import \
-    commit_changes_in_repo, checkout_and_apply_commit, is_git_dirty,\
+from dataworkspaces.utils.git_utils import \
+    is_git_dirty, is_git_subdir_dirty, is_git_staging_dirty,\
+    commit_changes_in_repo, checkout_and_apply_commit,\
     get_local_head_hash, commit_changes_in_repo_subdir
+
 from dataworkspaces.commands.actions import GIT_EXE_PATH
 
 
@@ -70,6 +72,119 @@ class BaseCase(unittest.TestCase):
             got = data[i].strip()
             self.assertEqual(exp, got, "File %s has a different on line %s: %s"%
                              (relpath, i, got))
+
+class TestIsDirty(BaseCase):
+    """Tests for is_git_dirty() and is_git_subdir_dirty(). We consider the repo dirty
+    if there are untracked files, modified/added/deleted files, or files in staging.
+    """
+    def setUp(self):
+        super().setUp()
+        os.mkdir(join(TEMPDIR, 'subdir'))
+        makefile("subdir/to_be_deleted.txt", "this file will be deleted")
+        makefile("subdir/to_be_kept.txt", "This file will be kept")
+        makefile("ignored_in_root.txt", "This is left in the root and ignored")
+        self._git_add(['subdir/to_be_deleted.txt', 'subdir/to_be_kept.txt',
+                       'ignored_in_root.txt'])
+        self._run(['commit', '-m', 'initial version'])
+
+    def test_git_is_dirty_clean(self):
+        self.assertFalse(is_git_dirty(TEMPDIR))
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_untracked(self):
+        makefile('subdir/untracked.txt', 'this is untracked')
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_added(self):
+        makefile('subdir/added.txt', 'this will be added')
+        self._git_add(['subdir/added.txt'])
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_modified(self):
+        with open(join(TEMPDIR, 'subdir/to_be_kept.txt'), 'a') as f:
+            f.write("\nmore content\n")
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_modified_and_added(self):
+        with open(join(TEMPDIR, 'subdir/to_be_kept.txt'), 'a') as f:
+            f.write("\nmore content\n")
+        self._git_add(['subdir/to_be_kept.txt'])
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_deleted(self):
+        os.remove(join(TEMPDIR, 'subdir/to_be_deleted.txt'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_is_dirty_deleted_in_staging(self):
+        self._run(['rm', 'subdir/to_be_deleted.txt'])
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_untracked_outside(self):
+        makefile('untracked.txt', 'this is untracked')
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_added_outside(self):
+        makefile('added.txt', 'this will be added')
+        self._git_add(['added.txt'])
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_modified_outside(self):
+        with open(join(TEMPDIR, 'ignored_in_root.txt'), 'a') as f:
+            f.write("\nmore content\n")
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_modified_and_added_outside(self):
+        with open(join(TEMPDIR, 'ignored_in_root.txt'), 'a') as f:
+            f.write("\nmore content\n")
+        self._git_add(['ignored_in_root.txt'])
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_deleted_outside(self):
+        os.remove(join(TEMPDIR, 'ignored_in_root.txt'))
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+    def test_git_subdir_is_dirty_deleted_in_staging_outside(self):
+        self._run(['rm', 'ignored_in_root.txt'])
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
 
 class TestCommit(BaseCase):
     def test_commit(self):

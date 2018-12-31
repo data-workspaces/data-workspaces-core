@@ -5,13 +5,14 @@ we move files into a unique snapshot subdirectory each time a
 snapshot is taken.
 """
 import os
-from os.path import join, exists, dirname
+from os.path import join, exists
 import re
 import stat
 
 import click
 
 from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.utils.misc import remove_dir_if_empty
 
 # Timestamps have the form '2018-09-30T14:09:05'
 TEMPLATE_VAR_PATS = {
@@ -109,17 +110,6 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
         return values[tvar]
     return TEMPLATE_VAR_RE.sub(repl, template)
 
-
-def remove_dir_if_empty(path, base_dir, verbose=False):
-    """Remove now empty directories after the move.
-    """
-    if path==base_dir:
-        return
-    elif len(os.listdir(path))==0:
-        os.rmdir(path)
-        if verbose:
-            print("Removing (now) empty directory %s" % path)
-        remove_dir_if_empty(dirname(path), base_dir, verbose)
 
 def move_file_and_set_readonly(src, dest):
     os.rename(src, dest)

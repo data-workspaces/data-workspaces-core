@@ -7,9 +7,12 @@ import os
 import os.path 
 
 from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.utils.subprocess_utils import call_subprocess
+from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
 from .resource import Resource, ResourceFactory
 from . import hashtree
 from .snapshot_utils import move_current_files_local_fs
+
 
 LOCAL_FILE = 'file'
 
@@ -19,6 +22,7 @@ class LocalFileResource(Resource):
         self.local_path = local_path
         self.ignore = ignore
         self.rsrcdir = os.path.abspath(self.workspace_dir + '/.dataworkspace/' + LOCAL_FILE + '/' + self.role + '/' + self.name)
+        self.rsrcdir_relative = '.dataworkspace/' +LOCAL_FILE + '/' + self.role + '/' + self.name
 
     def to_json(self):
         d = super().to_json()
@@ -39,8 +43,15 @@ class LocalFileResource(Resource):
 
     def add(self):
         try:
-            # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
             os.makedirs(self.rsrcdir)
+            with open(os.path.join(self.rsrcdir, 'dummy.txt'), 'w') as f:
+                f.write("Placeholder to ensure directory is added to git\n")
+            call_subprocess([GIT_EXE_PATH, 'add',
+                             self.rsrcdir_relative],
+                                    cwd=self.workspace_dir)
+            call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                             "Adding resource %s" % self.name],
+                                    cwd=self.workspace_dir)
         except OSError as exc:
             if exc.errno == EEXIST and os.path.isdir(self.rsrcdir):
                 pass
@@ -60,7 +71,12 @@ class LocalFileResource(Resource):
     def snapshot(self):
         # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
         h = hashtree.generate_hashes(self.rsrcdir, self.local_path, ignore=self.ignore)
-        return h.strip()
+        assert os.path.exists(os.path.join(self.rsrcdir, h))
+        if is_git_staging_dirty(self.workspace_dir, subdir=self.rsrcdir_relative):
+            call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                             "Add snapshot hash files for resource %s" % self.name],
+                            cwd=self.workspace_dir, verbose=False)
+        return h
 
     def restore_prechecks(self, hashval):
         rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)

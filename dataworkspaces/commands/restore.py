@@ -7,6 +7,7 @@ import shutil
 
 import click
 
+from dataworkspaces.utils.git_utils import is_a_git_hash
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
@@ -161,7 +162,7 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
     return (sorted(names_to_restore), sorted(names_to_add), sorted(names_to_leave))
 
 def find_snapshot(tag_or_hash, sh_data):
-    is_hash = actions.is_a_git_hash(tag_or_hash)
+    is_hash = is_a_git_hash(tag_or_hash)
     for snapshot in sh_data:
         if is_hash and snapshot['hash']==tag_or_hash:
             return (tag_or_hash, snapshot['tag'])

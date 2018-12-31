@@ -4,6 +4,9 @@ import tempfile
 import sys
 import hashlib
 
+from dataworkspaces.utils.subprocess_utils import call_subprocess
+from dataworkspaces.utils.git_utils import GIT_EXE_PATH
+
 BUF_SIZE = 65536  # read stuff in 64kb chunks
 def compute_hash(tmpname):
     sha1 = hashlib.sha1()
@@ -29,11 +32,12 @@ class HashBlob(object):
 class HashTree(object):
     type = TREE
 
-    def __init__(self, rootdir, name):
+    def __init__(self, rootdir, name, add_to_git=True):
         self.path = rootdir
         self.name = name
         self.cache = [ ]
         self.sha = None
+        self.add_to_git = True
 
     def _index_by_name(self, name):
         for i, t in enumerate(self.cache):
@@ -102,7 +106,10 @@ class HashTree(object):
         # that is the name of the file
         objfile = os.path.join(self.path, self.hash)
         os.chmod(tmpname, int('755', 8)) 
-        os.rename(tmpname, objfile) 
+        os.rename(tmpname, objfile)
+        if self.add_to_git:
+            call_subprocess([GIT_EXE_PATH, 'add', self.hash],
+                            cwd=self.path, verbose=False)
         return self.hash
 
     # List protocol
@@ -134,7 +141,8 @@ class HashTree(object):
 HashTree._map_id_to_type[TREE] = HashTree
 
 
-def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
+def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[],
+                    add_to_git=True):
     """traverse a directory tree rooted at :local_dir: and construct the tree hashes
        in the directory :path_where_hashes_are_stored:
        skip directories in :ignore:"""
@@ -144,7 +152,7 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
         if os.path.basename(root) in ignore:
             continue
 
-        t = HashTree(path_where_hashes_are_stored, root)
+        t = HashTree(path_where_hashes_are_stored, root, add_to_git=add_to_git)
         for f in files:
             print(f)
             sha = compute_hash(os.path.join(root, f))
@@ -157,7 +165,7 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[]):
             t.add(dir, TREE, dirsha)
         h = t.write()
         hashtbl[root] = h
-    return hashtbl[local_dir]
+    return hashtbl[local_dir].strip()
 
 def _get_next_element(dl, startindex, ignore):
     index = startindex

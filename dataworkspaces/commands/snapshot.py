@@ -10,6 +10,7 @@ import shutil
 
 import click
 
+from dataworkspaces.utils.git_utils import is_a_git_hash
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.snapshot_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
@@ -154,7 +155,7 @@ def get_snapshot_history_file_path(workspace_dir):
 def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     print("snapshot of %s, tag=%s, message=%s" % (workspace_dir, tag, message))
     snapshot_timestamp = datetime.datetime.now()
-    if (tag is not None) and actions.is_a_git_hash(tag):
+    if (tag is not None) and is_a_git_hash(tag):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     plan = []
