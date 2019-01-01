@@ -199,21 +199,34 @@ git add f3 f4
 git commit -m "second version"
 cd ..
 
-# take a snapshot and then restore to v1
+# take a snapshot
 echo dws $ARGS snapshot -m "second version" V2
 dws $ARGS snapshot -m "second version" V2
 assert_workspace_clean
+
+# create a V3 and take a snapshot
+echo "# V3" >>./code/test.py
+# no need to commit, will auto-commit
+echo dws $ARGS snapshot -m "third version" V3
+dws $ARGS snapshot -m "third version" V3
+assert_workspace_clean
+assert_string_in_file V3 ./code/test.py
+
+# restore to V1
 echo dws $ARGS restore V1
 dws $ARGS restore V1
 assert_workspace_clean
 # verify that we correctly went to the V1 version of test.py
 assert_string_not_in_file Changes ./code/test.py
+assert_string_not_in_file V3 ./code/test.py
 
-# Restore the git repo back to v2
-echo dws $ARGS restore --only code-git V2
-dws $ARGS restore --only code-git V2
-# verify that we correctly went to the V2 version of test.py
+# Restore the git repo back to v3
+# Verify fix for issue #4
+echo dws $ARGS restore --only code-git V3
+dws $ARGS restore --only code-git V3
+# verify that we correctly went to the V3 version of test.py
 assert_string_in_file Changes ./code/test.py
+assert_string_in_file V3 ./code/test.py
 
 # Now make a change to the local dir
 echo "Removing f1"
