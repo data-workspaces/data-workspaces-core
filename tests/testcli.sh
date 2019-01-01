@@ -231,29 +231,28 @@ run dws $ARGS add git --role=code --branch=other-branch ./code-other-branch
 # a snapshot, we should be able to handle the case where the files are not
 # tracked by git (that should actually normally be the case).
 HOSTNAME=`hostname -s`
-# XXX Temporarily disable until we add in autocommit - the new (correct)
 # git dirty checking will complain about untracked files...
-# echo "Testing fix for issue #1..."
-# cd $WORKDIR/results_git
-# echo "this is a test of an untracked file" >untracked.txt
-# mkdir untracked_dir
-# echo "this is another test of an untracked file" >untracked_dir/untracked2.txt
-# echo "this is a test of a tracked file">tracked.txt
-# git add tracked.txt
-# git commit -m "test for issue #1 - add a tracked file"
-# assert_file_exists untracked.txt
-# assert_file_exists untracked_dir/untracked2.txt
-# assert_file_exists tracked.txt
-# echo dws $ARGS snapshot issue1-test
-# dws $ARGS snapshot issue1-test
-# assert_file_not_exists untracked.txt
-# assert_file_not_exists untracked_dir/untracked2.txt
-# assert_dir_not_exists untracked_dir
-# assert_file_not_exists tracked.txt
-# assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked.txt
-# assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked_dir/untracked2.txt
-# assert_file_exists snapshots/$HOSTNAME-issue1-test/tracked.txt
-# echo "Fix for issue #1 works."
+echo "Testing fix for issue #1..."
+cd $WORKDIR/results_git
+echo "this is a test of an untracked file" >untracked.txt
+mkdir untracked_dir
+echo "this is another test of an untracked file" >untracked_dir/untracked2.txt
+echo "this is a test of a tracked file">tracked.txt
+git add tracked.txt
+git commit -m "test for issue #1 - add a tracked file"
+assert_file_exists untracked.txt
+assert_file_exists untracked_dir/untracked2.txt
+assert_file_exists tracked.txt
+echo dws $ARGS snapshot issue1-test
+dws $ARGS snapshot issue1-test
+assert_file_not_exists untracked.txt
+assert_file_not_exists untracked_dir/untracked2.txt
+assert_dir_not_exists untracked_dir
+assert_file_not_exists tracked.txt
+assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked.txt
+assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked_dir/untracked2.txt
+assert_file_exists snapshots/$HOSTNAME-issue1-test/tracked.txt
+echo "Fix for issue #1 works."
 
 run dws $ARGS push
 # create a clone of code and make some updates

@@ -9,10 +9,13 @@ import stat
 import click
 
 from dataworkspaces.errors import ConfigurationError, InternalError
-import dataworkspaces.commands.actions as actions
+from dataworkspaces.utils.subprocess_utils import \
+    call_subprocess, call_subprocess_for_rc
 from dataworkspaces.utils.git_utils import \
     is_git_dirty, is_git_subdir_dirty, is_file_tracked_by_git,\
-    get_local_head_hash, get_remote_head_hash
+    get_local_head_hash, get_remote_head_hash,\
+    commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
+    is_git_repo
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles
 from .snapshot_utils import move_current_files_local_fs
 
@@ -25,9 +28,9 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
     hashval = get_remote_head_hash(cwd, branch, verbose)
     if hashval is None:
         return False
-    #cmd = [actions.GIT_EXE_PATH, 'show', '--oneline', hashval]
-    cmd = [actions.GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
-    rc = actions.call_subprocess_for_rc(cmd, cwd, verbose=verbose)
+    #cmd = [GIT_EXE_PATH, 'show', '--oneline', hashval]
+    cmd = [GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
+    rc = call_subprocess_for_rc(cmd, cwd, verbose=verbose)
     return rc!=0
 
 
@@ -42,10 +45,10 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     srcrelpath = srcabspath[len(git_root)+1:]
     destrelpath = destabspath[len(git_root)+1:]
     if is_file_tracked_by_git(srcrelpath, git_root, verbose):
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'mv',
-                                 srcrelpath, destrelpath],
-                                cwd=git_root,
-                                verbose=verbose)
+        call_subprocess([GIT_EXE_PATH, 'mv',
+                         srcrelpath, destrelpath],
+                        cwd=git_root,
+                        verbose=verbose)
     else:
         # file is not tracked by git yet, just move and then add to git
         os.rename(join(git_root, srcrelpath),
@@ -53,10 +56,8 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     # either way, we change the permissions and then do an add at the end
     mode = os.stat(destabspath)[stat.ST_MODE]
     os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
-    actions.call_subprocess([actions.GIT_EXE_PATH, 'add',
-                             destrelpath],
-                            cwd=git_root,
-                            verbose=verbose)
+    call_subprocess([GIT_EXE_PATH, 'add', destrelpath],
+                    cwd=git_root, verbose=verbose)
 
 
 class GitRepoResource(Resource):
@@ -98,13 +99,13 @@ class GitRepoResource(Resource):
         parent = dirname(self.local_path)
         if not exists(self.local_path):
             # cloning a fresh repository
-            cmd = [actions.GIT_EXE_PATH, 'clone', self.remote_origin_url, basename(self.local_path)]
-            actions.call_subprocess(cmd, parent, self.verbose)
+            cmd = [GIT_EXE_PATH, 'clone', self.remote_origin_url, basename(self.local_path)]
+            call_subprocess(cmd, parent, self.verbose)
         else:
             # the repo already exists locally, and we've alerady verified that then
             # remote is correct
-            cmd = [actions.GIT_EXE_PATH, 'pull', 'origin', 'master']
-            actions.call_subprocess(cmd, self.local_path, self.verbose)
+            cmd = [GIT_EXE_PATH, 'pull', 'origin', 'master']
+            call_subprocess(cmd, self.local_path, self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose, ok_if_not_present=True)
 
 
@@ -121,38 +122,33 @@ class GitRepoResource(Resource):
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
         if len(moved_files)>0:
-            actions.call_subprocess([actions.GIT_EXE_PATH, 'commit',
-                                     '-m', "Move current results to %s" % rel_dest_root],
-                                    cwd=self.local_path,
-                                    verbose=self.verbose)
+            call_subprocess([GIT_EXE_PATH, 'commit',
+                             '-m', "Move current results to %s" % rel_dest_root],
+                            cwd=self.local_path, verbose=self.verbose)
 
     def snapshot_prechecks(self):
-        if is_git_dirty(self.local_path):
-            raise ConfigurationError(
-                "Git repo at %s has uncommitted changes. Please commit your changes before taking a snapshot" %
-                self.local_path)
+        pass
 
     def snapshot(self):
         # Todo: handle tags
+        commit_changes_in_repo(self.local_path, 'autocommit ahead of snapshot',
+                               verbose=self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         return get_local_head_hash(self.local_path, self.verbose)
 
     def restore_prechecks(self, hashval):
-        if is_git_dirty(self.local_path):
-            raise ConfigurationError(
-                "Git repo at %s has uncommitted changes. Please commit your changes before restoring" %
-                self.local_path)
-        rc = actions.call_subprocess_for_rc([actions.GIT_EXE_PATH, 'cat-file', '-e',
+        rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
                                      hashval+"^{commit}"],
-                                            cwd=self.local_path,
-                                            verbose=self.verbose)
+                                    cwd=self.local_path,
+                                    verbose=self.verbose)
         if rc!=0:
             raise ConfigurationError("No commit found with hash '%s' in %s" %
                                      (hashval, str(self)))
     def restore(self, hashval):
+        commit_changes_in_repo(self.local_path, 'auto-commit ahead of restore',
+                               verbose=self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'reset', '--hard', hashval],
-                                cwd=self.local_path, verbose=self.verbose)
+        checkout_and_apply_commit(self.local_path, hashval, verbose=self.verbose)
 
     def push_prechecks(self):
         if is_git_dirty(self.local_path):
@@ -166,8 +162,8 @@ class GitRepoResource(Resource):
     def push(self):
         """Push to remote origin, if any"""
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', self.branch],
-                                cwd=self.local_path, verbose=self.verbose)
+        call_subprocess([GIT_EXE_PATH, 'push', 'origin', self.branch],
+                        cwd=self.local_path, verbose=self.verbose)
 
     def pull_prechecks(self):
         if is_git_dirty(self.local_path):
@@ -178,14 +174,14 @@ class GitRepoResource(Resource):
     def pull(self):
         """Pull from remote origin, if any"""
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
-                                cwd=self.local_path, verbose=self.verbose)
+        call_subprocess([GIT_EXE_PATH, 'pull', 'origin', 'master'],
+                        cwd=self.local_path, verbose=self.verbose)
 
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
 
 def get_remote_origin(local_path, verbose=False):
-    args = [actions.GIT_EXE_PATH, 'config', '--get', 'remote.origin.url']
+    args = [GIT_EXE_PATH, 'config', '--get', 'remote.origin.url']
     if verbose:
         click.echo(" ".join(args) + " [run in %s]" % local_path)
     cp = subprocess.run(args, cwd=local_path, encoding='utf-8',
@@ -196,8 +192,8 @@ def get_remote_origin(local_path, verbose=False):
     return cp.stdout.rstrip()
 
 def get_branch_info(local_path, verbose=False):
-    data = actions.call_subprocess([actions.GIT_EXE_PATH, 'branch'],
-                                   cwd=local_path, verbose=verbose)
+    data = call_subprocess([GIT_EXE_PATH, 'branch'],
+                           cwd=local_path, verbose=verbose)
     current = None
     other = []
     for line in data.split('\n'):
@@ -217,8 +213,8 @@ def get_branch_info(local_path, verbose=False):
 
 def switch_git_branch(local_path, branch, verbose):
     try:
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'checkout', branch],
-                                cwd=local_path, verbose=verbose)
+        call_subprocess([GIT_EXE_PATH, 'checkout', branch],
+                        cwd=local_path, verbose=verbose)
     except Exception as e:
         raise ConfigurationError("Unable to switch git repo at %s to branch %s"
                                  % (local_path, branch)) from e
@@ -259,7 +255,7 @@ class GitRepoFactory(ResourceFactory):
         arguments"""
         lpr = realpath(local_path)
         wdr = realpath(workspace_dir)
-        if not actions.is_git_repo(local_path):
+        if not is_git_repo(local_path):
             if lpr.startswith(wdr):
                 if branch!='master':
                     raise ConfigurationError("Only the branch 'master' is available for resources that are within the workspace's git repository")
@@ -357,10 +353,10 @@ class GitRepoSubdirResource(Resource):
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
         if len(moved_files)>0:
-            actions.call_subprocess([actions.GIT_EXE_PATH, 'commit',
-                                     '-m', "Move current results to %s" % rel_dest_root],
-                                    cwd=self.local_path,
-                                    verbose=self.verbose)
+            call_subprocess([GIT_EXE_PATH, 'commit',
+                             '-m', "Move current results to %s" % rel_dest_root],
+                            cwd=self.local_path,
+                            verbose=self.verbose)
 
     def snapshot_prechecks(self):
         if is_git_dirty(self.workspace_dir):
@@ -370,10 +366,8 @@ class GitRepoSubdirResource(Resource):
 
     def snapshot(self):
         # Todo: handle tags
-        hashval = actions.call_subprocess([actions.GIT_EXE_PATH, 'rev-parse',
-                                           'HEAD'],
-                                          cwd=self.local_path, verbose=False)
-        return hashval.strip()
+        return get_local_head_hash(self.local_path, verbose=self.verbose)
+
 
     def restore_prechecks(self, hashval):
         raise ConfigurationError("Git subdirectory resource '%s' should not be included in restore set"%
@@ -399,7 +393,7 @@ class GitRepoSubdirResource(Resource):
     def push(self):
         """Push to remote origin, if any"""
         pass # push will happen at workspace level
-        # actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
+        # actions.call_subprocess([GIT_EXE_PATH, 'push', 'origin', 'master'],
         #                         cwd=self.local_path, verbose=self.verbose)
 
     def pull_prechecks(self):
@@ -411,7 +405,7 @@ class GitRepoSubdirResource(Resource):
     def pull(self):
         """Pull from remote origin, if any"""
         pass # pull will happen at workspace level
-        # actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
+        # actions.call_subprocess([GIT_EXE_PATH, 'pull', 'origin', 'master'],
         #                         cwd=self.local_path, verbose=self.verbose)
 
     def __str__(self):
@@ -426,11 +420,11 @@ def create_results_subdir(workspace_dir, full_path, relative_path, verbose):
     with open(join(full_path, 'README.txt'), 'w') as f:
         f.write("This directory is for experimental results. Upon each snapshot, the current contents will be moved to a new subdirectory.\n")
         f.write("This README file ensures the directory is added to the git repository, as git does not support empty directories.\n")
-    actions.call_subprocess([actions.GIT_EXE_PATH, 'add', relative_path],
-                            cwd=workspace_dir, verbose=verbose)
-    actions.call_subprocess([actions.GIT_EXE_PATH, 'commit', '-m',
-                             'Add %s to repo for storing results'%relative_path],
-                            cwd=workspace_dir, verbose=verbose)
+    call_subprocess([GIT_EXE_PATH, 'add', relative_path],
+                    cwd=workspace_dir, verbose=verbose)
+    call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                     'Add %s to repo for storing results'%relative_path],
+                    cwd=workspace_dir, verbose=verbose)
     click.echo("Added %s to git repository" % relative_path)
 
 
@@ -444,7 +438,7 @@ class GitRepoSubdirFactory(ResourceFactory):
                           local_path):
         """Instantiate a resource object from the add command's
         arguments"""
-        if actions.is_git_repo(local_path):
+        if is_git_repo(local_path):
             raise InternalError("Local path '%s'is a git repo, should not be using GitRepoSubdirFactory"%
                                 local_path)
         lpr = realpath(local_path)
