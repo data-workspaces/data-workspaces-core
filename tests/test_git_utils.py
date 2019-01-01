@@ -21,7 +21,8 @@ except ImportError:
 from dataworkspaces.utils.git_utils import \
     is_git_dirty, is_git_subdir_dirty, is_git_staging_dirty,\
     commit_changes_in_repo, checkout_and_apply_commit,\
-    get_local_head_hash, commit_changes_in_repo_subdir
+    get_local_head_hash, commit_changes_in_repo_subdir,\
+    checkout_subdir_and_apply_commit
 
 from dataworkspaces.commands.actions import GIT_EXE_PATH
 
@@ -240,6 +241,7 @@ class TestCheckoutAndApplyCommit(BaseCase):
         self.assert_file_contents_equal("to_be_modified.txt",
                                         "this file to be modified")
         restored_hash = get_local_head_hash(TEMPDIR, True)
+        self.assertNotEqual(initial_hash, restored_hash) # should be differemt
 
         # add a commit at this point
         with open(join(TEMPDIR, 'to_be_modified.txt'), 'a') as f:
@@ -257,6 +259,14 @@ class TestCheckoutAndApplyCommit(BaseCase):
                                         "Adding a third to file!")
         self.assert_file_not_exists("to_be_deleted.txt")
 
+        # revert to restored hash and verify changes
+        checkout_and_apply_commit(TEMPDIR, restored_hash, True)
+        self.assertFalse(is_git_dirty(TEMPDIR), "Git still dirty after commit!")
+        self.assert_file_exists("to_be_deleted.txt")
+        self.assert_file_not_exists("to_be_added.txt")
+        self.assert_file_not_exists("added_in_third_commit.txt")
+        self.assert_file_contents_equal("to_be_modified.txt",
+                                        "this file to be modified")
 
 class TestSubdirCommit(BaseCase):
     def test_commit(self):
@@ -281,6 +291,89 @@ class TestSubdirCommit(BaseCase):
         self.assert_file_exists('subdir/to_be_added.txt')
         self.assert_file_not_exists('subdir/to_be_deleted.txt')
         self.assert_file_exists('root_file1.txt')
+        # verify that staged files outside of the subdir are not changed
+        makefile('staged_but_not_committed.txt', 'should be staged but not committed')
+        self._git_add(['staged_but_not_committed.txt'])
+        commit_changes_in_repo_subdir(TEMPDIR, 'subdir', 'testing not committing',
+                                      verbose=True)
+        self.assertFalse(is_git_subdir_dirty(TEMPDIR, 'subdir'))
+        self.assertTrue(is_git_dirty(TEMPDIR))
+        self.assertTrue(is_git_staging_dirty(TEMPDIR))
+        self.assertFalse(is_git_staging_dirty(TEMPDIR, 'subdir'))
+
+
+class TestCheckoutSubdirAndApplyCommit(BaseCase):
+    def test_checkout_and_apply_commit(self):
+        # First, do all the setup
+        os.mkdir(join(TEMPDIR, 'subdir'))
+        makefile('subdir/to_be_deleted.txt', 'this file will be deleted')
+        makefile('subdir/to_be_left_alone.txt', 'this file to be left alone')
+        makefile('subdir/to_be_modified.txt', 'this file to be modified\n')
+        makefile('root_file1.txt', 'root file v1\n')
+        self._git_add(['subdir/to_be_deleted.txt', 'subdir/to_be_left_alone.txt',
+                       'subdir/to_be_modified.txt', 'root_file1.txt'])
+        self._run(['commit', '-m', 'initial version'])
+        initial_hash = get_local_head_hash(TEMPDIR, True)
+
+        self._run(['rm', 'subdir/to_be_deleted.txt'])
+        with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
+            f.write("Adding another line to file!\n")
+        makefile('subdir/to_be_added.txt', 'this file was added')
+        with open(join(TEMPDIR, 'root_file1.txt'), 'a') as f:
+            f.write("root file v2")
+        self._git_add(['subdir/to_be_modified.txt', 'subdir/to_be_added.txt',
+                       'root_file1.txt'])
+        self._run(['commit', '-m', 'second version'])
+        second_hash = get_local_head_hash(TEMPDIR, True)
+
+        makefile('subdir/added_in_third_commit.txt', 'added in third commit')
+        with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
+            f.write("Adding a third to file!\n")
+        self._git_add(['subdir/added_in_third_commit.txt', 'subdir/to_be_modified.txt'])
+        self._run(['commit', '-m', 'third version'])
+        third_hash = get_local_head_hash(TEMPDIR, True)
+
+        # now, revert back to the first commit
+        checkout_subdir_and_apply_commit(TEMPDIR, 'subdir', initial_hash, True)
+        self.assertFalse(is_git_dirty(TEMPDIR), "Git still dirty after commit!")
+        self.assert_file_exists("subdir/to_be_deleted.txt")
+        self.assert_file_not_exists("subdir/to_be_added.txt")
+        self.assert_file_not_exists("subdir/added_in_third_commit.txt")
+        self.assert_file_contents_equal("subdir/to_be_modified.txt",
+                                        "this file to be modified")
+        self.assert_file_contents_equal("root_file1.txt",
+                                        "root file v1\nroot file v2")
+        restored_hash = get_local_head_hash(TEMPDIR, True)
+        self.assertNotEqual(initial_hash, restored_hash) # should be differemt
+
+        # add a commit at this point
+        with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
+            f.write("Overwritten after restoring first commit.")
+        self._git_add(['subdir/to_be_modified.txt'])
+        self._run(['commit', '-m', 'branch off first version'])
+
+        # restore to third version
+        checkout_subdir_and_apply_commit(TEMPDIR, 'subdir', third_hash, True)
+        self.assertFalse(is_git_dirty(TEMPDIR), "Git still dirty after commit!")
+        self.assert_file_exists("subdir/added_in_third_commit.txt")
+        self.assert_file_contents_equal("subdir/to_be_modified.txt",
+                                        'this file to be modified\n'+
+                                        "Adding another line to file!\n"+
+                                        "Adding a third to file!")
+        self.assert_file_not_exists("subdir/to_be_deleted.txt")
+        self.assert_file_contents_equal("root_file1.txt",
+                                        "root file v1\nroot file v2")
+
+        # revert to restored hash and verify changes
+        checkout_subdir_and_apply_commit(TEMPDIR, 'subdir', restored_hash, True)
+        self.assertFalse(is_git_dirty(TEMPDIR), "Git still dirty after commit!")
+        self.assert_file_exists("subdir/to_be_deleted.txt")
+        self.assert_file_not_exists("subdir/to_be_added.txt")
+        self.assert_file_not_exists("subdir/added_in_third_commit.txt")
+        self.assert_file_contents_equal("subdir/to_be_modified.txt",
+                                        "this file to be modified")
+        self.assert_file_contents_equal("root_file1.txt",
+                                        "root file v1\nroot file v2")
 
     
 if __name__ == '__main__':
