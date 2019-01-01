@@ -91,6 +91,24 @@ function assert_dir_not_exists {
     fi
 }
 
+function die {
+    echo $1
+    exit 1
+}
+
+function assert_string_in_file {
+    STRING="$1"
+    FILENAME=$2
+    grep "$STRING" $FILENAME >/dev/null || die "Did not find $STRING in $FILENAME"
+}
+
+function assert_string_not_in_file {
+    STRING="$1"
+    FILENAME=$2
+    ! grep "$STRING" $FILENAME >/dev/null || die "Found $STRING in $FILENAME"
+}
+
+
 function assert_workspace_clean {
     pushd $WORKDIR
     num_diffs=`git status --porcelain | wc -l | awk '{$1=$1};1'`
@@ -171,6 +189,7 @@ echo "# Changes" >>test.py
 git add test.py
 git commit -m "second version"
 cd ..
+assert_string_in_file Changes ./code/test.py
 
 # make some changes to the results
 cd results_git
@@ -187,10 +206,14 @@ assert_workspace_clean
 echo dws $ARGS restore V1
 dws $ARGS restore V1
 assert_workspace_clean
+# verify that we correctly went to the V1 version of test.py
+assert_string_not_in_file Changes ./code/test.py
 
 # Restore the git repo back to v2
 echo dws $ARGS restore --only code-git V2
 dws $ARGS restore --only code-git V2
+# verify that we correctly went to the V2 version of test.py
+assert_string_in_file Changes ./code/test.py
 
 # Now make a change to the local dir
 echo "Removing f1"
