@@ -23,3 +23,7 @@ class InternalError(Exception):
 class BatchModeError(Exception):
     """Thrown when running in batch mode but user input is required"""
     pass
+
+class ApiParamError(Exception):
+    """Incorrect value for an API parameter"""
+    pass

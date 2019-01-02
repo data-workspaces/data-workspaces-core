@@ -22,9 +22,7 @@ from dataworkspaces.utils.git_utils import \
     is_git_dirty, is_git_subdir_dirty, is_git_staging_dirty,\
     commit_changes_in_repo, checkout_and_apply_commit,\
     get_local_head_hash, commit_changes_in_repo_subdir,\
-    checkout_subdir_and_apply_commit
-
-from dataworkspaces.commands.actions import GIT_EXE_PATH
+    checkout_subdir_and_apply_commit, GIT_EXE_PATH
 
 
 def makefile(relpath, contents):
