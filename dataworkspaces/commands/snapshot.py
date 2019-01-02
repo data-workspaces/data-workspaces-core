@@ -212,5 +212,6 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     ns.map_of_hashes = {}
     actions.run_plan(plan, "take snapshot of workspace",
                      "taken snapshot of workspace", batch=batch, verbose=verbose)
+    return ns.snapshot_hash
 
 

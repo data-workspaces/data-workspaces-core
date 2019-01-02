@@ -19,7 +19,8 @@ except ImportError:
 
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH
 
-from dataworkspaces.api import get_resource_info
+from dataworkspaces.api import get_resource_info, take_snapshot,\
+                               get_snapshot_history, restore
 
 
 def makefile(relpath, contents):
@@ -35,7 +36,7 @@ class TestApi(unittest.TestCase):
         os.mkdir(join(TEMPDIR, 'data'))
         makefile('data/data.csv', 'x,y,z\n1,2,3\n')
         os.mkdir(join(TEMPDIR, 'code'))
-        makefile('code/test.py', 'print("This is a test")')
+        makefile('code/test.py', 'print("This is a test")\n')
         self._run_git(['add', 'data/data.csv', 'code/test.py'])
         self._run_dws('add git --role=source-data ./data')
         self._run_dws('add git --role=code ./code')
@@ -56,6 +57,12 @@ class TestApi(unittest.TestCase):
         r = subprocess.run(args, cwd=cwd)
         r.check_returncode()
 
+    def _assert_contents(self, relpath, contents):
+        with open(join(TEMPDIR, relpath), 'r') as f:
+            data = f.read()
+        self.assertEqual(contents, data,
+                         "File contents do not match for %s" % relpath)
+
     def test_get_resource_info(self):
         rinfo = get_resource_info(TEMPDIR)
         print(rinfo)
@@ -68,6 +75,35 @@ class TestApi(unittest.TestCase):
         self.assertEqual('code', rinfo[1].role)
         self.assertEqual('git-subdirectory', rinfo[1].type)
         self.assertTrue(rinfo[1].local_path.endswith('tests/test_api_data/code'))
+
+    def test_snapshots(self):
+        hash1 = take_snapshot(TEMPDIR, tag='V1', message='first snapshot')
+        history = get_snapshot_history(TEMPDIR)
+        self.assertEqual(1, len(history))
+        self.assertEqual(1, history[0].snapshot_number)
+        self.assertEqual(hash1, history[0].hash)
+        self.assertEqual('V1', history[0].tag)
+        self.assertEqual('first snapshot', history[0].message)
+        with open(join(TEMPDIR, 'code/test.py'), 'a') as f:
+            f.write('print("Version 2")\n')
+        hash2 = take_snapshot(TEMPDIR, tag='V2', message='second snapshot')
+        history = get_snapshot_history(TEMPDIR)
+        self.assertEqual(2, len(history))
+        self.assertEqual(2, history[1].snapshot_number)
+        self.assertEqual(hash2, history[1].hash)
+        self.assertEqual('V2', history[1].tag)
+        self.assertEqual('second snapshot', history[1].message)
+        restore('V1', TEMPDIR)
+        history = get_snapshot_history(TEMPDIR)
+        self.assertEqual(2, len(history))
+        self._assert_contents('code/test.py',
+                              'print("This is a test")\n')
+        restore('V2', TEMPDIR)
+        self._assert_contents('code/test.py',
+                              'print("This is a test")\nprint("Version 2")\n')
+
+
+
 
 
 if __name__ == '__main__':

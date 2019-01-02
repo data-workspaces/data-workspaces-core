@@ -9,7 +9,8 @@ import json
 from dataworkspaces import __version__
 from .errors import ApiParamError
 from .resources.resource import CurrentResources
-from .commands.snapshot import get_snapshot_history_file_path
+from .commands.snapshot import get_snapshot_history_file_path, snapshot_command
+from .commands.restore import restore_command
 
 __api_version__ = '0.1'
 
@@ -73,18 +74,41 @@ SnapshotInfo=namedtuple('SnapshotInfo',
                         ['snapshot_number', 'hash', 'tag', 'timestamp', 'message'])
 
 
+def take_snapshot(workspace_dir=None, tag=None, message=''):
+    """Take a snapshot of the workspace, using the tag and message,
+    if provided. Returns the snapshot hash (which can be used to restore to
+    this point).
+    """
+    workspace_dir = _get_workspace(workspace_dir)
+    return snapshot_command(workspace_dir, batch=True, verbose=False, tag=tag,
+                            message=message)
+
+
 def get_snapshot_history(workspace_dir=None):
     """Get the history of snapshots, starting with the oldest first.
     Returns a list of SnapshotInfo instances, containing the snapshot number,
     hash, tag, timestamp, and message.
     """
-    workspace_dir = _get_workpace(workspace_dir)
+    workspace_dir = _get_workspace(workspace_dir)
     with open(get_snapshot_history_file_path(workspace_dir), 'r') as f:
         data = json.load(f)
     return [
-        SnapshotInfo(snapshot_number, s['hash'], s['tag'], s['timestamp'],
+        SnapshotInfo(snapshot_number+1, s['hash'], s['tag'], s['timestamp'],
                      s['message'])
         for (snapshot_number, s) in enumerate(data)
     ]
+
+
+def restore(tag_or_hash, workspace_dir=None, only=None, leave=None):
+    """Restore to a previous snapshot, identified by either its hash
+    or its tag (if one was specified). :param only: is an optional list of
+    resources to store. If specified, all other resources will be left as-is.
+    :param leave: is an optional list of resource to leave as-is. Both
+    :param only: and :param leave: should not be specified together.
+    """
+    workspace_dir = _get_workspace(workspace_dir)
+    restore_command(workspace_dir, batch=True, verbose=False, tag_or_hash=tag_or_hash,
+                    only=only, leave=leave, no_new_snapshot=True)
+
 
 
