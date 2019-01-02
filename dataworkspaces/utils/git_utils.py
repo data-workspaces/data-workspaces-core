@@ -134,6 +134,15 @@ def checkout_and_apply_commit(local_path, commit_hash, verbose=False):
                            "Commit state of repo prior to restore of %s" %
                            commit_hash,
                            verbose=verbose)
+    # make sure there are actually differences between the commits
+    if call_subprocess_for_rc([GIT_EXE_PATH, 'diff', '--exit-code', '--quiet',
+                               'HEAD', commit_hash],
+                              cwd=local_path, verbose=verbose)==0:
+        if verbose:
+            click.echo("No changes for %s between HEAD and %s" %
+                       (local_path, commit_hash))
+        return
+    # ok, there are, apply the changes
     cmdstr = "%s diff HEAD %s | %s apply" % (GIT_EXE_PATH, commit_hash, GIT_EXE_PATH)
     if verbose:
         click.echo(cmdstr + "[run in %s]" % local_path)
@@ -201,6 +210,15 @@ def checkout_subdir_and_apply_commit(local_path, subdir, commit_hash, verbose=Fa
                                   "Commit state of repo prior to restore of %s" %
                                   commit_hash,
                                   verbose=verbose)
+    # make sure there are actually differences between the commits
+    if call_subprocess_for_rc([GIT_EXE_PATH, 'diff', '--exit-code', '--quiet',
+                               'HEAD', commit_hash, subdir],
+                              cwd=local_path, verbose=verbose)==0:
+        if verbose:
+            click.echo("No changes for %s in %s between HEAD and %s" %
+                       (local_path, subdir, commit_hash))
+        return
+    # ok, there are, apply the changes
     cmdstr = "%s diff HEAD %s %s | %s apply" % (GIT_EXE_PATH, commit_hash, subdir, GIT_EXE_PATH)
     if verbose:
         click.echo(cmdstr + "[run in %s]" % local_path)

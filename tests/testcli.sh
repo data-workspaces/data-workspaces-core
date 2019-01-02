@@ -290,6 +290,50 @@ assert_file_exists snapshots/$HOSTNAME-issue1-test/untracked_dir/untracked2.txt
 assert_file_exists snapshots/$HOSTNAME-issue1-test/tracked.txt
 echo "Fix for issue #1 works."
 
+# Test the git-subdirectory resource types, including non-results
+# and results.
+cd $WORKDIR
+mkdir code_subdir
+echo "Code git-subdirectory resource" >code_subdir/readme.txt
+mkdir results_subdir
+echo "Results git-subdirectory resource" >results_subdir/README.txt
+git add code_subdir/readme.txt results_subdir/README.txt
+git commit -m "Add subdirectories for git subdir resources"
+run dws $ARGS add git --role=code --name=code-subdir ./code_subdir
+run dws $ARGS add git --role=results --name=results-subdir ./results_subdir
+echo "print('v1')" >code_subdir/test.py
+echo '{"accuracy":0.95}' >results_subdir/results.json
+echo dws $ARGS snapshot -m "Initial snapshot of subdir resources" subdir-v1
+dws $ARGS snapshot -m "Initial snapshot of subdir resources" subdir-v1
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
+assert_string_in_file v1 code_subdir/test.py
+echo "print('v2')" >code_subdir/test.py
+echo '{"accuracy":0.96}' >results_subdir/results.json
+echo dws $ARGS snapshot -m "Second snapshot of subdir resources" subdir-v2
+dws $ARGS snapshot -m "Second snapshot of subdir resources" subdir-v2
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
+assert_string_in_file v2 code_subdir/test.py
+run dws $ARGS restore subdir-v1
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
+assert_string_in_file v1 code_subdir/test.py
+echo "print('v3')" >code_subdir/test3.py
+echo '{"accuracy":0.97}' >results_subdir/results.json
+echo dws $ARGS snapshot -m "Third snapshot of subdir resources" subdir-v3
+dws $ARGS snapshot -m "Third snapshot of subdir resources" subdir-v3
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v3/results.json
+assert_string_in_file v1 code_subdir/test.py
+run dws $ARGS restore subdir-v2
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
+assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v3/results.json
+assert_file_not_exists code_subdir/test3.py
+assert_string_in_file v2 code_subdir/test.py
+echo "Verified git-subdir resource functionality"
+
 run dws $ARGS push
 # create a clone of code and make some updates
 cd $CLONES

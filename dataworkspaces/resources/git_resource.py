@@ -12,10 +12,11 @@ from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
     call_subprocess, call_subprocess_for_rc
 from dataworkspaces.utils.git_utils import \
-    is_git_dirty, is_git_subdir_dirty, is_file_tracked_by_git,\
+    is_git_dirty, is_file_tracked_by_git,\
     get_local_head_hash, get_remote_head_hash,\
     commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
-    is_git_repo
+    is_git_repo, commit_changes_in_repo_subdir,\
+    checkout_subdir_and_apply_commit
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles
 from .snapshot_utils import move_current_files_local_fs
 
@@ -309,9 +310,9 @@ class GitRepoFactory(ResourceFactory):
         return basename(local_path)
 
 
-class GitRepoSubdirResource(Resource):
-    """Resource for a subdirectory of the workspace. This is only
-    allowed for resources in the results role.
+class GitRepoResultsSubdirResource(Resource):
+    """Resource for a subdirectory of the workspace for when it is
+    in the results role.
     """
     def __init__(self, name, workspace_dir, relative_path,
                  verbose=False):
@@ -353,20 +354,17 @@ class GitRepoSubdirResource(Resource):
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
         if len(moved_files)>0:
-            call_subprocess([GIT_EXE_PATH, 'commit',
+            call_subprocess([GIT_EXE_PATH, 'commit', '--only', self.relative_path,
                              '-m', "Move current results to %s" % rel_dest_root],
-                            cwd=self.local_path,
+                            cwd=self.workspace_dir,
                             verbose=self.verbose)
 
     def snapshot_prechecks(self):
-        if is_git_dirty(self.workspace_dir):
-            raise ConfigurationError(
-                "Git repo at %s has uncommitted changes. Please commit your changes before taking a snapshot" %
-                self.workspace_dir)
+        pass
 
     def snapshot(self):
         # Todo: handle tags
-        return get_local_head_hash(self.local_path, verbose=self.verbose)
+        return get_local_head_hash(self.workspace_dir, verbose=self.verbose)
 
 
     def restore_prechecks(self, hashval):
@@ -376,6 +374,99 @@ class GitRepoSubdirResource(Resource):
     def restore(self, hashval):
         raise InternalError("Should never call restore on a git subdirectory resource (%s)"%
                             self.name)
+
+
+    def push_prechecks(self):
+        if not exists(self.local_path):
+            raise ConfigurationError("Missing directory %s for resource %s"%
+                                     (self.local_path, self.name))
+        if is_git_dirty(self.workspace_dir):
+            raise ConfigurationError(
+                "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
+                self.workspace_dir)
+        if is_pull_needed_from_remote(self.workspace_dir, 'master', self.verbose):
+            raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
+                                     self.name)
+
+    def push(self):
+        """Push to remote origin, if any"""
+        pass # push will happen at workspace level
+
+    def pull_prechecks(self):
+        if is_git_dirty(self.local_path):
+            raise ConfigurationError(
+                "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %
+                self.workspace_dir)
+
+    def pull(self):
+        """Pull from remote origin, if any"""
+        pass # pull will happen at workspace level
+
+    def __str__(self):
+        return "Git repository subdirectory %s in role '%s'" % (self.relative_path, self.role)
+
+
+class GitRepoSubdirResource(Resource):
+    """Resource for a subdirectory of the workspace for when it is NOT
+    in the results role.
+    """
+    def __init__(self, name, role, workspace_dir, relative_path,
+                 verbose=False):
+        assert role != ResourceRoles.RESULTS
+        super().__init__('git-subdirectory', name, role, workspace_dir)
+        self.relative_path = relative_path
+        self.local_path = join(workspace_dir, relative_path)
+        self.verbose = verbose
+
+    def to_json(self):
+        d = super().to_json()
+        d['relative_path'] = self.relative_path
+        return d
+
+    def get_local_path_if_any(self):
+        return self.local_path
+
+    def add_prechecks(self):
+        if not exists(self.local_path):
+            raise ConfigurationError("Directory '%s' must exist for a git subdirectory resource in order to add it"%
+                                     self.local_path)
+
+    def add(self):
+        pass
+
+    def add_from_remote(self):
+        if not exists(self.local_path):
+            raise InternalError("Git subdirectory resource is missing directory %s"%
+                                self.local_path)
+
+    def results_move_current_files(self, rel_dest_root, exclude_files,
+                                   exclude_dirs_re):
+        raise InternalError("results_move_current_files should not be called for %s" % self.__class__.__name__)
+
+    def snapshot_prechecks(self):
+        pass
+
+    def snapshot(self):
+        # Todo: handle tags
+        commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path, 'autocommit ahead of snapshot',
+                                      verbose=self.verbose)
+        return get_local_head_hash(self.workspace_dir, verbose=self.verbose)
+
+
+    def restore_prechecks(self, hashval):
+        rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
+                                     hashval+"^{commit}"],
+                                    cwd=self.workspace_dir,
+                                    verbose=self.verbose)
+        if rc!=0:
+            raise ConfigurationError("No commit found with hash '%s' in %s" %
+                                     (hashval, str(self)))
+
+    def restore(self, hashval):
+        commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path,
+                                      'auto-commit ahead of restore',
+                                      verbose=self.verbose)
+        checkout_subdir_and_apply_commit(self.workspace_dir, self.relative_path, hashval, verbose=self.verbose)
 
 
     def push_prechecks(self):
@@ -446,33 +537,50 @@ class GitRepoSubdirFactory(ResourceFactory):
         if not lpr.startswith(wdr):
             raise ConfigurationError("Git subdirectories can only be used as resources when under the workspace repo.")
         relative_path = lpr[len(wdr)+1:]
-        if role != ResourceRoles.RESULTS:
-            raise ConfigurationError("Probem creating resource '%s': Role %s is not premitted for a git subdirectory, only the results role"
-                                     % (name, role))
+        # if role != ResourceRoles.RESULTS:
+        #     raise ConfigurationError("Probem creating resource '%s': Role %s is not premitted for a git subdirectory, only the results role"
+        #                              % (name, role))
         if not exists(local_path):
             if not batch:
                 click.confirm(CONFIRM_SUBDIR_MSG%relative_path, abort=True)
                 create_results_subdir(workspace_dir, local_path, relative_path, verbose)
             else:
                 raise ConfigurationError("Cannot create a resource from a git subdirectory if the directory does not already exist.")
-        return GitRepoSubdirResource(name, workspace_dir, relative_path, verbose)
+        if role==ResourceRoles.RESULTS:
+            return GitRepoResultsSubdirResource(name, workspace_dir, relative_path,
+                                                verbose)
+        else:
+            return GitRepoSubdirResource(name, role, workspace_dir, relative_path,
+                                         verbose)
 
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
         assert json_data['resource_type']=='git-subdirectory'
-        return GitRepoSubdirResource(json_data['name'],
-                                     workspace_dir, json_data['relative_path'],
-                                     verbose)
+        if json_data['role']==ResourceRoles.RESULTS:
+            return GitRepoResultsSubdirResource(json_data['name'],
+                                                workspace_dir,
+                                                json_data['relative_path'],
+                                                verbose)
+        else:
+            return GitRepoSubdirResource(json_data['name'], json_data['role'],
+                                         workspace_dir, json_data['relative_path'],
+                                         verbose)
 
     def from_json_remote(self, json_data, workspace_dir, batch, verbose):
         assert json_data['resource_type']=='git-subdirectory'
         rname = json_data['name']
+        role = json_data['role']
         relative_path = json_data['relative_path']
         local_path = join(workspace_dir, relative_path)
         if not exists(local_path):
             raise ConfigurationError("Subdirectory %s for resource %s not found at %s"%
                                      (relative_path, rname, local_path))
-        return GitRepoSubdirResource(rname, workspace_dir, relative_path, verbose)
+        if role==ResourceRoles.RESULTS:
+            return GitRepoResultsSubdirResource(rname, workspace_dir, relative_path,
+                                                 verbose)
+        else:
+            return GitRepoSubdirResource(rname, role, workspace_dir, relative_path,
+                                         verbose)
 
     def suggest_name(self, local_path, *args):
         return basename(local_path)

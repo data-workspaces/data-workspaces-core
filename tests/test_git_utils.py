@@ -268,6 +268,11 @@ class TestCheckoutAndApplyCommit(BaseCase):
         self.assert_file_contents_equal("to_be_modified.txt",
                                         "this file to be modified")
 
+        # run again with the same hash. It should do nothing, as there
+        # are no changes
+        checkout_and_apply_commit(TEMPDIR, restored_hash, True)
+
+
 class TestSubdirCommit(BaseCase):
     def test_commit(self):
         os.mkdir(join(TEMPDIR, 'subdir'))
@@ -375,7 +380,11 @@ class TestCheckoutSubdirAndApplyCommit(BaseCase):
         self.assert_file_contents_equal("root_file1.txt",
                                         "root file v1\nroot file v2")
 
-    
+        # run again with the same hash. It should do nothing, as there
+        # are no changes
+        checkout_subdir_and_apply_commit(TEMPDIR, 'subdir', restored_hash, True)
+
+
 if __name__ == '__main__':
     unittest.main()
 
