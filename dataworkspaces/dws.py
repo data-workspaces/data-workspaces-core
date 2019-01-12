@@ -128,9 +128,11 @@ HOST_PARAM = HostParamType()
 @click.option('--hostname', type=HOST_PARAM, default=None,
               help="Hostname to identify this machine in snapshot directory paths, "+
                    "defaults to " + DEFAULT_HOSTNAME)
+@click.option('--use-basic-resource-template', default=False, is_flag=True,
+              help="Initialize the workspace with git subdirectory resources for source data, code, intermediate data, and results")
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
-def init(ctx, hostname, name):
+def init(ctx, hostname, name, use_basic_resource_template):
     """Initialize a new workspace"""
     if hostname is None:
         if not ctx.obj.batch:
@@ -138,7 +140,7 @@ def init(ctx, hostname, name):
                                     default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
-    init_command(name, hostname, **vars(ctx.obj))
+    init_command(name, hostname, use_basic_resource_template, **vars(ctx.obj))
 
 
 cli.add_command(init)

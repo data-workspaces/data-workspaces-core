@@ -6,11 +6,13 @@ import json
 import click
 
 from dataworkspaces.resources.resource import \
-    get_resource_file_path, get_resource_local_params_file_path
+    get_resource_file_path, get_resource_local_params_file_path,\
+    RESOURCE_ROLE_CHOICES
 import dataworkspaces.commands.actions as actions
 from .params import get_all_defaults, get_local_defaults,\
                     get_local_params_file_path
 from dataworkspaces import __version__
+from .add import add_command
 
 def get_config_file_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/config.json')
@@ -66,27 +68,41 @@ class MakeWorkSpaceConfig(actions.Action):
             self.workspace_name
 
 
-def init_command(name, hostname, batch=False, verbose=False):
+def init_command(name, hostname, use_basic_resource_template,
+                 batch=False, verbose=False):
     plan = []
     ns = actions.Namespace()
-    if actions.is_git_repo(actions.CURR_DIR):
+    workspace_dir = actions.CURR_DIR
+    if actions.is_git_repo(workspace_dir):
         click.echo("Found a git repo, we will add to it")
     else:
-        plan.append(actions.GitInit(ns, verbose, actions.CURR_DIR))
-    step = MakeWorkSpaceConfig(ns, verbose, actions.CURR_DIR, name, hostname)
+        plan.append(actions.GitInit(ns, verbose, workspace_dir))
+    step = MakeWorkSpaceConfig(ns, verbose, workspace_dir, name, hostname)
     config_fpath = step.config_fpath
     resources_fpath = step.resources_fpath
     snapshots_fpath = step.snapshots_fpath
     gitignore_fpath = step.gitignore_fpath
     plan.append(step)
-    plan.append(actions.GitAdd(ns, verbose, actions.CURR_DIR,
+    plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                [config_fpath, resources_fpath, snapshots_fpath,
                                 gitignore_fpath]))
-    plan.append(actions.GitCommit(ns, verbose, actions.CURR_DIR,
+    plan.append(actions.GitCommit(ns, verbose, workspace_dir,
                                   'Initial version of data workspace'))
-    return actions.run_plan(plan, 'initialize a workspace at %s' % actions.CURR_DIR,
-                            'initialized a workspace at %s' % actions.CURR_DIR,
-                            batch=batch, verbose=verbose)
+    actions.run_plan(plan, 'initialize a workspace at %s' % workspace_dir,
+                     'initialized a workspace at %s' % workspace_dir,
+                     batch=batch, verbose=verbose)
+    if use_basic_resource_template:
+        click.echo("Will now create sub-directory resources for "+
+                   ", ".join(RESOURCE_ROLE_CHOICES))
+        for role in RESOURCE_ROLE_CHOICES:
+            add_command('git-subdirectory', role, role,
+                        workspace_dir, batch, verbose,
+                        join(workspace_dir, role),
+                        # no prompt for subdirectory
+                        False)
+        click.echo("Finished initializing resources:")
+        for role in RESOURCE_ROLE_CHOICES:
+            click.echo("  %s: ./%s" %(role, role))
 
 
 

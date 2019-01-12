@@ -24,6 +24,14 @@ RESOURCE_ROLE_CHOICES = [
     ResourceRoles.RESULTS
 ]
 
+# short explanation of each role
+RESOURCE_ROLE_PURPOSES = {
+    ResourceRoles.SOURCE_DATA_SET:"source data",
+    ResourceRoles.INTERMEDIATE_DATA:"intermediate data",
+    ResourceRoles.CODE:"code",
+    ResourceRoles.RESULTS:"experimental results"
+}
+
 
 class Resource:
     """Base class for all resources"""
