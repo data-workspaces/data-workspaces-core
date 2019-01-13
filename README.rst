@@ -47,6 +47,11 @@ Taken together, these features let you:
 7. Publish your environment on a site like GitHub or GitLab for others to download and explore.
 
 
+Supported Platforms
+===================
+This software runs directly on Linux and MacOSx. You need to have ``git`` pre-installed on your system.
+Windows is supported by via the
+`Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_.
 
 To install for development
 ==========================
@@ -283,5 +288,5 @@ as well.
 
 License
 =======
-This code is copyright 2018 by the Max Planck Institute for Software Systems and Data-ken
+This code is copyright 2018,2019 by the Max Planck Institute for Software Systems and Data-ken
 Research. It is licensed under the Apache 2.0 license. See the file LICENSE.txt for details.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """Test programmatic api
 """
 
