@@ -16,3 +16,6 @@ register_resource_type('git-subdirectory', GitRepoSubdirFactory)
 
 from ..resources.local_file_resource import LocalFileFactory
 register_resource_type('file', LocalFileFactory)
+
+from ..resources.rclone_resource import RcloneFactory
+register_resource_type('rclone', RcloneFactory)
