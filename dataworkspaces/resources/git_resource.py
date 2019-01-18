@@ -1,4 +1,4 @@
-# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
+# Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
 Resource for git repositories
 """
@@ -17,7 +17,8 @@ from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit
-from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles
+from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles,\
+    RESOURCE_ROLE_PURPOSES
 from .snapshot_utils import move_current_files_local_fs
 
 
@@ -506,10 +507,10 @@ CONFIRM_SUBDIR_MSG=\
 "The subdirectory %s does not currently exist, but must be a part of the workspace's git repo in order"+\
 " to be used as a resource. Do you want it to be created and added to git?"
 
-def create_results_subdir(workspace_dir, full_path, relative_path, verbose):
+def create_results_subdir(workspace_dir, full_path, relative_path, role, verbose):
     os.makedirs(full_path)
     with open(join(full_path, 'README.txt'), 'w') as f:
-        f.write("This directory is for experimental results. Upon each snapshot, the current contents will be moved to a new subdirectory.\n")
+        f.write("This directory is for %s.\n" % RESOURCE_ROLE_PURPOSES[role])
         f.write("This README file ensures the directory is added to the git repository, as git does not support empty directories.\n")
     call_subprocess([GIT_EXE_PATH, 'add', relative_path],
                     cwd=workspace_dir, verbose=verbose)
@@ -526,7 +527,7 @@ class GitRepoSubdirFactory(ResourceFactory):
     main data workspace repo and the role is "results".
     """
     def from_command_line(self, role, name, workspace_dir, batch, verbose,
-                          local_path):
+                          local_path, confirm_subdir_create=True):
         """Instantiate a resource object from the add command's
         arguments"""
         if is_git_repo(local_path):
@@ -541,9 +542,13 @@ class GitRepoSubdirFactory(ResourceFactory):
         #     raise ConfigurationError("Probem creating resource '%s': Role %s is not premitted for a git subdirectory, only the results role"
         #                              % (name, role))
         if not exists(local_path):
-            if not batch:
+            if not confirm_subdir_create:
+                create_results_subdir(workspace_dir, local_path, relative_path,
+                                      role, verbose)
+            elif not batch:
                 click.confirm(CONFIRM_SUBDIR_MSG%relative_path, abort=True)
-                create_results_subdir(workspace_dir, local_path, relative_path, verbose)
+                create_results_subdir(workspace_dir, local_path, relative_path,
+                                      role, verbose)
             else:
                 raise ConfigurationError("Cannot create a resource from a git subdirectory if the directory does not already exist.")
         if role==ResourceRoles.RESULTS:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
+# Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """Test moving result files during the snapshot command
 """
 
@@ -33,6 +33,8 @@ def makefile(fname):
 
 class TestDirTemplateRe(unittest.TestCase):
     def _test_pat(self, template, expected):
+        if sys.version>='3.7':
+            expected = expected.replace(r'\/', '/').replace(r'\:', ':')
         p = make_re_pattern_for_dir_template(template)
         print("%s => %s" % (template, p))
         self.assertEqual(p, expected,
@@ -133,11 +135,11 @@ class TestMoveResults(unittest.TestCase):
                                               set(['results.csv']),
                                               EXCLUDE_DIRS_RE,
                                               verbose=True)
-        self.assertEqual([('test.log', '2018-09/19/jfischer-11:50/test.log'),
-                          ('test2.log', '2018-09/19/jfischer-11:50/test2.log'),
-                          ('subdir/output.csv',
-                           '2018-09/19/jfischer-11:50/subdir/output.csv')],
-                         mapping)
+        mapping_dict={orig:new for (orig, new) in mapping}
+        self.assertEqual({'test.log':'2018-09/19/jfischer-11:50/test.log',
+                          'test2.log': '2018-09/19/jfischer-11:50/test2.log',
+                          'subdir/output.csv': '2018-09/19/jfischer-11:50/subdir/output.csv'},
+                         mapping_dict)
         self._assert_exists('2018-09/19/jfischer-11:50/test.log')
         self._assert_exists('2018-09/19/jfischer-11:50/test2.log')
         self._assert_exists('2018-09/19/jfischer-11:50/subdir/output.csv')
@@ -199,11 +201,11 @@ class TestMoveResultsGit(unittest.TestCase):
                                               set(['results.csv']),
                                               EXCLUDE_DIRS_RE,
                                               verbose=True)
-        self.assertEqual([('test.log', '2018-09/19/jfischer-11:50/test.log'),
-                          ('test2.log', '2018-09/19/jfischer-11:50/test2.log'),
-                          ('subdir/output.csv',
-                           '2018-09/19/jfischer-11:50/subdir/output.csv')],
-                         mapping)
+        mapping_dict={orig:new for (orig, new) in mapping}
+        self.assertEqual({'test.log':'2018-09/19/jfischer-11:50/test.log',
+                          'test2.log':'2018-09/19/jfischer-11:50/test2.log',
+                          'subdir/output.csv':'2018-09/19/jfischer-11:50/subdir/output.csv'},
+                         mapping_dict)
         self._assert_exists('2018-09/19/jfischer-11:50/test.log')
         self._assert_exists('2018-09/19/jfischer-11:50/test2.log')
         self._assert_exists('2018-09/19/jfischer-11:50/subdir/output.csv')

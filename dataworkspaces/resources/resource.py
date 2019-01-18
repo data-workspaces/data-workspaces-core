@@ -1,4 +1,4 @@
-# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
+# Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
 Base classes for resoures
 """
@@ -23,6 +23,14 @@ RESOURCE_ROLE_CHOICES = [
     ResourceRoles.CODE,
     ResourceRoles.RESULTS
 ]
+
+# short explanation of each role
+RESOURCE_ROLE_PURPOSES = {
+    ResourceRoles.SOURCE_DATA_SET:"source data",
+    ResourceRoles.INTERMEDIATE_DATA:"intermediate data",
+    ResourceRoles.CODE:"code",
+    ResourceRoles.RESULTS:"experimental results"
+}
 
 
 class Resource:

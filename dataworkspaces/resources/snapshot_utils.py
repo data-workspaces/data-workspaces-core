@@ -1,4 +1,4 @@
-# Copyright 2018 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
+# Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
 Utilities for dealing with snapshots, particularly for resources where
 we move files into a unique snapshot subdirectory each time a
