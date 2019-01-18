@@ -188,11 +188,14 @@ add.add_command(local_files)
 @click.option('--role', type=ROLE_PARAM)
 @click.option('--name', type=str, default=None,
               help="Short name for this resource")
+@click.option('--config', type=str, default=None,
+              help="Configuration file for rclone")
 @click.option('--compute-hash', is_flag=True, default=False,
               help="Compute hashes for all files")
-@click.argument('path', type=str)
+@click.argument('source', type=str)
+@click.argument('dest', type=str)
 @click.pass_context
-def rclone(ctx, role, name, compute_hash, path): 
+def rclone(ctx, role, name, config, compute_hash, source, dest): 
     """rclone-d repository"""
     ns = ctx.obj
     if role is None:
@@ -200,8 +203,8 @@ def rclone(ctx, role, name, compute_hash, path):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    path = abspath(expanduser(path))
-    add_command('rclone', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, compute_hash)
+    dest = abspath(expanduser(dest))
+    add_command('rclone', role, name, ns.workspace_dir, ns.batch, ns.verbose, source, dest, config, compute_hash)
 
 add.add_command(rclone)
 
