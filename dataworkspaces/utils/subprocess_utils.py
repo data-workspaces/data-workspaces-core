@@ -6,6 +6,9 @@ import os
 from os.path import abspath, expanduser, join, isfile
 import click
 
+from dataworkspaces.errors import ConfigurationError
+
+
 def call_subprocess(args, cwd, verbose=False):
     """Call an executable as a child process. Returns the standard output.
     If it fails, we will print
@@ -32,19 +35,27 @@ def call_subprocess_for_rc(args, cwd, verbose=False):
     return cp.returncode
 
 
-def find_exe(exe_name, additional_search_locations=[]):
+STANDARD_EXE_SEARCH_LOCATIONS=['/usr/bin', '/usr/local/bin',
+                               abspath(expanduser('~/bin'))]
+
+def find_exe(exe_name, recommended_action_on_error,
+             additional_search_locations=STANDARD_EXE_SEARCH_LOCATIONS):
     """Find an executable, first checking in the current path
     (as would be done by the shell), and then searching including
     any directories specified by additional_search_locations.
     If found, returns the full path to the executable. Otherwise,
-    returns None.
+    raises a ConfigurationError
     """
-    for dirpath in (os.environ["PATH"].split(os.pathsep)+additional_search_locations):
+    dirpaths = os.environ['PATH'].split(os.pathsep)
+    for l in additional_search_locations:
+        if l not in dirpaths:
+            dirpaths.append(l)
+    for dirpath in dirpaths:
         fpath = join(dirpath, exe_name)
         if isfile(fpath) and os.access(fpath, os.X_OK):
             return fpath
-    return None
+    raise ConfigurationError("Did not find executable '%s'. Tried searching in: %s. %s"%
+                             (exe_name, ', '.join(dirpaths),
+                              recommended_action_on_error))
 
-STANDARD_EXE_SEARCH_LOCATIONS=['/usr/bin', '/usr/local/bin',
-                               abspath(expanduser('~/bin'))]
 

@@ -7,6 +7,7 @@ import json
 import click
 
 import dataworkspaces.commands.actions as actions
+from dataworkspaces.utils.git_utils import is_a_git_fat_repo
 from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
@@ -51,11 +52,22 @@ class PullWorkspace(actions.Action):
         if is_git_dirty(workspace_dir):
             raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pulling." %
                                      workspace_dir)
+        if is_a_git_fat_repo(workspace_dir):
+            import dataworkspaces.third_party.git_fat as git_fat
+            self.python2_exe = git_fat.find_python2_exe()
+            self.use_git_fat = True
+        else:
+            self.use_git_fat = False
+            self.python2_exe = None
 
     def run(self):
         click.echo("Pulling workspace...")
         actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
                                 cwd=self.workspace_dir, verbose=self.verbose)
+        if self.use_git_fat:
+            import dataworkspaces.third_party.git_fat as git_fat
+            git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.workspace_dir,
+                                verbose=self.verbose)
 
     def __str__(self):
         return "Pull state of data workspace metadata to origin"
