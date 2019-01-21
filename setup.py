@@ -15,5 +15,6 @@ setup(
     entry_points="""
         [console_scripts]
         dws=dataworkspaces.__main__
+        git-fat=dataworkspaces.third_party.git_fat:main
     """
 )

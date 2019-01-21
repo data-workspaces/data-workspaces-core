@@ -9,7 +9,7 @@ from os.path import join
 from dataworkspaces.resources.snapshot_utils import \
     validate_template
 from dataworkspaces.errors import ConfigurationError
-
+from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
 PARAM_DEFS = {}
 LOCAL_PARAM_DEFS = {}
@@ -111,9 +111,6 @@ def get_local_defaults(hostname=None):
 
 def get_local_params_file_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/local_params.json')
-
-
-HOSTNAME_RE=re.compile('^\w([\w\-\.])*$')
 
 def validate_hostname(name):
     if not HOSTNAME_RE.match(name):

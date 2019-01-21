@@ -3,6 +3,7 @@
 import click
 
 from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.utils.git_utils import is_a_git_fat_repo
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.git_resource import \
@@ -32,11 +33,22 @@ class PushWorkspace(actions.Action):
         if is_pull_needed_from_remote(workspace_dir, 'master', self.verbose):
             raise ConfigurationError("Data workspace at %s requires a pull from remote origin"%
                                      workspace_dir)
+        if is_a_git_fat_repo(workspace_dir):
+            import dataworkspaces.third_party.git_fat as git_fat
+            self.python2_exe = git_fat.find_python2_exe()
+            self.use_git_fat = True
+        else:
+            self.use_git_fat = False
+            self.python2_exe = None
 
     def run(self):
         click.echo("Pushing workspace...")
         actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
                                 cwd=self.workspace_dir, verbose=self.verbose)
+        if self.use_git_fat:
+            import dataworkspaces.third_party.git_fat as git_fat
+            git_fat.run_git_fat(self.python2_exe, ['push'], cwd=self.workspace_dir,
+                                verbose=self.verbose)
 
     def __str__(self):
         return "Push state of data workspace metadata to origin"

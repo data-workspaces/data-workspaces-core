@@ -23,7 +23,8 @@ from .commands.run import run_command
 from .commands.diff import diff_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
-from .commands.params import DEFAULT_HOSTNAME, HOSTNAME_RE
+from .commands.params import DEFAULT_HOSTNAME
+from .utils.regexp_utils import HOSTNAME_RE
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
@@ -114,7 +115,8 @@ def cli(ctx, batch, verbose):
 
 
 class HostParamType(click.ParamType):
-    name = "Must start with a letter or number and only contain letters, numbers, '.', '_', or '-'"
+    name = "HOSTNAME"
+    #name = "Must start with a letter or number and only contain letters, numbers, '.', '_', or '-'"
 
     def convert(self, value, param, ctx):
         if not HOSTNAME_RE.match(value):
@@ -130,9 +132,21 @@ HOST_PARAM = HostParamType()
                    "defaults to " + DEFAULT_HOSTNAME)
 @click.option('--use-basic-resource-template', default=False, is_flag=True,
               help="Initialize the workspace with git subdirectory resources for source data, code, intermediate data, and results")
+@click.option('--git-fat-remote', type=str,
+              help="Initialize the workspace with the git-fat large file extension "+
+                   "and use the specified URL for the remote datastore")
+@click.option('--git-fat-user', type=str, default=None,
+              help="Username for git fat remote (if not root)")
+@click.option('--git-fat-port', type=int, default=None,
+              help="Port number for git-fat remote (defaults to 22)")
+@click.option('--git-fat-attributes', type=str, default=None,
+              help="Comma-separated list of file patterns to manage under git-fat."+
+              " For example --git-fat-attributes='*.gz,*.zip'. If you do not specify"+
+              " here, you can always add the .gitattributes file later.")
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
-def init(ctx, hostname, name, use_basic_resource_template):
+def init(ctx, hostname, name, use_basic_resource_template, git_fat_remote,
+         git_fat_user, git_fat_port, git_fat_attributes):
     """Initialize a new workspace"""
     if hostname is None:
         if not ctx.obj.batch:
@@ -140,7 +154,8 @@ def init(ctx, hostname, name, use_basic_resource_template):
                                     default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
-    init_command(name, hostname, use_basic_resource_template, **vars(ctx.obj))
+    init_command(name, hostname, use_basic_resource_template, git_fat_remote,
+                 git_fat_user, git_fat_port, git_fat_attributes, **vars(ctx.obj))
 
 
 cli.add_command(init)

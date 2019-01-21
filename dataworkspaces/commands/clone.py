@@ -7,6 +7,7 @@ import shutil
 import json
 
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
+from dataworkspaces.utils.git_utils import is_a_git_fat_repo
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path
 import dataworkspaces.commands.actions as actions
@@ -60,6 +61,14 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
                 raise ConfigurationError("Clone target directory %s already exists" % new_name)
             os.rename(initial_path, new_name)
             directory = new_name
+        if is_a_git_fat_repo(directory):
+            import dataworkspaces.third_party.git_fat as git_fat
+            python2_exe = git_fat.find_python2_exe()
+            git_fat.run_git_fat(python2_exe, ['init'], cwd=directory,
+                                verbose=verbose)
+            # pull the objects referenced by the current head
+            git_fat.run_git_fat(python2_exe, ['pull'], cwd=directory,
+                                verbose=verbose)
     except:
         if isdir(initial_path):
             shutil.rmtree(initial_path)

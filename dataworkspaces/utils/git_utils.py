@@ -2,14 +2,14 @@
 """
 Utility functions related to interacting with git
 """
-from os.path import isdir, join, dirname
+from os.path import isdir, join, dirname, exists
 from subprocess import run, PIPE
 import re
 
 import click
 
 from .subprocess_utils import \
-    find_exe, STANDARD_EXE_SEARCH_LOCATIONS, call_subprocess,\
+    find_exe, call_subprocess,\
     call_subprocess_for_rc
 from .misc import remove_dir_if_empty
 from dataworkspaces.errors import ConfigurationError, InternalError
@@ -21,9 +21,9 @@ def is_git_repo(dirpath):
         return False
 
 
-GIT_EXE_PATH=find_exe('git', additional_search_locations=STANDARD_EXE_SEARCH_LOCATIONS)
-if GIT_EXE_PATH is None:
-    raise ConfigurationError("Could not find a git executable!")
+GIT_EXE_PATH=find_exe('git',
+                      "Please make sure that you have git installed on your machine.")
+
 
 HASH_RE = re.compile(r'^[0-9a-fA-F]+$')
 
@@ -254,3 +254,10 @@ def get_remote_head_hash(cwd, branch, verbose):
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
+
+def get_dot_gitfat_file_path(workspace_dir):
+    return join(workspace_dir, '.gitfat')
+
+def is_a_git_fat_repo(workspace_dir):
+    assert is_git_repo(workspace_dir)
+    return exists(get_dot_gitfat_file_path(workspace_dir))
