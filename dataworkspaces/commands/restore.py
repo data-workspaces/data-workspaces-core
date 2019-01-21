@@ -7,7 +7,7 @@ import shutil
 
 import click
 
-from dataworkspaces.utils.git_utils import is_a_git_hash
+from dataworkspaces.utils.git_utils import is_a_git_hash, is_a_git_fat_repo
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
@@ -126,6 +126,21 @@ class CopyLineageFilesToCurrent(actions.Action):
 
     def __str__(self):
         return "Copy lineage files from snapshot to current lineage"
+
+class GitFatPull(actions.Action):
+    def __init__(self, ns, verbose, workspace_dir):
+        super().__init__(ns, verbose)
+        self.workspace_dir = workspace_dir
+        import dataworkspaces.third_party.git_fat as git_fat
+        self.python2_exe = git_fat.find_python2_exe()
+
+    def run(self):
+        import dataworkspaces.third_party.git_fat as git_fat
+        git_fat.run_git_fat(self.python2_exe, ['pull'],
+                            cwd=self.workspace_dir, verbose=self.verbose)
+
+    def __str__(self):
+        return 'Run a git-fat pull to update any files managed by git-fat'
 
 
 def process_names(current_names, snapshot_names, only=None, leave=None):
@@ -262,7 +277,9 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     elif isdir(snapshot_lineage_dir):
         plan.append(CopyLineageFilesToCurrent(ns, verbose, current_lineage_dir,
                                               snapshot_lineage_dir))
-    
+
+    if is_a_git_fat_repo(workspace_dir):
+        plan.append(GitFatPull(ns, verbose, workspace_dir))
 
     if creating_new_snapshot:
         commit_msg_fn = lambda: new_snapshot_desc + " " + ns.snapshot_hash

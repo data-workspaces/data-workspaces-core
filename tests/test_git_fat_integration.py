@@ -18,7 +18,6 @@ USERNAME=getpass.getuser()
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR,'workspace')
 FAT_FILES=join(TEMPDIR, 'fat-files')
-FAT_FILES_URL='localhost:%s'%FAT_FILES
 WS_ORIGIN=join(TEMPDIR, 'workspace_origin.git')
 CLONED_WS_PARENT=join(TEMPDIR, 'cloned_ws')
 CLONED_WS=join(CLONED_WS_PARENT, 'workspace')
@@ -39,6 +38,8 @@ import dataworkspaces.dws
 COMMAND_LINE_API=os.path.abspath(os.path.expanduser(dataworkspaces.dws.__file__))
 
 def make_compressed_file(path, extra=None):
+    if exists(path+'.gz'):
+        os.remove(path+'.gz')
     with open(path, 'w') as f:
         f.write("This is a test. This file will be compressed and stored in git-files\n")
         if extra:
@@ -115,6 +116,21 @@ class TestGitFatInWorkspace(BaseCase):
                         "did not find fat directory at %s" % cloned_fat_dir)
         cloned_data_file = join(CLONED_WS, 'source-data/data.txt.gz')
         self._assert_files_same(compressed_file, cloned_data_file)
+
+        # now, change our file and propagate to clone
+        compressed_file = make_compressed_file(base_file, 'this is the second version')
+        self._run_dws(['snapshot', 'SNAPSHOT2'])
+        self._run_dws(['push'])
+        self._assert_fat_file_exists('66698e38d8d72d45bf1a8c443f47540a1918089d',
+                                     'data.txt.gz')
+        self._run_dws(['pull'], cwd=CLONED_WS)
+        self._assert_files_same(compressed_file, cloned_data_file)
+
+        # restore our first snapshot
+        self._run_dws(['restore', 'SNAPSHOT1'])
+        self._assert_files_same(compressed_file,
+                                join(FAT_FILES,
+                                     '42c56f6ca605b48763aca8e87de977b5708b4d3b',))
 
 
 if __name__ == '__main__':
