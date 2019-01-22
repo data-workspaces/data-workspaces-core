@@ -198,7 +198,11 @@ class RClone:
         """
         Executes: rclone check src dest 
         """
-        return self.run_cmd(command="check", extra_args=[src, dest] + flags)
+        ret = self.run_cmd(command="check", extra_args=[src, dest] + flags)
+        if ret['code'] == 0:
+            return ret['out'] 
+        else:
+            raise RCloneException('rclone.check returns error %d (%s)' % (ret['code'], ret['err']))
 
 def with_config(cfgstring):
     """

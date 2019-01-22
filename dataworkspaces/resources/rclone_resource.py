@@ -5,6 +5,7 @@ Resource for files copied in by rclone
 from errno import EEXIST
 import os
 import os.path 
+import stat
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
@@ -85,9 +86,15 @@ class RcloneResource(Resource):
                     pass
                 else: raise
         ret = self.rclone.copy(self.remote_origin, self.local_path)
-        print('ret code = ', ret['code'])
-        print('out = ', ret['out'])
-        # should the files be marked non-writeable?
+        if ret['code'] != 0:
+            raise Exception("rclone copy raised error %d: %s" % (ret['code'], ret['err']))
+        # mark the files as readonly
+        print('Marking files as readonly')
+        for (dirpath, dirnames, filenames) in os.walk(self.local_path):
+            for f_name in filenames:
+                abspath = os.path.abspath(join(self.local_path, f_name))
+                mode = os.stat(abspath)[stat.ST_MODE]
+                os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
     def snapshot_prechecks(self):
         pass
