@@ -16,7 +16,8 @@ from dataworkspaces.utils.git_utils import \
     get_local_head_hash, get_remote_head_hash,\
     commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
-    checkout_subdir_and_apply_commit
+    checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
+    has_git_fat_been_initialized
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES
 from .snapshot_utils import move_current_files_local_fs
@@ -109,7 +110,11 @@ class GitRepoResource(Resource):
             cmd = [GIT_EXE_PATH, 'pull', 'origin', 'master']
             call_subprocess(cmd, self.local_path, self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose, ok_if_not_present=True)
-
+        if is_a_git_fat_repo(self.local_path) and not has_git_fat_been_initialized(self.local_path):
+            import dataworkspaces.third_party.git_fat as git_fat
+            python2_exe = git_fat.find_python2_exe()
+            git_fat.run_git_fat(python2_exe, ['init'], cwd=self.local_path, verbose=self.verbose)
+            git_fat.run_git_fat(python2_exe, ['pull'], cwd=self.local_path, verbose=self.verbose)
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
@@ -146,11 +151,26 @@ class GitRepoResource(Resource):
         if rc!=0:
             raise ConfigurationError("No commit found with hash '%s' in %s" %
                                      (hashval, str(self)))
+        if is_a_git_fat_repo(self.local_path):
+            import dataworkspaces.third_party.git_fat as git_fat
+            self.python2_exe = git_fat.find_python2_exe()
+            self.uses_git_fat = True
+        else:
+            self.uses_git_fat = False
+
     def restore(self, hashval):
         commit_changes_in_repo(self.local_path, 'auto-commit ahead of restore',
                                verbose=self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         checkout_and_apply_commit(self.local_path, hashval, verbose=self.verbose)
+        if self.uses_git_fat:
+            # since the restored repo might have different git-fat managed files, we run
+            # a pull to get them.
+            import dataworkspaces.third_party.git_fat as git_fat
+            git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.local_path,
+                                verbose=self.verbose)
+
+
 
     def push_prechecks(self):
         if is_git_dirty(self.local_path):
@@ -160,24 +180,44 @@ class GitRepoResource(Resource):
         if is_pull_needed_from_remote(self.local_path, self.branch, self.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
+        if is_a_git_fat_repo(self.local_path):
+            import dataworkspaces.third_party.git_fat as git_fat
+            self.python2_exe = git_fat.find_python2_exe()
+            self.uses_git_fat = True
+        else:
+            self.uses_git_fat = False
 
     def push(self):
         """Push to remote origin, if any"""
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         call_subprocess([GIT_EXE_PATH, 'push', 'origin', self.branch],
                         cwd=self.local_path, verbose=self.verbose)
+        if self.uses_git_fat:
+            import dataworkspaces.third_party.git_fat as git_fat
+            git_fat.run_git_fat(self.python2_exe, ['push'], cwd=self.local_path,
+                                verbose=self.verbose)
 
     def pull_prechecks(self):
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %
                 self.local_path)
+        if is_a_git_fat_repo(self.local_path):
+            import dataworkspaces.third_party.git_fat as git_fat
+            self.python2_exe = git_fat.find_python2_exe()
+            self.uses_git_fat = True
+        else:
+            self.uses_git_fat = False
 
     def pull(self):
         """Pull from remote origin, if any"""
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         call_subprocess([GIT_EXE_PATH, 'pull', 'origin', 'master'],
                         cwd=self.local_path, verbose=self.verbose)
+        if self.uses_git_fat:
+            import dataworkspaces.third_party.git_fat as git_fat
+            git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.local_path,
+                                verbose=self.verbose)
 
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)

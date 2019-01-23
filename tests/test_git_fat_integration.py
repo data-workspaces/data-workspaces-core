@@ -22,6 +22,9 @@ WS_ORIGIN=join(TEMPDIR, 'workspace_origin.git')
 CLONED_WS_PARENT=join(TEMPDIR, 'cloned_ws')
 CLONED_WS=join(CLONED_WS_PARENT, 'workspace')
 
+GIT_REPO_DIR=join(TEMPDIR, 'git-repo-for-resource')
+GIT_REPO_ORIGIN=join(TEMPDIR, 'git-repo-for-resource-origin.git')
+
 DWS_REPO=dirname(dirname(os.path.abspath(os.path.expanduser(__file__))))
 BAD_FAT_DIR=join(DWS_REPO, '.git/fat')
 
@@ -92,7 +95,7 @@ class BaseCase(unittest.TestCase):
                         "Files %s and %s are different" % (f1, f2))
 
 class TestGitFatInWorkspace(BaseCase):
-    def test_init(self):
+    def test_git_fat_in_workspace(self):
         self._run_dws(['init', '--use-basic-resource-template',
                        '--git-fat-remote',
                        FAT_FILES,
@@ -131,6 +134,69 @@ class TestGitFatInWorkspace(BaseCase):
         self._assert_files_same(compressed_file,
                                 join(FAT_FILES,
                                      '42c56f6ca605b48763aca8e87de977b5708b4d3b',))
+
+class TestGitFatInResource(BaseCase):
+    def setUp(self):
+        super().setUp()
+        os.mkdir(GIT_REPO_DIR)
+
+    def test_git_fat_in_workspace(self):
+        # first set up a git repo that includes fat
+        self._run_git(['init'], cwd=GIT_REPO_DIR)
+        with open(join(GIT_REPO_DIR, '.gitfat'), 'w') as f:
+            f.write("[rsync]\nremote = %s\n"% FAT_FILES)
+        with open(join(GIT_REPO_DIR, '.gitattributes'), 'w') as f:
+            f.write("*.gz  filter=fat -crlf\n")
+        self._run_git(['add', '.gitattributes', '.gitfat'], cwd=GIT_REPO_DIR)
+        self._run_git(['commit', '-m', 'initial-commit'], cwd=GIT_REPO_DIR)
+        import dataworkspaces.third_party.git_fat as git_fat
+        git_fat.run_git_fat(git_fat.find_python2_exe(), ['init'],
+                            cwd=GIT_REPO_DIR, verbose=True)
+        self._run_git(['init', '--bare', 'git-repo-for-resource-origin.git'],
+                      cwd=TEMPDIR)
+        self._run_git(['remote', 'add', 'origin', GIT_REPO_ORIGIN], cwd=GIT_REPO_DIR)
+        self._run_git(['push', '--set-upstream', 'origin', 'master'], cwd=GIT_REPO_DIR)
+
+        # now set up our data workspace
+        self._run_dws(['init'])
+        self._run_git(['init', '--bare', 'workspace_origin.git'],
+                      cwd=TEMPDIR)
+        self._run_git(['remote', 'add', 'origin', WS_ORIGIN], cwd=WS_DIR)
+        self._run_dws(['add', 'git', '--role=code', GIT_REPO_DIR], cwd=WS_DIR)
+
+        # add a file, take a snapshot and then push
+        compressed_path = make_compressed_file(join(GIT_REPO_DIR, 'data.txt'))
+        self._run_dws(['snapshot', 'SNAPSHOT1'], cwd=WS_DIR)
+        self._run_dws(['push'], cwd=WS_DIR)
+        self._assert_fat_file_exists('42c56f6ca605b48763aca8e87de977b5708b4d3b', 'data.txt.gz')
+        self.assertFalse(isdir(join(WS_DIR, '.git/fat')),
+                         ".git/fat directory should not be present in main workspace")
+
+        # clone our workspace
+        self._run_dws(['clone', WS_ORIGIN], cwd=CLONED_WS_PARENT)
+        CLONED_RESOURCE_DIR=join(CLONED_WS, 'git-repo-for-resource')
+        self.assertTrue(isdir(CLONED_RESOURCE_DIR),
+                        "cloned resource directory %s does not exist!" % CLONED_RESOURCE_DIR)
+        self._assert_files_same(join(GIT_REPO_DIR, 'data.txt.gz'),
+                                join(CLONED_RESOURCE_DIR, 'data.txt.gz'))
+
+        # make a change in the cloned workspace and push it back to the original workspace
+        compressed_path = make_compressed_file(join(CLONED_RESOURCE_DIR, 'data.txt'),
+                                               "this is the updated version.")
+        self._run_dws(['snapshot', 'SNAPSHOT2'], cwd=CLONED_RESOURCE_DIR)
+        self._run_dws(['push'], cwd=CLONED_WS)
+        self._run_dws(['pull'], cwd=WS_DIR)
+        self._assert_files_same(join(GIT_REPO_DIR, 'data.txt.gz'),
+                                join(CLONED_RESOURCE_DIR, 'data.txt.gz'))
+        self._assert_fat_file_exists('e876491bf80294c5b8d981173f29af06e23b096d', 'data.txt.gz')
+
+        # try reverting to the original snapshot
+        self._run_dws(['restore', 'SNAPSHOT1'], cwd=WS_DIR)
+        self._assert_files_same(join(GIT_REPO_DIR, 'data.txt.gz'),
+                                join(FAT_FILES, '42c56f6ca605b48763aca8e87de977b5708b4d3b'))
+
+
+
 
 
 if __name__ == '__main__':

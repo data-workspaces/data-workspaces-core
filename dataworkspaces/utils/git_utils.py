@@ -258,6 +258,9 @@ def get_remote_head_hash(cwd, branch, verbose):
 def get_dot_gitfat_file_path(workspace_dir):
     return join(workspace_dir, '.gitfat')
 
-def is_a_git_fat_repo(workspace_dir):
-    assert is_git_repo(workspace_dir)
-    return exists(get_dot_gitfat_file_path(workspace_dir))
+def is_a_git_fat_repo(repo_dir):
+    assert is_git_repo(repo_dir)
+    return exists(get_dot_gitfat_file_path(repo_dir))
+
+def has_git_fat_been_initialized(repo_dir):
+    return isdir(join(repo_dir, '.git/fat'))
