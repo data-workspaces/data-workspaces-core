@@ -156,8 +156,10 @@ run cd $WORKDIR
 run dws $ARGS init
 run git remote add origin $REMOTE/test.git
 run dws $ARGS add git --role=code --name=code-git ./code
-run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
-run dws $ARGS add local-files --role=intermediate-data --name=worksapce ./workspace
+# run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
+run dws $ARGS add rclone --role=source-data --name=code-local localfs:./local_files my_local_files
+echo "local_files/" >> .gitignore
+run dws $ARGS add local-files --role=intermediate-data --name=wspace ./workspace
 run dws $ARGS add git --role=results --name=results-git ./results_git
 
 # Add a git subdirectory resource
@@ -230,10 +232,10 @@ assert_string_in_file V3 ./code/test.py
 
 # Now make a change to the local dir
 echo "Removing f1"
-rm local_files/f1
+rm my_local_files/f1
 # Should fail
 run dws $ARGS restore V1 || echo 'Test failed as expected'
-echo 'File 1' > local_files/f1
+echo 'File 1' > my_local_files/f1
 
 run dws $ARGS status
 
@@ -352,7 +354,7 @@ run dws $ARGS clone $REMOTE/test.git
 
 # validate the run command and lineage
 run cd $WORKDIR
-run dws run python code/transform_data1.py local_files/data.csv workspace/data1.csv 5
+run dws run python code/transform_data1.py my_local_files/data.csv workspace/data1.csv 5
 run dws run python code/transform_data2.py workspace/data1.csv results_git/results.csv
 run cd ./results_git
 run git add results.csv
@@ -368,7 +370,7 @@ if [ -d $WORKDIR/.dataworkspace/current_lineage ]; then
 else
     echo "current lineage cleared as expected."
 fi
-run dws run python code/transform_data1.py local_files/data.csv workspace/data1.csv 6
+run dws run python code/transform_data1.py my_local_files/data.csv workspace/data1.csv 6
 run dws run python code/transform_data2.py workspace/data1.csv results_git/results.csv
 run cd ./results_git
 run git add results.csv

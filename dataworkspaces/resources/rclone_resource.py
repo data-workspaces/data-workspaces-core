@@ -21,8 +21,10 @@ LOCAL_FILE = 'rclone'
 class RcloneResource(Resource):
     def __init__(self, name, role, workspace_dir, remote_origin, local_path, config=None, compute_hash=False, ignore=[], verbose=False):
         super().__init__(LOCAL_FILE, name, role, workspace_dir)
-        self.remote_origin = remote_origin
-        self.local_path = local_path
+        (self.remote_name, rpath) = remote_origin.split(':')
+        self.remote_path = os.path.abspath(rpath)
+        self.remote_origin = self.remote_name + ':' + self.remote_path
+        self.local_path = os.path.abspath(local_path)
         self.compute_hash = compute_hash
         self.ignore = ignore
         self.verbose = verbose
@@ -44,7 +46,10 @@ class RcloneResource(Resource):
         return d
 
     def local_params_to_json(self):
-        return {'local_path' : self.local_path }
+        return {'local_path' : self.local_path,
+                'remote_origin' : self.remote_origin,
+                'config' : self.config,
+                'compute_hash' : self.compute_hash }
 
     def get_local_path_if_any(self):
         return self.local_path
@@ -56,15 +61,13 @@ class RcloneResource(Resource):
             raise ConfigurationError(self.local_path + ' does not have write permission')
         if os.path.realpath(self.local_path)==os.path.realpath(self.workspace_dir):
             raise ConfigurationError("Cannot add the entire workspace as a file resource")
-        (remote, path) = self.remote_origin.split(':')
         known_remotes = self.rclone.listremotes()
-        if remote not in known_remotes:
+        if self.remote_name not in known_remotes:
             raise ConfigurationError('Remote ' + remote + ' not found by rclone')
         
     def add(self):
         print("rclone: Add is called")
         self.add_from_remote()
-        pass
 
     def add_from_remote(self):
         print("In rclone:add")
@@ -92,7 +95,7 @@ class RcloneResource(Resource):
         print('Marking files as readonly')
         for (dirpath, dirnames, filenames) in os.walk(self.local_path):
             for f_name in filenames:
-                abspath = os.path.abspath(join(self.local_path, f_name))
+                abspath = os.path.abspath(os.path.join(dirpath, f_name))
                 mode = os.stat(abspath)[stat.ST_MODE]
                 os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
@@ -113,11 +116,13 @@ class RcloneResource(Resource):
         #                      "Add snapshot hash files for resource %s" % self.name],
         #                     cwd=self.workspace_dir, verbose=False)
         # return h
+        print("In snapshot: ", self.remote_name,  self.remote_path, self.local_path)
         if self.compute_hash:
-            self.rclone.check(self.remote_origin, self.local_path, flags=[]) 
+            (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way']) 
         else:
-            self.rclone.check(self.remote_origin, self.local_path, flags=['--size-only']) 
-        return None
+            (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way', '--size-only']) 
+        print('Snapshot returns ', ret, out)
+        return ret
 
     def restore_prechecks(self, hashval):
         pass
@@ -142,7 +147,7 @@ class RcloneFactory(ResourceFactory):
         assert json_data['resource_type']==LOCAL_FILE
         return RcloneResource(json_data['name'],
                                  json_data['role'],  
-                                 workspace_dir, json_data['remote_path'], json_data['local_path'],
+                                 workspace_dir, json_data['remote_origin'], json_data['local_path'],
                                  json_data['config'], json_data['compute_hash'])
 
     def from_json_remote(self, json_data, workspace_dir, batch, verbose):
@@ -151,7 +156,7 @@ class RcloneFactory(ResourceFactory):
         # XXX need to convert local path to be stored in local params
         return RcloneResource(json_data['name'],
                                  json_data['role'], 
-                                 workspace_dir, json_data['remote_path'], json_data['local_path'],
+                                 workspace_dir, json_data['remote_origin'], json_data['local_path'],
                                  json_data['config'], json_data['compute_hash'])
 
     def suggest_name(self, local_path, *args):

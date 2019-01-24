@@ -200,9 +200,9 @@ class RClone:
         """
         ret = self.run_cmd(command="check", extra_args=[src, dest] + flags)
         if ret['code'] == 0:
-            return ret['out'] 
+            return (0, ret['out'] )
         else:
-            raise RCloneException('rclone.check returns error %d (%s)' % (ret['code'], ret['err']))
+            raise RCloneException('rclone.check returns error %d (%s)' % (ret['code'], ret['error']))
 
 def with_config(cfgstring):
     """
