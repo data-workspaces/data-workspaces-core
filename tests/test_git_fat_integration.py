@@ -35,6 +35,8 @@ except ImportError:
     sys.path.append(os.path.abspath(".."))
 
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH
+from dataworkspaces.utils.subprocess_utils import find_exe
+from dataworkspaces.errors import ConfigurationError
 
 # figure out where the command line api lives
 import dataworkspaces.dws
@@ -63,17 +65,17 @@ class BaseCase(unittest.TestCase):
         os.mkdir(WS_DIR)
         os.mkdir(FAT_FILES)
         os.mkdir(CLONED_WS_PARENT)
+        self.dws=find_exe("dws", "Make sure you have enabled your python virtual environment")
 
     def tearDown(self):
         if os.path.exists(TEMPDIR):
             shutil.rmtree(TEMPDIR)
             #pass
 
-    def _run_dws(self, dws_args, cwd=WS_DIR):
-        #args = [sys.executable, COMMAND_LINE_API]+dws_args
-        command = 'dws --verbose --batch '+ ' '.join(dws_args)
+    def _run_dws(self, dws_args, cwd=WS_DIR, env=None):
+        command = self.dws + ' --verbose --batch '+ ' '.join(dws_args)
         print(command + (' [%s]' % cwd))
-        r = subprocess.run(command, cwd=cwd, shell=True)
+        r = subprocess.run(command, cwd=cwd, shell=True, env=env)
         r.check_returncode()
 
     def _run_git(self, git_args, cwd=WS_DIR):
@@ -194,6 +196,60 @@ class TestGitFatInResource(BaseCase):
         self._run_dws(['restore', 'SNAPSHOT1'], cwd=WS_DIR)
         self._assert_files_same(join(GIT_REPO_DIR, 'data.txt.gz'),
                                 join(FAT_FILES, '42c56f6ca605b48763aca8e87de977b5708b4d3b'))
+
+
+GIT_FAT_MISSING_EXCEPTION="Did not find executable 'git-fat'. Tried searching in: /bin. Ensure that the dataworkspaces package is installed and that you have activated your virtual environment (if any)."
+
+@unittest.skipIf(exists('/bin/git-fat'),
+                 "There is a copy of git-fat in /bin. Remove it if you want to run the git-fat missing tests!")
+class TestGitFatExeMissing(BaseCase):
+    """Tests for issue #12 - if a repo is git-fat enabled, and git-fat is not in the path,
+    git add will fail silently for filter calls (e.g. in git add). We explicitly check that
+    the executable is in the path in situations where we will call git as a subprocess."""
+    def setUp(self):
+        super().setUp()
+        self.environ=os.environ.copy()
+        self.environ['PATH']='/bin'
+
+    def _run_dws_for_git_fat(self, dws_args, cwd=WS_DIR):
+        """Run dws with the path set to only /bin, ensuring that git-fat won't be found.
+        """
+        command = self.dws + ' --verbose --batch '+ ' '.join(dws_args)
+        print(command + (' [%s]' % cwd))
+        r = subprocess.run(command, cwd=cwd, shell=True, env=self.environ,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
+        self.assertNotEqual(0, r.returncode, "Expecting a non-zero return code from dws call")
+        self.assertTrue(GIT_FAT_MISSING_EXCEPTION in r.stdout,
+                        "Did not find git-fat error in standard output/error. Output was:\n%s" % r.stdout)
+
+    def test_init(self):
+        self._run_dws_for_git_fat(['init', '--git-fat-remote', FAT_FILES, '--git-fat-user='+USERNAME])
+
+    def _setup_ws_with_git_fat(self, relpath):
+        self._run_dws(['init', '--use-basic-resource-template',
+                       '--git-fat-remote',
+                       FAT_FILES,
+                       '--git-fat-user='+USERNAME,
+                       "--git-fat-attributes='*.gz,*.zip'"])
+        base_file=join(WS_DIR, relpath)
+        return make_compressed_file(base_file)
+
+    def test_snapshot_with_gitsub_resource(self):
+        self._setup_ws_with_git_fat('source-data/data.txt')
+        self._run_dws_for_git_fat(['snapshot', 'SNAPSHOT1'])
+
+    def test_snapshot_with_main_repo(self):
+        self._setup_ws_with_git_fat('data.txt')
+        self._run_dws_for_git_fat(['snapshot', 'SNAPSHOT1'])
+
+
+
+
+
+
+
+    def tearDown(self):
+        super().tearDown()
 
 
 

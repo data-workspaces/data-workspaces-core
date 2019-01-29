@@ -17,7 +17,8 @@ from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
-    has_git_fat_been_initialized
+    has_git_fat_been_initialized, validate_git_fat_in_path,\
+    validate_git_fat_in_path_if_needed
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES
 from .snapshot_utils import move_current_files_local_fs
@@ -119,6 +120,7 @@ class GitRepoResource(Resource):
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        validate_git_fat_in_path_if_needed(self.local_path)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
@@ -134,7 +136,7 @@ class GitRepoResource(Resource):
                             cwd=self.local_path, verbose=self.verbose)
 
     def snapshot_prechecks(self):
-        pass
+        validate_git_fat_in_path_if_needed(self.local_path)
 
     def snapshot(self):
         # Todo: handle tags
@@ -155,6 +157,7 @@ class GitRepoResource(Resource):
             import dataworkspaces.third_party.git_fat as git_fat
             self.python2_exe = git_fat.find_python2_exe()
             self.uses_git_fat = True
+            validate_git_fat_in_path()
         else:
             self.uses_git_fat = False
 
@@ -385,6 +388,7 @@ class GitRepoResultsSubdirResource(Resource):
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
@@ -401,7 +405,7 @@ class GitRepoResultsSubdirResource(Resource):
                             verbose=self.verbose)
 
     def snapshot_prechecks(self):
-        pass
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
 
     def snapshot(self):
         # Todo: handle tags
@@ -485,7 +489,7 @@ class GitRepoSubdirResource(Resource):
         raise InternalError("results_move_current_files should not be called for %s" % self.__class__.__name__)
 
     def snapshot_prechecks(self):
-        pass
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
 
     def snapshot(self):
         # Todo: handle tags
@@ -495,6 +499,7 @@ class GitRepoSubdirResource(Resource):
 
 
     def restore_prechecks(self, hashval):
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
         rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
                                      hashval+"^{commit}"],
                                     cwd=self.workspace_dir,

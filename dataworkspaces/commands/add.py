@@ -9,6 +9,7 @@ from dataworkspaces.errors import ConfigurationError, InternalError
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.resources.resource import get_resource_from_command_line,\
     suggest_resource_name, CurrentResources, get_resource_local_params_file_path
+from dataworkspaces.utils.git_utils import validate_git_fat_in_path_if_needed
 
 
 
@@ -141,6 +142,7 @@ def add_command(scheme, role, name, workspace_dir, batch, verbose, *args):
                 click.echo("Resource name '%s' already in use." %
                            name, err=True)
 
+    validate_git_fat_in_path_if_needed(workspace_dir)
     ns = actions.Namespace()
     r = get_resource_from_command_line(scheme, role, name, workspace_dir,
                                        batch, verbose, *args)

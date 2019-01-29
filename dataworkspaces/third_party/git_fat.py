@@ -9,10 +9,12 @@ import subprocess
 import click
 
 from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.utils.subprocess_utils import \
-    call_subprocess, STANDARD_EXE_SEARCH_LOCATIONS
 
 THIS_FILES_DIRPATH=dirname(abspath(expanduser(__file__)))
+
+STANDARD_EXE_SEARCH_LOCATIONS=['/usr/bin', '/usr/local/bin',
+                               abspath(expanduser('~/bin'))]
+
 
 def _is_python2(exe_path, verbose=False):
     try:

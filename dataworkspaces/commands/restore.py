@@ -7,7 +7,7 @@ import shutil
 
 import click
 
-from dataworkspaces.utils.git_utils import is_a_git_hash, is_a_git_fat_repo
+from dataworkspaces.utils.git_utils import is_a_git_hash, is_a_git_fat_repo, validate_git_fat_in_path_if_needed
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
@@ -190,6 +190,7 @@ def find_snapshot(tag_or_hash, sh_data):
 
 def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                     only=None, leave=None, no_new_snapshot=False):
+    validate_git_fat_in_path_if_needed(workspace_dir)
     # First, find the history entry
     sh_file = get_snapshot_history_file_path(workspace_dir)
     with open(sh_file, 'r') as f:

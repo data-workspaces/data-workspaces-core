@@ -6,7 +6,7 @@ import json
 import click
 
 from dataworkspaces.utils.regexp_utils import RSYNC_RE, USERNAME_RE, FPATH_RE
-from dataworkspaces.utils.git_utils import get_dot_gitfat_file_path
+from dataworkspaces.utils.git_utils import get_dot_gitfat_file_path, validate_git_fat_in_path
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path,\
     RESOURCE_ROLE_CHOICES
@@ -131,6 +131,7 @@ def init_command(name, hostname, use_basic_resource_template,
     files_to_add = [config_fpath, resources_fpath, snapshots_fpath,
                     gitignore_fpath]
     if git_fat_remote is not None:
+        validate_git_fat_in_path()
         dot_git_fat_fpath = get_dot_gitfat_file_path(workspace_dir)
         files_to_add.append(dot_git_fat_fpath)
         if git_fat_attributes:

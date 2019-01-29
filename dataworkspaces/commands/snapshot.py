@@ -10,7 +10,7 @@ import shutil
 
 import click
 
-from dataworkspaces.utils.git_utils import is_a_git_hash
+from dataworkspaces.utils.git_utils import is_a_git_hash, validate_git_fat_in_path_if_needed
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.snapshot_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
@@ -184,6 +184,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                                         tag)
     exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(results_dir_template))
 
+    validate_git_fat_in_path_if_needed(workspace_dir)
 
     for r in current_resources.resources:
         if r.has_results_role():

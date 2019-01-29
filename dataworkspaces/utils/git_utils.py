@@ -259,8 +259,35 @@ def get_dot_gitfat_file_path(workspace_dir):
     return join(workspace_dir, '.gitfat')
 
 def is_a_git_fat_repo(repo_dir):
-    assert is_git_repo(repo_dir)
+    assert is_git_repo(repo_dir), "%s is not a git repo" % repo_dir
     return exists(get_dot_gitfat_file_path(repo_dir))
 
 def has_git_fat_been_initialized(repo_dir):
     return isdir(join(repo_dir, '.git/fat'))
+
+# Utility funtions for issue #12 - if a repo is git-fat enabled, and git-fat is not in the path,
+# git add will fail silently for filter calls (e.g. in git add). We explicitly check that
+# the executable is in the path in situations where we will call git as a subprocess.
+
+GIT_FAT_ERRMSG=\
+"Ensure that the dataworkspaces package is installed and that you have activated your virtual environment (if any)."
+
+def validate_git_fat_in_path():
+    """Validate that git-fat is in the path, asssuming we already know that this
+    is a git-fat repo.
+    If the executable is not found, throw a configuration error. We need to do this, as git itself
+    will not return an error return code if a filter (e.g. git-fat) is not found.
+    """
+    find_exe('git-fat', GIT_FAT_ERRMSG,
+             additional_search_locations=[])
+
+def validate_git_fat_in_path_if_needed(repo_dir):
+    """Validate that git-fat is in the path, if this repo is git-fat enabled.
+    Otherwise, throw a configuration error. We need to do this, as git itself
+    will not return an error return code if a filter (e.g. git-fat) is not found.
+    """
+    if not is_a_git_fat_repo(repo_dir):
+        return
+    find_exe('git-fat', GIT_FAT_ERRMSG,
+             additional_search_locations=[])
+
