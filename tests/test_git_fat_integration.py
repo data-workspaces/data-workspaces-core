@@ -28,6 +28,14 @@ GIT_REPO_ORIGIN=join(TEMPDIR, 'git-repo-for-resource-origin.git')
 DWS_REPO=dirname(dirname(os.path.abspath(os.path.expanduser(__file__))))
 BAD_FAT_DIR=join(DWS_REPO, '.git/fat')
 
+GZIP_CANDIDATES=['/bin/gzip', '/usr/bin/gzip']
+GZIP_EXE=None
+for exe in GZIP_CANDIDATES:
+    if exists(exe):
+        GZIP_EXE=exe
+        break
+assert GZIP_EXE is not None,\
+  "Could not find gzip. Looked for it at: %s" % ', '.join(GZIP_CANDIDATES)
 
 try:
     import dataworkspaces
@@ -49,7 +57,7 @@ def make_compressed_file(path, extra=None):
         f.write("This is a test. This file will be compressed and stored in git-files\n")
         if extra:
             f.write(extra + '\n')
-    r = subprocess.run(['/usr/bin/gzip', '-n', basename(path)], cwd=dirname(path))
+    r = subprocess.run([GZIP_EXE, '-n', basename(path)], cwd=dirname(path))
     r.check_returncode()
     return path + '.gz'
 

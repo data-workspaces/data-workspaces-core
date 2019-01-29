@@ -45,6 +45,6 @@ except InternalError as e:
 except Exception as e:
     tb = traceback.format_exc()
     click.echo(tb, err=True)
-    click.echo("Aborting due to expected exception: %s" % repr(e), err=True)
+    click.echo("Aborting due to unexpected exception: %s" % repr(e), err=True)
     sys.exit(1)
 

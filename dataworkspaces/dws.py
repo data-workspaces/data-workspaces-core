@@ -7,6 +7,7 @@ Command-line tool for data workspaces
 __all__ = ['cli']
 import sys
 import click
+import re
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
@@ -208,7 +209,7 @@ add.add_command(local_files)
 @click.option('--compute-hash', is_flag=True, default=False,
               help="Compute hashes for all files")
 @click.argument('source', type=str)
-@click.argument('dest', type=str)
+@click.argument('dest', type=str) # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
 def rclone(ctx, role, name, config, compute_hash, source, dest): 
     """rclone-d repository"""
@@ -218,6 +219,9 @@ def rclone(ctx, role, name, config, compute_hash, source, dest):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
+    rclone_re = r'.*:.*'
+    if re.match(rclone_re, source) == None:
+        raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath")
     dest = abspath(expanduser(dest))
     add_command('rclone', role, name, ns.workspace_dir, ns.batch, ns.verbose, source, dest, config, compute_hash)
 
