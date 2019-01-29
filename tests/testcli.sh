@@ -232,7 +232,7 @@ assert_string_in_file V3 ./code/test.py
 
 # Now make a change to the local dir
 echo "Removing f1"
-rm my_local_files/f1
+rm -f my_local_files/f1
 # Should fail
 run dws $ARGS restore V1 || echo 'Test failed as expected'
 echo 'File 1' > my_local_files/f1
