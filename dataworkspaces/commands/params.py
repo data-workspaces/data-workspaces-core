@@ -88,10 +88,7 @@ def define_local_param(name, default_value, help, validation_fn=None):
 
 def get_local_param_value(local_config, param_name):
     assert param_name in LOCAL_PARAM_DEFS
-    if 'all_resource_params' not in local_config:
-        return LOCAL_PARAM_DEFS[param_name].default_value
-    params = local_config['all_resource_params']
-    return params.get(param_name, PARAM_DEFS[param_name].default_value)
+    return local_config.get(param_name, LOCAL_PARAM_DEFS[param_name].default_value)
 
 def get_local_param_from_file(workspace_dir, param_name):
     with open(get_local_params_file_path(workspace_dir), 'r') as f:
