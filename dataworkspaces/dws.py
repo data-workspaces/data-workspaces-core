@@ -155,6 +155,11 @@ def init(ctx, hostname, name, use_basic_resource_template, git_fat_remote,
                                     default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
+    if ((git_fat_user is not None) or (git_fat_port is not None) or
+        (git_fat_attributes is not None)) and (git_fat_remote is None):
+        raise click.BadOptionUsage(message="If you specify --git-fat-user, --git-fat-port-, or --git-fat-attributes, "+
+                                   "you also need to specify --git-fat-remote",
+                                   option_name='--git-fat-remote')
     init_command(name, hostname, use_basic_resource_template, git_fat_remote,
                  git_fat_user, git_fat_port, git_fat_attributes, **vars(ctx.obj))
 
