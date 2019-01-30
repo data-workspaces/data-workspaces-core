@@ -29,7 +29,9 @@ import logging
 import subprocess
 import tempfile
 
-class RCloneException(Exception):
+from dataworkspaces.errors import ConfigurationError
+
+class RCloneException(ConfigurationError):
     pass
 
 class RClone:
@@ -58,14 +60,14 @@ class RClone:
                 # so we skip until the '\n'
                 self.cfgfile = ret['out'].splitlines()[1].decode('utf_8')
             else:
-                raise Exception("RClone requires either a configuration file or a configuration string")
+                raise ConfigurationError("RClone requires either a configuration file or a configuration string")
 
         assert(self.cfgstring or self.cfgfile), 'Either a config string is given or a filename is given'
 
     def _ensure_rclone_exists(self):
         ret = self._execute(['rclone', 'version'])
         if ret['code'] == -20:
-            raise Exception("rclone executable not found")
+            raise ConfigurationError("rclone executable not found")
 
     def _execute(self, command_with_args):
         """
