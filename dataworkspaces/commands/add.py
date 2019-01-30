@@ -77,7 +77,8 @@ class AddResourceToGitIgnore(actions.Action):
     """
     def __init__(self, ns, verbose, local_relpath, gitignore_path):
         super().__init__(ns, verbose)
-        self.local_repath = local_relpath
+        self.local_repath = '/'+local_relpath if not local_relpath.startswith('/') \
+                            else local_relpath
         self.gitignore_path = gitignore_path
 
     def run(self):
@@ -107,6 +108,12 @@ def add_local_dir_to_gitignore_if_needed(ns, verbose, resource, workspace_dir):
         local_relpath = local_relpath + '/'
     else:
         local_relpath_noslash = local_relpath[:-1]
+    # Add a / as the start to indicate that the path starts at the root of the repo.
+    # Otherwise, we'll hit cases where the path could match other directories (e.g. issue #11)
+    local_relpath = '/'+local_relpath if not local_relpath.startswith('/') else local_relpath
+    local_relpath_noslash = '/'+local_relpath_noslash \
+                            if not local_relpath_noslash.startswith('/') \
+                            else local_relpath_noslash
     gitignore_path = join(workspace_dir, '.gitignore')
     # read the gitignore file to see if relpath is already there
     if exists(gitignore_path):

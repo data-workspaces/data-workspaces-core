@@ -159,7 +159,7 @@ run dws $ARGS add git --role=code --name=code-git ./code
 # run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
 run dws $ARGS add rclone --role=source-data --name=code-local localfs:./local_files my_local_files
 echo "local_files/" >> .gitignore
-run dws $ARGS add local-files --role=intermediate-data --name=wspace ./workspace
+run dws $ARGS add local-files --role=intermediate-data --name=workspace ./workspace
 run dws $ARGS add git --role=results --name=results-git ./results_git
 
 # Add a git subdirectory resource
