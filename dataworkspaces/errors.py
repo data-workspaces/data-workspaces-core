@@ -9,6 +9,11 @@ class ConfigurationError(Exception):
     """
     pass
 
+class LineageError(ConfigurationError):
+    """An error related to data lineage (e.g. action would make it impossible
+    to track lineage)
+    """
+    pass
 
 class UserAbort(Exception):
     """Thrown when the user requests not to perform the action.
