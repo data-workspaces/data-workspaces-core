@@ -137,7 +137,7 @@ class ResourceCert:
     def __ne__(self, other):
         return (not isinstance(other, ResourceCert)) or other.ref!=self.ref or other.certificate!=self.certificate
 
-    def to_json(self):
+    def to_json(self)  -> dict:
         return {'resource_name':self.ref.name, 'subpath':self.ref.subpath,
                 'certificate':self.certificate}
 
@@ -171,7 +171,7 @@ class ResourceLineage:
         else:
             raise JsonValueError(ResourceLineage, 'type', ['step', 'source_data'], restype)
 
-    def verify_compatble(self, resource_name, new_lineage):
+    def verify_compatble(self, resource_name:str, new_lineage:'ResourceLineage'):
         """Given a new lineage which will update this one
         (either data source or step), verify that the update is compatible.
         """
@@ -187,16 +187,14 @@ class ResourceLineage:
                                 ', '.join(sorted(map_subpath(ol_subpaths))),
                                 ', '.join(sorted(map_subpath(nl_subpaths)))))
 
-    def get_resource_cert_for_resource(self, resource_name:str,
-                                       subpath:Optional[str]=None) -> \
+    def get_resource_cert_for_resource(self, ref:ResourceRef) -> \
                                        Optional[ResourceCert]:
         """Return the resource cert if this resource/subpath are contained
         in this lineage object. If not, return None
         """
         raise NotImplementedError(self.__class__.__name__)
 
-    def validate_subpath_compatible(self, resource_name:str,
-                                    subpath:Optional[str]=None) -> None:
+    def validate_subpath_compatible(self, ref:ResourceRef) -> None:
         """Validate that specified subpath would be compatible with
         the existing subpath(s) for this resource. Throws a LineageError
         if there is a problem.
@@ -290,8 +288,7 @@ class StepLineage(ResourceLineage):
                                ": Cannot have a path (" + p2 +
                                ")that is a subpath of another (" + p1 + ")")
 
-    def get_resource_cert_for_resource(self, resource_name:str,
-                                       subpath:Optional[str]=None) -> \
+    def get_resource_cert_for_resource(self, ref:ResourceRef) -> \
                                        Optional[ResourceCert]:
         """Return the resource cert if this resource/subpath are outputs
         of the step. If not, return None.
@@ -299,19 +296,18 @@ class StepLineage(ResourceLineage):
         if self.output_resources is None:
             raise InternalError("Output resources for %s not initialized" % self.step_name)
         for rc in self.output_resources:
-            if rc.resource_name==resource_name and rc.subpath==subpath:
+            if rc.ref==ref:
                 return rc
         return None
 
-    def validate_subpath_compatible(self, resource_name:str,
-                                    subpath:Optional[str]=None) -> None:
+    def validate_subpath_compatible(self, ref:ResourceRef) -> None:
         """Validate that specified subpath would be compatible with
         the existing subpaths for this resource. Throws a LineageError
         if there is a problem.
         """
-        assert resource_name in self.outputs_by_resource
-        for p in self.outputs_by_resource[resource_name]:
-            self._validate_paths_compatible(resource_name, p, subpath)
+        assert ref.name in self.outputs_by_resource
+        for p in self.outputs_by_resource[ref.name]:
+            self._validate_paths_compatible(ref.name, p, ref.subpath)
 
     def get_subpaths_for_output(self, resource_name:str) -> Set[Optional[str]]:
         return self.outputs_by_resource[resource_name]
@@ -356,6 +352,7 @@ class StepLineage(ResourceLineage):
         if the update replaces this lineage entry, False if there
         is no change to this entry, and raise an error if the update
         is incompatible.
+        XXX Shouldn't this tke a ref?
         """
         nl_subpaths = new_lineage.get_subpaths_for_output(resource_name)
         ol_subpaths = self.get_subpaths_for_output(resource_name)
@@ -402,28 +399,22 @@ class SourceDataLineage(ResourceLineage):
         return ResourceCert.from_json(obj, filename=filename)
 
     def get_subpaths_for_output(self, resource_name:str) -> Set[Optional[str]]:
-        return frozenset([self.resource_cert.subpath,])
+        return frozenset([self.resource_cert.ref.subpath,])
 
-    def get_resource_cert_for_resource(self, resource_name:str,
-                                       subpath:Optional[str]=None) -> \
+    def get_resource_cert_for_resource(self, ref:ResourceRef) -> \
                                        Optional[ResourceCert]:
         """Return the resource cert if this resource/subpath are contained
         in this lineage object. If not, return None
         """
-        return self.resource_cert \
-            if (self.resource_cert.resource_name==resource_name and
-             self.resource_cert.subpath==subpath) \
-            else None
+        return self.resource_cert if self.resource_cert.ref==ref else None
 
-    def validate_subpath_compatible(self, resource_name:str,
-                                    subpath:Optional[str]=None) -> None:
+    def validate_subpath_compatible(self, ref:ResourceRef) -> None:
         """Validate that specified subpath would be compatible with
         the existing subpath(s) for this resource. Throws a LineageError
         if there is a problem.
         """
-        assert self.resource_cert.resource_name==resource_name
-        my_subpath = self.resource_cert.subpath
-        assert my_subpath!=subpath, "Should be comparing a mew subpath"
+        assert self.resource_cert.ref.name==ref.name
+        assert self.resource_cert.ref.subpath!=ref.subpath, "Should be comparing a mew subpath"
 
 
 
