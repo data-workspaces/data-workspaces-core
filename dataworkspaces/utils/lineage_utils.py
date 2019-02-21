@@ -175,8 +175,8 @@ class ResourceLineage:
         """Given a new lineage which will update this one
         (either data source or step), verify that the update is compatible.
         """
-        nl_subpaths = new_lineage.get_subpaths_for_output(resource_name)
-        ol_subpaths = self.get_subpaths_for_output(resource_name)
+        nl_subpaths = new_lineage.get_subpaths_for_resource(resource_name)
+        ol_subpaths = self.get_subpaths_for_resource(resource_name)
         def map_subpath(plist):
             return [(p if p is not None else '/') for p in plist]
         if nl_subpaths != ol_subpaths:
@@ -200,6 +200,39 @@ class ResourceLineage:
         if there is a problem.
         """
         raise NotImplementedError(self.__class__.__name__)
+
+    def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
+        """Return a set of all subpaths for this resource. For the step
+        lineage, this will look at the outputs. For the source data lineage,
+        this will just return a set containing one path.
+        """
+        raise NotImplementedError(self.__class__.__name__)
+
+    def replaced_by_new(self, resource_name:str, new_lineage:'ResourceLineage'):
+        """Given a new update to the specified resource, return True
+        if the update replaces this lineage entry, False if there
+        is no change to this entry, and raise an error if the update
+        is incompatible.
+
+        Our current rule is that either an update completely replaces
+        an old lineage or there are no intersections.
+        """
+        nl_subpaths = new_lineage.get_subpaths_for_resource(resource_name)
+        ol_subpaths = self.get_subpaths_for_resource(resource_name)
+        if nl_subpaths==ol_subpaths:
+            return True
+        elif len(nl_subpaths.intersection(ol_subpaths))==0:
+            return False
+        else:
+            def map_subpath(plist):
+                return [(p if p is not None else '/') for p in plist]
+            raise LineageError(("Error updating lineage for resource %s: "+
+                                "subpaths do not match previous lineage. Current "+
+                                "paths: %s, new paths: %s")%
+                               (resource_name,
+                                ', '.join(sorted(map_subpath(ol_subpaths))),
+                                ', '.join(sorted(map_subpath(nl_subpaths)))))
+
 
 class StepLineage(ResourceLineage):
     __slots__ = ['step_name', 'start_time', 'parameters', 'input_resources',
@@ -309,7 +342,7 @@ class StepLineage(ResourceLineage):
         for p in self.outputs_by_resource[ref.name]:
             self._validate_paths_compatible(ref.name, p, ref.subpath)
 
-    def get_subpaths_for_output(self, resource_name:str) -> Set[Optional[str]]:
+    def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
         return self.outputs_by_resource[resource_name]
 
 
@@ -347,29 +380,6 @@ class StepLineage(ResourceLineage):
             'output_resources':[r.to_json() for r in self.output_resources]
         }
 
-    def replaced_by_new(self, resource_name, new_lineage):
-        """Given a new update to the specified resource, return True
-        if the update replaces this lineage entry, False if there
-        is no change to this entry, and raise an error if the update
-        is incompatible.
-        XXX Shouldn't this tke a ref?
-        """
-        nl_subpaths = new_lineage.get_subpaths_for_output(resource_name)
-        ol_subpaths = self.get_subpaths_for_output(resource_name)
-        if nl_subpaths==ol_subpaths:
-            return True
-        elif len(nl_subpaths.intersection(ol_subpaths))==0:
-            return False
-        else:
-            def map_subpath(plist):
-                return [(p if p is not None else '/') for p in plist]
-            raise LineageError(("Error updating lineage for resource %s: "+
-                                "subpaths do not match previous lineage. Current "+
-                                "paths: %s, new paths: %s")%
-                               (resource_name,
-                                ', '.join(sorted(map_subpath(ol_subpaths))),
-                                ', '.join(sorted(map_subpath(nl_subpaths)))))
-
     @staticmethod
     def from_json(obj, filename=None):
         validate_json_keys(obj, StepLineage,
@@ -398,7 +408,7 @@ class SourceDataLineage(ResourceLineage):
         assert obj['type']=='source_data'
         return ResourceCert.from_json(obj, filename=filename)
 
-    def get_subpaths_for_output(self, resource_name:str) -> Set[Optional[str]]:
+    def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
         return frozenset([self.resource_cert.ref.subpath,])
 
     def get_resource_cert_for_resource(self, ref:ResourceRef) -> \
