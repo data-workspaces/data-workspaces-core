@@ -2,7 +2,7 @@
 help:
 	@echo targets are: test clean mypy help
 
-UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration
+UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils
 
 MYPY_UTILS=lineage_utils.py
 
