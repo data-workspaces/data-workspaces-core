@@ -10,6 +10,7 @@ try:
 except ImportError:
     sys.path.append(os.path.abspath(".."))
 
+from dataworkspaces.errors import LineageError
 from dataworkspaces.utils.lineage_utils import \
     StepLineage, LineageStoreCurrent, ResourceRef, SourceDataLineage,\
     LineageConsistencyError, PlaceholderCertificate, HashCertificate
@@ -21,6 +22,8 @@ R1=ResourceRef('r1')
 R2_FOO_BAR=ResourceRef('r2', 'foo/bar')
 INTERMEDIATE_S1=ResourceRef('intermediate', 's1')
 INTERMEDIATE_S2=ResourceRef('intermediate', 's2')
+INTERMEDIATE_ROOT=ResourceRef('intermediate')
+INTERMEDIATE_S1_SUBDIR=ResourceRef('intermediate', 's1/subdir')
 RESULTS=ResourceRef=ResourceRef("results")
 
 class TestLineageStoreCurrent(unittest.TestCase):
@@ -172,6 +175,33 @@ class TestLineageStoreCurrent(unittest.TestCase):
         self._assert_step_hash(INTERMEDIATE_S2, 'step2', 'intermediate_hash2')
         self._assert_step_hash(RESULTS, 'step3', 'results_hash2')
         self.assertEqual(s.validate([RESULTS]), 0)
+
+    def test_inconsistent_writes(self):
+        self.store = LineageStoreCurrent()
+        s = self.store
+        step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
+                                                     [('p1', 'v1'), ('p2', 5)],
+                                                      [R1, R2_FOO_BAR], s)
+        step1_lineage.add_output(s, INTERMEDIATE_S1)
+        step1_lineage.execution_time_seconds = 5
+        s.add_step(step1_lineage)
+        step2_lineage = StepLineage.make_step_lineage('step2', datetime.datetime.now(),
+                                                      [('p3', 'v3')],
+                                                      [INTERMEDIATE_S1], s)
+        try:
+            step2_lineage.add_output(s, INTERMEDIATE_ROOT)
+        except LineageError as e:
+            pass
+        else:
+            self.fail("Expecting a lineage error for inconsistent writes, but did not get one")
+        try:
+            step2_lineage.add_output(s, INTERMEDIATE_S1_SUBDIR)
+        except LineageError as e:
+            pass
+        else:
+            self.fail("Expecting a lineage error for inconsistent writes, but did not get one")
+
+
 
 if __name__ == '__main__':
     unittest.main()
