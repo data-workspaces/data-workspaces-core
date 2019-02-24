@@ -13,8 +13,16 @@ from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict
 from copy import copy
 import json
 
+import click
 
-from dataworkspaces.errors import InternalError, LineageError 
+from dataworkspaces.errors import InternalError, LineageError
+from .regexp_utils import isots_to_dt
+
+class LineageConsistencyError(LineageError):
+    """Special case of LineageError where the inputs for a step
+    have inconsistent versions.
+    """
+    pass
 
 class JsonKeyError(InternalError):
     def __init__(self, classobj, key, filename=None):
@@ -59,8 +67,8 @@ class Certificate:
         validate_json_keys(obj, Certificate, ['cert_type',], filename=filename)
         cert_type = obj['cert_type']
         if cert_type == 'hash':
-            validate_json_keys(obj, HashCertificate, ['hashval'], filename=filename)
-            return HashCertificate(obj['hashval'])
+            validate_json_keys(obj, HashCertificate, ['hashval', 'comment'], filename=filename)
+            return HashCertificate(obj['hashval'], obj['comment'])
         elif cert_type=='placeholder':
             validate_json_keys(obj, PlaceholderCertificate, ['version', 'comment'], filename=filename)
             return PlaceholderCertificate(obj['version'], obj['comment'])
@@ -68,27 +76,32 @@ class Certificate:
             raise JsonValueError(Certificate, 'cert_type', ['hash', 'placeholder'], cert_type)
 
 class HashCertificate(Certificate):
-    __slots__ = ('hashval',)
-    def __init__(self, hashval:str):
+    __slots__ = ('hashval', 'comment')
+    def __init__(self, hashval:str, comment:str):
         self.hashval = hashval
+        self.comment = comment
 
     def __hash__(self):
         return hash(self.hashval)
 
     def __repr__(self):
-        return 'HashCertificate(hashval=%s)' % self.hashval
+        return 'HashCertificate(hashval=%s, comment="%s")' % \
+            (self.hashval, self.comment)
 
     def __str__(self):
         return self.__repr__()
 
     def __eq__(self, other):
-        return isinstance(other, HashCertificate) and other.hashval==self.hashval
+        equal = isinstance(other, HashCertificate) and other.hashval==self.hashval
+        if equal and other.comment!=self.comment:
+            raise TypeError("Two hash certificates are equal in hash values but not in comments: '%s' and '%s'"%
+                            (self.comment, other.comment))
 
     def __ne__(self, other):
         return (not isinstance(other, HashCertificate)) or other.hashval!=self.hashval
 
     def to_json(self):
-        return {'cert_type':'hash', 'hashval':self.hashval}
+        return {'cert_type':'hash', 'hashval':self.hashval, 'comment':self.comment}
 
 
 class PlaceholderCertificate(Certificate):
@@ -255,7 +268,7 @@ class StepLineage(ResourceLineage):
                  output_resources:Optional[List[ResourceCert]]=None,
                  execution_time_seconds:Optional[float]=None):
         self.step_name = step_name
-        self.start_time = start_time.isoformat() # str
+        self.start_time = start_time
         self.parameters = parameters
         self.input_resources = input_resources
         self.execution_time_seconds = execution_time_seconds
@@ -265,8 +278,8 @@ class StepLineage(ResourceLineage):
             self.output_resources = output_resources
             # build the map of outputs by resource
             for rc in output_resources:
-                if rc.resource_name in self.outputs_by_resource:
-                    s = self.outputs_by_resource[rc.resource_name]
+                if rc.ref.name in self.outputs_by_resource:
+                    s = self.outputs_by_resource[rc.ref.name]
                 else:
                     s = set()
                     self.outputs_by_resource[rc.ref.name] = s
@@ -298,8 +311,8 @@ class StepLineage(ResourceLineage):
                 other_cert = lineage.get_resource_cert_for_resource(rc.ref)
                 assert other_cert is not None
                 if other_cert!=rc:
-                    raise LineageError("Step %s depends on two version of %s: %s and %s"
-                                       %(step_name, rc.ref(), other_cert, rc))
+                    raise LineageConsistencyError("Step %s depends on two versions of %s: %s and %s"
+                                                  %(step_name, rc.ref, other_cert, rc))
                 if isinstance(lineage, StepLineage):
                     for input_rc in lineage.input_resources:
                         if input_rc not in transitive_certs:
@@ -397,7 +410,7 @@ class StepLineage(ResourceLineage):
         return {
             'type':'step',
             'step_name':self.step_name,
-            'start_time':self.start_time,
+            'start_time':self.start_time.isoformat(),
             'execution_time_seconds':self.execution_time_seconds,
             'parameters':self.parameters,
             'input_resources':[r.to_json() for r in self.input_resources],
@@ -407,11 +420,15 @@ class StepLineage(ResourceLineage):
     @staticmethod
     def from_json(obj, filename=None):
         validate_json_keys(obj, StepLineage,
-                           ['step_name', 'start_tine', 'parameters',
+                           ['step_name', 'start_time', 'parameters',
                             'input_resources'],
                            filename=filename)
-        return StepLineage(obj['step_name'], obj['start_time'], obj['parameters'],
-                           obj['input_resources'], obj.get('output_resources', None),
+        return StepLineage(obj['step_name'], isots_to_dt(obj['start_time']),
+                           obj['parameters'],
+                           [ResourceCert.from_json(rcobj, filename) for rcobj
+                            in obj['input_resources']],
+                           [ResourceCert.from_json(rcobj, filename) for rcobj
+                            in obj['output_resources']],
                            obj.get('execution_time_seconds', None))
 
 
@@ -431,7 +448,7 @@ class SourceDataLineage(ResourceLineage):
     @staticmethod
     def from_json(obj, filename=None):
         assert obj['type']=='source_data'
-        return ResourceCert.from_json(obj, filename=filename)
+        return SourceDataLineage(ResourceCert.from_json(obj, filename=filename))
 
     def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
         return frozenset([self.resource_cert.ref.subpath,])
@@ -493,7 +510,7 @@ class ResourceLineages:
 
     def get_or_create_lineage(self, step_name:str, step_time:datetime.datetime,
                               ref:ResourceRef) -> ResourceCert:
-        """Get the lineage matching the subpath and return the lineage and cert.
+        """Get the lineage matching the subpath and return the resource ceert.
         If the lineage does not exist, and is compatible with the existing cases,
         create a placeholder. If there would be an incompatibility with the
         existing lineages, raise an error.
@@ -518,6 +535,14 @@ class ResourceLineages:
             if cert is not None:
                 return lineage
         raise KeyError(resource_cert)
+
+    def get_cert_and_lineage_for_ref(self, ref:ResourceRef) -> \
+        Tuple[Certificate, ResourceLineage]:
+        for lineage in self.lineages:
+            rc = lineage.get_resource_cert_for_resource(ref)
+            if rc is not None:
+                return (rc.certificate, lineage)
+        raise KeyError(ref)
 
     def get_placeholder_resource_cert_for_output(self, step_name:str,
                                                  step_time:datetime.datetime,
@@ -544,18 +569,31 @@ class ResourceLineages:
                             PlaceholderCertificate(version,
                                                    "Written by step %s at %s" %(step_name,
                                                                                 step_time)))
-    def replace_placeholders_with_real_certs(self, hashval:str) -> None:
+    def replace_placeholders_with_real_certs(self, hashval:str,
+                                             placeholder_to_real:Dict[ResourceCert,ResourceCert]) -> None:
         """Find any placeholder certificates for this resource and replace
-        with a certificate using the specified hashval.
+        with a certificate using the specified hashval. We add any substitutions made to
+        placeholder_to_real. This will be used in a second pass to replace all the step inputs.
         """
+        warnings = 0
         for lineage in self.lineages:
-            new_cert = HashCertificate(hashval)
             for subpath in lineage.get_subpaths_for_resource(self.resource_name):
                 ref = ResourceRef(self.resource_name, subpath)
                 rc = lineage.get_resource_cert_for_resource(ref)
                 assert rc is not None
                 if rc.is_placeholder():
-                    lineage.replace_certificate(rc, ResourceCert(ref,new_cert))
+                    new_rc = ResourceCert(ref,
+                                          HashCertificate(hashval,
+                                                          rc.certificate.comment))
+                    lineage.replace_certificate(rc, new_rc)
+                    placeholder_to_real[rc] = new_rc
+                elif rc.certificate.hashval!=hashval:
+                    click.echo(("WARNING: lineage for resource %s, has hash value '%s', but snapshot has hash value '%s'."+
+                                " Using older version (%s)") % (self.resource_name, rc.certificate.hashval, hashval,
+                                                                rc.certificate.hashval),
+                               err=True)
+                    warnings +=1
+        return warnings
 
     def verify_no_placeholders_for_resource(self) -> None:
         """There was no hash generated for this resource,
@@ -569,6 +607,15 @@ class ResourceLineages:
                 assert rc is not None
                 if rc.is_placeholder():
                     raise InternalError("Have placeholder %s without a shapshot hash" % ref)
+
+    def replace_step_input_placeholders(self,
+                                        placeholder_to_real:Dict[ResourceCert, ResourceCert]) -> None:
+        for lineage in self.lineages:
+            if isinstance(lineage, StepLineage):
+                lineage.input_resources = [
+                    placeholder_to_real[rc] if rc in placeholder_to_real else rc
+                    for rc in lineage.input_resources
+                ]
 
 class LineageStoreCurrent:
     """Lineage store for the current state of the resources.
@@ -635,18 +682,70 @@ class LineageStoreCurrent:
                                                        "Written by step %s at %s"%
                                                        (step_name, step_time)))
 
-    def replace_placeholders_with_real_certs(self, resource_to_hash:Dict[str,str]) -> None:
+    def replace_placeholders_with_real_certs(self, resource_to_hash:Dict[str,str]) -> int:
         """Given a mapping of resource names to hashvals taken from a workspace
         snapshot, replace any placeholder certificates in our store with
         hash certificates. Note that the hashes are taken at the resource level,
         so all subpaths for a given resource have the same certificate. This works,
         as we disallow overlapping workflows.
+
+        Returns the number of warnings (due to an existing hash not matching the snapshot
+        hash)
         """
+        placeholder_to_real = {} # Dict[ResourceCert,ResourceCert]
+        warnings = 0
         for (name, lineages) in self.lineage_by_resource.items():
             if name in resource_to_hash:
-                lineages.replace_placeholders_with_real_certs(resource_to_hash[name])
+                warnings += lineages.replace_placeholders_with_real_certs(resource_to_hash[name],
+                                                                          placeholder_to_real)
             else:
                 lineages.verify_no_placeholders_for_resource()
+        for lineages in self.lineage_by_resource.values():
+            lineages.replace_step_input_placeholders(placeholder_to_real)
+        return warnings
+
+    def get_cert_and_lineage_for_ref(self, ref:ResourceRef) -> \
+        Tuple[Certificate, ResourceLineage]:
+        """Given a ref, get the Certificate and Lineage that created it.
+        This is currently used for testing.
+        """
+        if ref.name in self.lineage_by_resource:
+            return self.lineage_by_resource[ref.name].get_cert_and_lineage_for_ref(ref)
+        else:
+            raise KeyError("No resource store entries for resource %s" %
+                           ref.name)
+
+    def validate(self, result_resources:List[ResourceRef]) -> int:
+        """Validate that each step input certificate matches the current state of the associated resource.
+        We do this transitively from the resource resources.
+        Prints warnings to standard error and returns the number of warnings.
+        """
+        warnings = 0
+        checked_set = set() # Set[ResourceRef]
+        to_check = result_resources
+        while len(to_check)>0:
+            new_to_check = []
+            for ref in to_check:
+                (sink_cert, sink_lineage) = self.get_cert_and_lineage_for_ref(ref)
+                checked_set.add(ref)
+                if isinstance(sink_lineage, SourceDataLineage):
+                    continue
+                for rc in sink_lineage.input_resources:
+                    (source_cert, source_lineage) = self.get_cert_and_lineage_for_ref(rc.ref)
+                    if source_cert!=rc.certificate:
+                        click.echo("WARNING: step %s has input %s with lineage %s. However, the current state of %s is %s"%
+                                   (sink_lineage.step_name, rc.ref, rc, rc.ref, source_cert), err=True)
+                        warnings += 1
+                    elif rc.ref not in checked_set:
+                        #print("Verified input %s of %s matches source" % (rc, sink_lineage.step_name))
+                        new_to_check.append(rc.ref)
+            to_check = new_to_check
+        return warnings
+
+    def to_json(self):
+        return {
+            resource:lineages.to_json() for (resource, lineages) in self.lineage_by_resource.items()
+        }
 
     def save(self, local_path):
         for (resource, lineages) in self.lineage_by_resource.items():
