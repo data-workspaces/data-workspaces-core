@@ -8,10 +8,11 @@ match a subpath and replace it, or there is no intersection.
 
 import datetime
 import os
-from os.path import join
+from os.path import join, exists, isdir
 from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict
 from copy import copy
 import json
+import shutil
 
 import click
 
@@ -595,27 +596,54 @@ class ResourceLineages:
                     warnings +=1
         return warnings
 
-    def verify_no_placeholders_for_resource(self) -> None:
+    def verify_no_placeholders_for_resource(self) -> int:
         """There was no hash generated for this resource,
         so we want to verify that it does not have any placeholders
-        in the store.
+        in the store. We print a warning if there is an unreplaced
+        placeholder.
         """
+        warnings = 0
         for lineage in self.lineages:
             for subpath in lineage.get_subpaths_for_resource(self.resource_name):
                 ref = ResourceRef(self.resource_name, subpath)
                 rc = lineage.get_resource_cert_for_resource(ref)
                 assert rc is not None
                 if rc.is_placeholder():
-                    raise InternalError("Have placeholder %s without a shapshot hash" % ref)
+                    click.echo("WARNING: have a placeholder for %s, but resource %s was not included in snapshot" %
+                                       (rc, ref.name),
+                               err=True)
+                    warnings += 1
+        return warnings
 
     def replace_step_input_placeholders(self,
-                                        placeholder_to_real:Dict[ResourceCert, ResourceCert]) -> None:
+                                        placeholder_to_real:Dict[ResourceCert, ResourceCert]) -> int:
+        """Use the mappings from placeholder rc's to hash rc's to replace the
+        placeholder references in step inputs.
+        """
+        warnings = 0
         for lineage in self.lineages:
             if isinstance(lineage, StepLineage):
                 lineage.input_resources = [
                     placeholder_to_real[rc] if rc in placeholder_to_real else rc
                     for rc in lineage.input_resources
                 ]
+                unsubstituted = [rc for rc in lineage.input_resources if
+                                 rc.is_placeholder()]
+                if len(unsubstituted)>0:
+                    click.echo("sWARNING: Step %s still has placeholder certificates: %s. Do you need to include more resources in your snapshot?"%
+                               ', '.join([str(rc) for rc in unsubstituted]),
+                               err=True)
+                    warnings += len(unsubstituted)
+        return warnings
+
+
+    def drop_lineage_for_ref(self, ref:ResourceRef):
+        """Drop the lineage for ref from our lineages, if it is present
+        """
+        self.lineages = [
+            lineage for lineage in self.lineages
+            if lineage.get_resource_cert_for_resource(ref) is None
+        ]
 
 class LineageStoreCurrent:
     """Lineage store for the current state of the resources.
@@ -699,9 +727,9 @@ class LineageStoreCurrent:
                 warnings += lineages.replace_placeholders_with_real_certs(resource_to_hash[name],
                                                                           placeholder_to_real)
             else:
-                lineages.verify_no_placeholders_for_resource()
+                warnings += lineages.verify_no_placeholders_for_resource()
         for lineages in self.lineage_by_resource.values():
-            lineages.replace_step_input_placeholders(placeholder_to_real)
+            warnings += lineages.replace_step_input_placeholders(placeholder_to_real)
         return warnings
 
     def get_cert_and_lineage_for_ref(self, ref:ResourceRef) -> \
@@ -714,6 +742,15 @@ class LineageStoreCurrent:
         else:
             raise KeyError("No resource store entries for resource %s" %
                            ref.name)
+
+    def invalidate_step_outputs(self, output_resources:List[ResourceCert]):
+        """The currently running step has failed, so we donot know the state
+        of the output resources. Go through the list and remove the lineage
+        data corresponding to these refs, if they exist.
+        """
+        for rc in output_resources:
+            if rc.ref.name in self.lineage_by_resource:
+                self.lineage_by_resource[rc.ref.name].drop_lineage_for_ref(rc.ref)
 
     def validate(self, result_resources:List[ResourceRef]) -> int:
         """Validate that each step input certificate matches the current state of the associated resource.
@@ -747,6 +784,10 @@ class LineageStoreCurrent:
             resource:lineages.to_json() for (resource, lineages) in self.lineage_by_resource.items()
         }
 
+    ##################################################################
+    #    Methods for interacting with the store on the filesystem    #
+    ##################################################################
+
     def save(self, local_path):
         for (resource, lineages) in self.lineage_by_resource.items():
             with open(join(local_path, resource + '.json'), 'w') as f:
@@ -767,4 +808,77 @@ class LineageStoreCurrent:
                 lineage_by_resource[resource_name] = lineages
         return LineageStoreCurrent(lineage_by_resource)
 
+    @staticmethod
+    def get_resource_names_in_fsstore(current_lineage_dir:str) -> List[str]:
+        """Return a list of resources found in the current lineage store
+        in the specified directory.
+        """
+        return [f[:-5] for f in os.listdir(current_lineage_dir) if f.endswith('.json')]
 
+    @staticmethod
+    def copy_fsstore_to_snapshot(current_lineage_dir:str, snapshot_lineage_dir:str,
+                                 resource_names:List[str]) -> int:
+        """Copy the current lineage store to the snapshot's lineage
+        directory. We only copy the resource names specified.
+        """
+        warnings = 0
+        for name in resource_names:
+            src_path = join(current_lineage_dir, name+'.json')
+            if exists(src_path):
+                shutil.copy(src_path, join(snapshot_lineage_dir, name+'.json'))
+            else:
+                click.echo("WARNING: no lineage data available for resource %s (maybe it was not used in your workflow)" % name,
+                           err=True)
+                warnings += 1
+        store_resources=LineageStoreCurrent.get_resource_names_in_fsstore(current_lineage_dir)
+        missing = set(store_resources).difference(set(resource_names))
+        if len(missing)>0:
+            click.echo("WARNING: The following resources have lineage data, but are not included in snapshot: %s" %
+                       ', '.join(missing))
+            warnings += 1
+        return warnings
+
+    @staticmethod
+    def restore_store_from_snapshot(snapshot_lineage_dir, current_lineage_dir,
+                                    resource_names:List[str]) -> int:
+        """We are restoring a snapshot. Update the current lineage store
+        with the lineage from the snapshot. We only do this for the specified
+        resource names. If there is no lineage data for the snapshot
+        (the snapshot lineage directory does not exist), we remove
+        the current lineage data. Likewise, when restoring, if there is
+        is no lineage data for a given resource, we remove it from the current store.
+        """
+        warnings = 0
+        if isdir(snapshot_lineage_dir):
+            for name in resource_names:
+                src_path = join(snapshot_lineage_dir, name +'.json')
+                dest_path = join(current_lineage_dir, name +'.json')
+                if exists(src_path):
+                    shutil.copy(src_path, dest_path)
+                elif exists(dest_path):
+                    os.remove(dest_path)
+                    click.echo("WARNING: Resource %s was in current lineage store, but no lineage data in snapshot, removing from store"%
+                               name, err=True)
+                    warnings += 1
+        else:
+            # we don't have any lineage for this snapshot. See if we need to remove anything
+            current_resources = set(LineageStoreCurrent.get_resource_names_in_fsstore(current_lineage_dir))
+            to_remove = current_resources.intersection(set(resource_names))
+            if len(to_remove)>0:
+                click.echo("WARNING: no lineage data for snapshot, removing the following resources from lineage store: %s" %
+                           ', '.join(to_remove))
+                warnings += 1
+                for name in to_remove:
+                    os.remove(join(current_lineage_dir, name+'.json'))
+        return warnings
+
+    @staticmethod
+    def invalidate_fsstore_entries(current_lineage_dir,
+                                   resource_names:List[str]) -> None:
+        """When doing a pull, the resources may be put in an unknown state. We
+        need to invalidate the current lineage store entries on disk.
+        """
+        for name in resource_names:
+            path = join(current_lineage_dir, name +'.json')
+            if exists(path):
+                os.remove(path)
