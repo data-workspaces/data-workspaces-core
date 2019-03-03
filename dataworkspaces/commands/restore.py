@@ -15,7 +15,7 @@ from dataworkspaces.resources.resource import \
 from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
                       get_snapshot_history_file_path,\
                       get_snapshot_lineage_dir
-from .run import get_current_lineage_dir
+from dataworkspaces.utils.lineage_utils import get_current_lineage_dir
 from .params import get_local_param_from_file, HOSTNAME
 
 class RestoreResource(actions.Action):

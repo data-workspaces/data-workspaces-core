@@ -882,3 +882,12 @@ class LineageStoreCurrent:
             path = join(current_lineage_dir, name +'.json')
             if exists(path):
                 os.remove(path)
+
+
+# Utilties for interacting with the dataworkspace metadata
+def get_current_lineage_dir(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/current_lineage')
+
+def get_snapshot_lineage_dir(workspace_dir, snapshot_hash):
+    return join(workspace_dir, '.dataworkspace/snapshot_lineage/%s' % snapshot_hash)
+

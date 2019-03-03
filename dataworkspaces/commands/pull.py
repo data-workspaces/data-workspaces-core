@@ -13,7 +13,7 @@ from dataworkspaces.resources.resource import \
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .restore import ClearLineageDir
 from .push import get_resources_to_process
-from .run import get_current_lineage_dir
+from dataworkspaces.utils.lineage_utils import get_current_lineage_dir
 from dataworkspaces.resources.git_resource import is_git_dirty
 from dataworkspaces.errors import ConfigurationError
 

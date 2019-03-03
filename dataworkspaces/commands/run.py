@@ -10,6 +10,7 @@ import click
 
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.utils.lineage_utils import get_current_lineage_dir
 
 EXECUTABLES_TO_EXCLUDE_FROM_STEP_NAME = ['python', 'python3', 'python2']
 
@@ -74,8 +75,6 @@ def remove_extension(fname):
     except ValueError:
         return fname
 
-def get_current_lineage_dir(workspace_dir):
-    return join(workspace_dir, '.dataworkspace/current_lineage')
 
 def run_command(workspace_dir, step_name, cwd, command, args, batch, verbose):
     ns = actions.Namespace()

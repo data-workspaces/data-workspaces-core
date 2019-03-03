@@ -5,7 +5,7 @@ Base classes for resoures
 import json
 import copy
 import os
-from os.path import join, exists, abspath, expanduser, dirname, isdir
+from os.path import join, exists, abspath, expanduser, dirname, isdir, realpath
 
 import click
 
@@ -80,6 +80,20 @@ class Resource:
 
     def snapshot_prechecks(self):
         pass
+
+    def validate_subpath_exists(self, subpath):
+        """Validate that the subpath is valid within this
+        resource. Default implementation checks the local
+        filesystem if any. If the resource is remote-only,
+        then the subclass should override this method to
+        check on the remote side.
+        """
+        lp = self.get_local_path_if_any()
+        if lp is not None:
+            path = join(lp, subpath)
+            if not isdir(path):
+                raise ConfigurationError("Subpath %s does not exist for resource %s"%
+                                         (subpath, self.name))
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
@@ -221,6 +235,38 @@ class CurrentResources(ResourceCollection):
             rdata['hash'] = name_to_hashval[rdata['name']]
         with open(snapshot_filepath, 'w') as f:
             json.dump(sn_json, f, indent=2)
+
+    def map_local_path_to_resource(self, path):
+        """Given a path on the local filesystem, map it to
+        a resource and the path within the resource.
+        Raises ConfigurationError if no match is found.
+        """
+        if path.endswith('/') and len(path)>0:
+            path = path[0:-1] # remove trailing slash
+        rp = realpath(abspath(expanduser(path)))
+        for r in self.resources:
+            lp = r.get_local_path_if_any()
+            if lp is None:
+                continue
+            if lp.endswith('/') and len(lp)>0:
+                lp = lp[0:-1] # remove trailing slash
+            rlp = realpath(lp)
+            if rp==rlp or path==lp:
+                return (r.name, None)
+            elif path.startswith(lp):
+                return (r.name, path[len(lp)+1:])
+            elif rp.startswith(rlp):
+                return (r.name, rp[len(rlp)+1:])
+        raise ConfigurationError("Did not find a resource corresponding to local path %s"%
+                                 path)
+
+    def validate_resource_ref(resource_name, subpath=None):
+        if resource_name not in self.resources_by_name:
+            raise ConfigurationError("No resource named '%s'" % resource_name)
+        if subpath is None:
+            return
+        else:
+            self.resources_by_name[resource_name].validate_subpath_exists(subpath)
 
     def __str__(self):
         resources = sorted(self.by_name.keys())

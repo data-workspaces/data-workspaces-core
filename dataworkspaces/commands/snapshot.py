@@ -19,7 +19,8 @@ from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\
                     get_config_param_value, get_local_param_from_file,\
                     HOSTNAME
 from .init import get_config_file_path
-from .run import get_current_lineage_dir
+from dataworkspaces.utils.lineage_utils import get_current_lineage_dir,\
+                                               get_snapshot_lineage_dir
 from dataworkspaces.errors import InternalError, ConfigurationError
 
 
@@ -108,9 +109,6 @@ class AppendSnapshotHistory(actions.Action):
 
     def __str__(self):
         return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
-
-def get_snapshot_lineage_dir(workspace_dir, snapshot_hash):
-    return join(workspace_dir, '.dataworkspace/snapshot_lineage/%s' % snapshot_hash)
 
 class SaveLineageData(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
