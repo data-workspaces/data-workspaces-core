@@ -193,12 +193,14 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     need_to_clear_lineage = False # True if we did a partial restore and we need to clear out lineage data
     ns = actions.Namespace()
     ns.map_of_hashes = {}
+    names_to_restore_lineage = []
     for name in names_to_restore:
         # resources in both current and restored
         r = current_resources.by_name[name]
         if not r.has_results_role():
             # just need to call restore
             plan.append(RestoreResource(ns, verbose, r, snapshot_resources))
+            names_to_restore_lineage.append(r.name) # only non-results restored
         else:
             # This is a results resource, we'll add it to the leave set
             if only and (name in only):
@@ -211,6 +213,9 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         # XXX Do we need to handle Results resources differently?
         r = snapshot_resources.by_name[name]
         plan.append(RestoreResource(ns, verbose, r, snapshot_resources))
+        if not r.has_results_role():
+            # only non-results lineage restored
+            names_to_restore_lineage.append(r.name)
     for name in names_to_leave:
         # These resources are only in the current resource list or explicitly left out.
         r = current_resources.by_name[name]
@@ -259,7 +264,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     if isdir(snapshot_lineage_dir):
         plan.append(CopyLineageFilesToCurrent(ns, verbose, current_lineage_dir,
                                               snapshot_lineage_dir,
-                                              names_to_restore+names_to_add))
+                                              names_to_restore_lineage))
 
     if is_a_git_fat_repo(workspace_dir):
         plan.append(GitFatPull(ns, verbose, workspace_dir))

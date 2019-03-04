@@ -115,11 +115,13 @@ class SaveLineageData(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
     @actions.requires_from_ns('map_of_hashes', dict)
     @actions.provides_to_ns('lineage_files', list)
-    def __init__(self, ns, verbose, workspace_dir, resource_names):
+    def __init__(self, ns, verbose, workspace_dir, resource_names,
+                 results_resource_names):
         super().__init__(ns, verbose)
         self.workspace_dir = workspace_dir
         self.current_lineage_dir = get_current_lineage_dir(workspace_dir)
         self.resource_names = resource_names
+        self.results_resource_names = results_resource_names
         if not isdir(self.current_lineage_dir):
             self.num_files = 0
         else:
@@ -144,6 +146,11 @@ class SaveLineageData(actions.Action):
                                                          lineage_dir,
                                                          self.resource_names)
         self.ns.lineage_files = dest_files
+        # We need to invalidate the resource lineage for any results,
+        # as we've moved the data to a subdirectory
+        if len(self.results_resource_names)>0:
+            LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
+                                                           self.results_resource_names)
 
     def __str__(self):
         return "Copy lineage %d files from current workspace to snapshot lineage" % \
@@ -188,13 +195,14 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(results_dir_template))
 
     validate_git_fat_in_path_if_needed(workspace_dir)
-
+    results_resource_names = []
     for r in current_resources.resources:
         if r.has_results_role():
             plan.append(MoveCurrentFilesForResults(ns, verbose, workspace_dir, r,
                                                    exclude_files,
                                                    rel_dest_root,
                                                    exclude_dirs_re))
+            results_resource_names.append(r.name)
         plan.append(
             TakeResourceSnapshot(ns, verbose, r))
     plan.append(WriteSnapshotFile(ns, verbose, workspace_dir, current_resources))
@@ -206,7 +214,8 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                                lambda:[ns.snapshot_filename,
                                        snapshot_history_file]))
     # see if we need to add lineage files
-    save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names)
+    save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names,
+                                   results_resource_names)
     if save_lineage.has_lineage_files():
         plan.append(save_lineage)
         plan.append(actions.GitAdd(ns, verbose, workspace_dir,

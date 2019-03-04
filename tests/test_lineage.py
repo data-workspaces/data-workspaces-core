@@ -70,25 +70,33 @@ class TestLineage(unittest.TestCase):
         r = subprocess.run(args, cwd=cwd)
         r.check_returncode()
 
+    def _check_lineage_files(self, should_be_present, should_not_be_present):
+        for r in should_be_present:
+            f = join(WS_DIR, '.dataworkspace/current_lineage/%s.json' % r)
+            self.assertTrue(exists(f), "Missing expected resource file %s" % f)
+        for r in should_not_be_present:
+            f = join(WS_DIR, '.dataworkspace/current_lineage/%s.json' % r)
+            self.assertFalse(exists(f), "Resource file %s exists, but should not be present" % f)
+
     def test_lineage(self):
         self._run_step('lineage_step1.py', ['test_lineage1'])
         self._run_step('lineage_step2.py', ['test_lineage1'])
         self._validate_test_case_file('test_lineage1', 'intermediate-data/s1')
         self._validate_test_case_file('test_lineage1', 'results')
-        self._run_dws(['snapshot', 'S1'])
         self._validate_store()
+        self._run_dws(['snapshot', 'S1'])
 
         self._run_step('lineage_step1.py', ['test_lineage2'])
         self._run_step('lineage_step2.py', ['test_lineage2'])
         self._validate_test_case_file('test_lineage2', 'intermediate-data/s1')
         self._validate_test_case_file('test_lineage2', 'results')
 
-        self._run_dws(['snapshot', 'S2'])
         self._validate_store()
+        self._run_dws(['snapshot', 'S2'])
 
         self._run_dws(['restore', 'S1'])
         self._validate_test_case_file('test_lineage1', 'intermediate-data/s1')
-        self._validate_store()
+        #self._validate_store()
 
     def test_pull(self):
         """Pull should invalidate the current resources
@@ -101,18 +109,13 @@ class TestLineage(unittest.TestCase):
         self._run_step('lineage_step2.py', ['test_lineage1'])
         self._run_dws(['snapshot', 'S1'])
         self._run_dws(['push'])
-        lineage_files = [join(WS_DIR, '.dataworkspace/current_lineage/%s.json' % r)
-                         for r in ['source-data', 'intermediate-data', 'results']]
-        for f in lineage_files:
-            self.assertTrue(exists(f), "file %s does not exist" % f)
+        self._check_lineage_files(['source-data', 'intermediate-data'], ['results'])
 
         self._run_dws(['pull'])
-        for f in lineage_files:
-            self.assertFalse(exists(f), "file %s exists, but should have been cleared" % f)
+        self._check_lineage_files([], ['source-data', 'intermediate-data', 'results'])
 
         self._run_dws(['restore', 'S1'])
-        for f in lineage_files:
-            self.assertTrue(exists(f), "file %s does not exist" % f)
+        self._check_lineage_files(['source-data', 'intermediate-data'], ['results'])
 
 
 if __name__ == '__main__':
