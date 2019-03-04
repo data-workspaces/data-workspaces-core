@@ -255,26 +255,29 @@ class TestLineageStoreCurrent(unittest.TestCase):
         s = self._run_initial_workflow()
         self.assertEqual(set(LineageStoreCurrent.get_resource_names_in_fsstore(LOCAL_STORE_DIR)),
                          set(RESOURCE_NAMES))
-        warnings = LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
-                                                                SNAPSHOT1_DIR,
-                                                                RESOURCE_NAMES+['dummy'])
+        (files, warnings) = \
+            LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
+                                                         SNAPSHOT1_DIR,
+                                                         RESOURCE_NAMES+['dummy'])
         self.assertEqual(1, warnings) # no lineage data available for dummy
 
         # warning situation in save
         s = self._run_initial_workflow(s3_outputs=[RESULTS, INTERMEDIATE_S3, OUT4],
                                        snapshot_hash_overrides={'out4':'out4hash',
                                                                 'results':'resultshash2'})
-        warnings = LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
-                                                                SNAPSHOT2_DIR,
-                                                                RESOURCE_NAMES)
+        (files, warnings) = \
+            LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
+                                                         SNAPSHOT2_DIR,
+                                                         RESOURCE_NAMES)
         self.assertEqual(1, warnings) # out4 has lineage data, but not included in snapshot
 
         # Save the real snapshot 2
         shutil.rmtree(SNAPSHOT2_DIR)
         os.makedirs(SNAPSHOT2_DIR)
-        warnings = LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
-                                                                SNAPSHOT2_DIR,
-                                                                RESOURCE_NAMES+['out4'])
+        (files, warnings) = \
+            LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
+                                                         SNAPSHOT2_DIR,
+                                                         RESOURCE_NAMES+['out4'])
         self.assertEqual(0, warnings)
 
         # restore the first snapshot
@@ -314,9 +317,10 @@ class TestLineageStoreCurrent(unittest.TestCase):
         step3_lineage.execution_time_seconds = 3
         s.add_step(step3_lineage)
         s.save(LOCAL_STORE_DIR)
-        warnings = LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
-                                                                SNAPSHOT1_DIR,
-                                                                RESOURCE_NAMES)
+        (files, warnings) = \
+            LineageStoreCurrent.copy_fsstore_to_snapshot(LOCAL_STORE_DIR,
+                                                         SNAPSHOT1_DIR,
+                                                         RESOURCE_NAMES)
         self.assertEqual(warnings, 1) # old out4 is still in on-disk store
         warnings = LineageStoreCurrent.restore_store_from_snapshot(SNAPSHOT1_DIR,
                                                                    LOCAL_STORE_DIR,

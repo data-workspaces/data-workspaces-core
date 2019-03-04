@@ -115,42 +115,39 @@ class SaveLineageData(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
     @actions.requires_from_ns('map_of_hashes', dict)
     @actions.provides_to_ns('lineage_files', list)
-    def __init__(self, ns, verbose, workspace_dir):
+    def __init__(self, ns, verbose, workspace_dir, resource_names):
         super().__init__(ns, verbose)
         self.workspace_dir = workspace_dir
         self.current_lineage_dir = get_current_lineage_dir(workspace_dir)
+        self.resource_names = resource_names
         if not isdir(self.current_lineage_dir):
-            self.basenames = None # indicates that there are no lineage files
+            self.num_files = 0
         else:
-            self.basenames = [f for f in os.listdir(self.current_lineage_dir) if f.endswith('.json')]
-            if len(self.basenames)==0:
-                self.basenames = None
+            currfiles= set(LineageStoreCurrent.get_resource_names_in_fsstore(
+                           self.current_lineage_dir))
+            self.num_files = len(currfiles.intersection(set(resource_names)))
 
     def has_lineage_files(self):
-        return self.basenames is not None
+        return self.num_files > 0
 
     def run(self):
-        assert self.basenames is not None
+        assert self.has_lineage_files()
         snapshot_hash = self.ns.snapshot_hash
         map_of_hashes = self.ns.map_of_hashes
         store = LineageStoreCurrent.load(self.current_lineage_dir)
         store.replace_placeholders_with_real_certs(map_of_hashes)
         store.save(self.current_lineage_dir)
         lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
-        lineage_files = []
         os.makedirs(lineage_dir)
-        for basename in self.basenames:
-            src = join(self.current_lineage_dir, basename)
-            dest = join(lineage_dir, basename)
-            if self.verbose:
-                click.echo(" Copy %s => %s"% (src, dest))
-            shutil.copy(src, dest)
-            lineage_files.append(dest)
-        self.ns.lineage_files = lineage_files
+        (dest_files, warnings) =\
+            LineageStoreCurrent.copy_fsstore_to_snapshot(self.current_lineage_dir,
+                                                         lineage_dir,
+                                                         self.resource_names)
+        self.ns.lineage_files = dest_files
 
     def __str__(self):
         return "Copy lineage %d files from current workspace to snapshot lineage" % \
-            len(self.basenames)
+            self.num_files
 
 
 def get_snapshot_history_file_path(workspace_dir):
@@ -163,6 +160,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     if (tag is not None) and is_a_git_hash(tag):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
+    resource_names = current_resources.by_name.keys()
     plan = []
     ns = actions.Namespace()
     ns.map_of_hashes = actions.Promise(dict, "TakeResourceSnapshot")
@@ -183,7 +181,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     username = getpass.getuser()
     hostname = get_local_param_from_file(workspace_dir, HOSTNAME)
     validate_template(results_dir_template)
-    # relative path to which we will mvoe results files
+    # relative path to which we will move results files
     rel_dest_root = expand_dir_template(results_dir_template, username, hostname,
                                         snapshot_timestamp, snapshot_number,
                                         tag)
@@ -208,7 +206,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                                lambda:[ns.snapshot_filename,
                                        snapshot_history_file]))
     # see if we need to add lineage files
-    save_lineage = SaveLineageData(ns, verbose, workspace_dir)
+    save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names)
     if save_lineage.has_lineage_files():
         plan.append(save_lineage)
         plan.append(actions.GitAdd(ns, verbose, workspace_dir,

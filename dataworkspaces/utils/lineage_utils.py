@@ -9,13 +9,14 @@ match a subpath and replace it, or there is no intersection.
 import datetime
 import os
 from os.path import join, exists, isdir, basename
-from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict
+from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict, cast
 from copy import copy
 import json
 import shutil
 import sys
 
 import click
+
 
 from dataworkspaces.errors import InternalError, LineageError
 from .regexp_utils import isots_to_dt
@@ -77,6 +78,10 @@ class Certificate:
         else:
             raise JsonValueError(Certificate, 'cert_type', ['hash', 'placeholder'], cert_type)
 
+    def to_json(self) -> Dict[str, Any]:
+        raise NotImplementedError(self.__class__.__name__)
+
+
 class HashCertificate(Certificate):
     __slots__ = ('hashval', 'comment')
     def __init__(self, hashval:str, comment:str):
@@ -102,7 +107,7 @@ class HashCertificate(Certificate):
     def __ne__(self, other):
         return (not isinstance(other, HashCertificate)) or other.hashval!=self.hashval
 
-    def to_json(self):
+    def to_json(self) -> Dict[str, Any]:
         return {'cert_type':'hash', 'hashval':self.hashval, 'comment':self.comment}
 
 
@@ -132,7 +137,7 @@ class PlaceholderCertificate(Certificate):
     def __ne__(self, other):
         return (not isinstance(other, PlaceholderCertificate)) or other.version!=self.version
 
-    def to_json(self):
+    def to_json(self) -> Dict[str, Any]:
         return {'cert_type':'placeholder', 'version':self.version,
                 'comment':self.comment}
 
@@ -265,7 +270,7 @@ class StepLineage(ResourceLineage):
     __slots__ = ['step_name', 'start_time', 'parameters', 'input_resources',
                  'output_resources', 'execution_time_seconds']
     def __init__(self, step_name:str, start_time:datetime.datetime,
-                 parameters:List[Tuple[str, Any]],
+                 parameters:Dict[str, Any],
                  input_resources:List[ResourceCert],
                  output_resources:Optional[List[ResourceCert]]=None,
                  execution_time_seconds:Optional[float]=None):
@@ -275,7 +280,7 @@ class StepLineage(ResourceLineage):
         self.input_resources = input_resources
         self.execution_time_seconds = execution_time_seconds
         # map from output resource name to sets of subpaths
-        self.outputs_by_resource = {} # Dict[str, Set[Optional[str]]]
+        self.outputs_by_resource = {} # type: Dict[str, Set[Optional[str]]]
         if output_resources is not None:
             self.output_resources = output_resources
             # build the map of outputs by resource
@@ -294,7 +299,7 @@ class StepLineage(ResourceLineage):
 
     @staticmethod
     def make_step_lineage(step_name:str, start_time:datetime.datetime,
-                          parameters:List[Tuple[str, Any]],
+                          parameters:Dict[str, Any],
                           input_resource_refs:List[ResourceRef],
                           lineage_store:'LineageStoreCurrent') -> 'StepLineage':
         """At the start of a step's run, create a step lineage object
@@ -329,18 +334,22 @@ class StepLineage(ResourceLineage):
         if p1==p2:
             return
         elif p1==None:
+            assert p2 is not None # for typechecker
             raise LineageError("Output paths for step " + self.step_name +
                                " incompatible for resource "+
                                resource_name +
                                ": Cannot have both root path and a subpath ("+
                                p2 + ")")
         elif p2==None:
+            assert p1 is not None # for typechecker
             raise LineageError("Output paths for step "+ self.step_name +
                                " incompatible for resource "+
                                resource_name +
                                ": Cannot have both root path and a subpath ("+
                                p1 + ")")
-        elif p1.startswith(p2):
+        p1 = cast(str, p1)
+        p2 = cast(str, p2)
+        if p1.startswith(p2):
             raise LineageError("Output paths for step " + self.step_name +
                                " incompatible for resource " + resource_name +
                                ": Cannot have a path (" + p1 +
@@ -453,7 +462,7 @@ class SourceDataLineage(ResourceLineage):
         return SourceDataLineage(ResourceCert.from_json(obj, filename=filename))
 
     def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
-        return frozenset([self.resource_cert.ref.subpath,])
+        return set([self.resource_cert.ref.subpath,])
 
     def get_resource_cert_for_resource(self, ref:ResourceRef) -> \
                                        Optional[ResourceCert]:
@@ -572,7 +581,7 @@ class ResourceLineages:
                                                    "Written by step %s at %s" %(step_name,
                                                                                 step_time)))
     def replace_placeholders_with_real_certs(self, hashval:str,
-                                             placeholder_to_real:Dict[ResourceCert,ResourceCert]) -> None:
+                                             placeholder_to_real:Dict[ResourceCert,ResourceCert]) -> int:
         """Find any placeholder certificates for this resource and replace
         with a certificate using the specified hashval. We add any substitutions made to
         placeholder_to_real. This will be used in a second pass to replace all the step inputs.
@@ -586,13 +595,16 @@ class ResourceLineages:
                 if rc.is_placeholder():
                     new_rc = ResourceCert(ref,
                                           HashCertificate(hashval,
-                                                          rc.certificate.comment))
+                                                          cast(PlaceholderCertificate,
+                                                               rc.certificate).comment))
                     lineage.replace_certificate(rc, new_rc)
                     placeholder_to_real[rc] = new_rc
-                elif rc.certificate.hashval!=hashval:
+                elif cast(HashCertificate, rc.certificate).hashval!=hashval:
+                    old_hashval = cast(HashCertificate, rc.certificate).hashval
                     click.echo(("WARNING: lineage for resource %s, has hash value '%s', but snapshot has hash value '%s'."+
-                                " Using older version (%s)") % (self.resource_name, rc.certificate.hashval, hashval,
-                                                                rc.certificate.hashval),
+                                " Using older version (%s)") %
+                               (self.resource_name, old_hashval, hashval,
+                                old_hashval),
                                err=True)
                     warnings +=1
         return warnings
@@ -631,8 +643,9 @@ class ResourceLineages:
                 unsubstituted = [rc for rc in lineage.input_resources if
                                  rc.is_placeholder()]
                 if len(unsubstituted)>0:
-                    click.echo("sWARNING: Step %s still has placeholder certificates: %s. Do you need to include more resources in your snapshot?"%
-                               ', '.join([str(rc) for rc in unsubstituted]),
+                    click.echo("WARNING: Step %s still has placeholder certificates: %s. Do you need to include more resources in your snapshot?"%
+                               (lineage.step_name,
+                                ', '.join([str(rc) for rc in unsubstituted])),
                                err=True)
                     warnings += len(unsubstituted)
         return warnings
@@ -662,8 +675,7 @@ class LineageStoreCurrent:
         if lineage_by_resource:
             self.lineage_by_resource = lineage_by_resource
         else:
-            self.lineage_by_resource = {} # Dict[str, ResourceLineages]
-        #self.lineage_by_resource_ref = {} # Dict[ResourceRef, ResourceLineage]
+            self.lineage_by_resource = {} # type: Dict[str, ResourceLineages]
 
 
     def add_step(self, lineage:StepLineage):
@@ -721,7 +733,7 @@ class LineageStoreCurrent:
         Returns the number of warnings (due to an existing hash not matching the snapshot
         hash)
         """
-        placeholder_to_real = {} # Dict[ResourceCert,ResourceCert]
+        placeholder_to_real = {} # type: Dict[ResourceCert,ResourceCert]
         warnings = 0
         for (name, lineages) in self.lineage_by_resource.items():
             if name in resource_to_hash:
@@ -768,6 +780,7 @@ class LineageStoreCurrent:
                 checked_set.add(ref)
                 if isinstance(sink_lineage, SourceDataLineage):
                     continue
+                sink_lineage = cast(StepLineage, sink_lineage)
                 for rc in sink_lineage.input_resources:
                     (source_cert, source_lineage) = self.get_cert_and_lineage_for_ref(rc.ref)
                     if source_cert!=rc.certificate:
@@ -818,15 +831,20 @@ class LineageStoreCurrent:
 
     @staticmethod
     def copy_fsstore_to_snapshot(current_lineage_dir:str, snapshot_lineage_dir:str,
-                                 resource_names:List[str]) -> int:
+                                 resource_names:List[str]) -> \
+                                 Tuple[List[str], int]:
         """Copy the current lineage store to the snapshot's lineage
         directory. We only copy the resource names specified.
+        Returns a pair: (list of output files, number of warnings)
         """
         warnings = 0
+        copied_files = []
         for name in resource_names:
             src_path = join(current_lineage_dir, name+'.json')
             if exists(src_path):
-                shutil.copy(src_path, join(snapshot_lineage_dir, name+'.json'))
+                dest_path = join(snapshot_lineage_dir, name+'.json')
+                shutil.copy(src_path, dest_path)
+                copied_files.append(dest_path)
             else:
                 click.echo("WARNING: no lineage data available for resource %s (maybe it was not used in your workflow)" % name,
                            err=True)
@@ -837,7 +855,7 @@ class LineageStoreCurrent:
             click.echo("WARNING: The following resources have lineage data, but are not included in snapshot: %s" %
                        ', '.join(missing))
             warnings += 1
-        return warnings
+        return (copied_files, warnings)
 
     @staticmethod
     def restore_store_from_snapshot(snapshot_lineage_dir, current_lineage_dir,

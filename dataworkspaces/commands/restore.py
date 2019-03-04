@@ -15,7 +15,8 @@ from dataworkspaces.resources.resource import \
 from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
                       get_snapshot_history_file_path,\
                       get_snapshot_lineage_dir
-from dataworkspaces.utils.lineage_utils import get_current_lineage_dir
+from dataworkspaces.utils.lineage_utils import \
+    get_current_lineage_dir, LineageStoreCurrent
 from .params import get_local_param_from_file, HOSTNAME
 
 class RestoreResource(actions.Action):
@@ -94,35 +95,21 @@ class WriteRevisedResourceFile(actions.Action):
     def __str__(self):
         return "Write revised resources.json file"
 
-class ClearLineageDir(actions.Action):
-    def __init__(self, ns, verbose, current_lineage_dir):
-        super().__init__(ns, verbose)
-        self.current_lineage_dir = current_lineage_dir
-
-    def run(self):
-        shutil.rmtree(self.current_lineage_dir)
-
-    def __str__(self):
-        return "Delete the (invalid) current lineage directory %s" %\
-            self.current_lineage_dir
 
 class CopyLineageFilesToCurrent(actions.Action):
-    def __init__(self, ns, verbose, current_lineage_dir, snapshot_lineage_dir):
+    def __init__(self, ns, verbose, current_lineage_dir, snapshot_lineage_dir,
+                 resource_names):
         super().__init__(ns, verbose)
         self.current_lineage_dir = current_lineage_dir
         self.snapshot_lineage_dir = snapshot_lineage_dir
+        self.resource_names = resource_names
 
     def run(self):
-        if isdir(self.current_lineage_dir):
-            shutil.rmtree(self.current_lineage_dir)
-        os.makedirs(self.current_lineage_dir)
-        basenames = os.listdir(self.snapshot_lineage_dir)
-        for basename in basenames:
-            src = join(self.snapshot_lineage_dir, basename)
-            dest = join(self.current_lineage_dir, basename)
-            if self.verbose:
-                click.echo(" Copy %s => %s" % (src, dest))
-            shutil.copy(src, dest)
+        if not isdir(self.current_lineage_dir):
+            os.makedirs(self.current_lineage_dir)
+        LineageStoreCurrent.restore_store_from_snapshot(self.snapshot_lineage_dir,
+                                                        self.current_lineage_dir,
+                                                        self.resource_names)
 
     def __str__(self):
         return "Copy lineage files from snapshot to current lineage"
@@ -230,10 +217,7 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         # if we are adding a current resource to the restored snapshot, we actually
         # have to snapshot the resource itself.
         r = current_resources.by_name[name]
-        if snapshot_resources.is_a_current_name(name):
-            # we are leaving a resource in common between current and snapshot
-            need_to_clear_lineage = True
-        else:
+        if not snapshot_resources.is_a_current_name(name):
             # we are just leaving a resource added since snapshot was taken
             plan.append(AddResourceToSnapshotResourceList(ns, verbose, r, snapshot_resources))
         if not no_new_snapshot:
@@ -272,12 +256,10 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
     # handling of lineage
     current_lineage_dir = get_current_lineage_dir(workspace_dir)
     snapshot_lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot_hash)
-    if need_to_clear_lineage:
-        if isdir(current_lineage_dir):
-            plan.append(ClearLineageDir(ns, verbose, current_lineage_dir))
-    elif isdir(snapshot_lineage_dir):
+    if isdir(snapshot_lineage_dir):
         plan.append(CopyLineageFilesToCurrent(ns, verbose, current_lineage_dir,
-                                              snapshot_lineage_dir))
+                                              snapshot_lineage_dir,
+                                              names_to_restore+names_to_add))
 
     if is_a_git_fat_repo(workspace_dir):
         plan.append(GitFatPull(ns, verbose, workspace_dir))

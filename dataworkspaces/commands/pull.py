@@ -11,9 +11,9 @@ from dataworkspaces.utils.git_utils import is_a_git_fat_repo
 from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
-from .restore import ClearLineageDir
 from .push import get_resources_to_process
-from dataworkspaces.utils.lineage_utils import get_current_lineage_dir
+from dataworkspaces.utils.lineage_utils import get_current_lineage_dir,\
+                                               LineageStoreCurrent
 from dataworkspaces.resources.git_resource import is_git_dirty
 from dataworkspaces.errors import ConfigurationError
 
@@ -72,6 +72,21 @@ class PullWorkspace(actions.Action):
     def __str__(self):
         return "Pull state of data workspace metadata to origin"
 
+class InvalidateLineage(actions.Action):
+    def __init__(self, ns, verbose, current_lineage_dir, pulled_resource_names):
+        super().__init__(ns, verbose)
+        self.current_lineage_dir = current_lineage_dir
+        self.pulled_resource_names = pulled_resource_names
+
+    def run(self):
+        LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
+                                                       self.pulled_resource_names)
+
+    def __str__(self):
+        return 'Invalidate lineage for resources: %s' % \
+            ', '.join(self.pulled_resource_names)
+
+
 def get_json_file_from_remote(relpath, workspace_dir, verbose):
     try:
         with tempfile.TemporaryDirectory() as tdir:
@@ -102,9 +117,11 @@ def pull_command(workspace_dir, batch=False, verbose=False,
         current_resources = CurrentResources.read_current_resources(workspace_dir,
                                                                     batch, verbose)
         remote_resources_json = get_resouces_file_from_git_origin(workspace_dir, verbose)
+        pulled_resource_names = []
         for name in get_resources_to_process(current_resources, only, skip):
             r = current_resources.by_name[name]
             plan.append(PullResource(ns, verbose, r))
+            pulled_resource_names.append(name)
         plan.append(PullWorkspace(ns, verbose, workspace_dir))
         gitignore_path = None
         for resource_json in remote_resources_json:
@@ -124,10 +141,8 @@ def pull_command(workspace_dir, batch=False, verbose=False,
             plan.append(actions.GitCommit(ns, verbose, workspace_dir, "Added new resources to gitignore"))
         current_lineage_dir = get_current_lineage_dir(workspace_dir)
         if isdir(current_lineage_dir):
-            # Since we are not currently tracking the relationships between resources
-            # and pipeline steps, we have to invalidate the entire current lineage data.
-            # TODO: track the full lineage graph and invalidate only those resources changed.
-            plan.append(ClearLineageDir(ns, verbose, current_lineage_dir))
+            plan.append(InvalidateLineage(ns, verbose, current_lineage_dir,
+                                          pulled_resource_names))
     else:
         plan.append(PullWorkspace(ns, verbose, workspace_dir))
     actions.run_plan(plan, "pull state from origins",

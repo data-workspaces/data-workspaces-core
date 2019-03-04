@@ -4,7 +4,7 @@
 import sys
 import argparse
 import os
-from os.path import abspath, expanduser, join
+from os.path import abspath, expanduser, join, exists
 import random
 import datetime
 
@@ -25,6 +25,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--fail', action='store_true', default=False,
                         help="If specified, fail the step")
     add_lineage_parameters_to_arg_parser(parser, PARAMS)
+    parser.add_argument('test_case', metavar='TEST_CASE')
     args = parser.parse_args(argv)
     with make_lineage(get_lineage_parameter_values(PARAMS,args),
                       [ResourceRef('source-data')]) as lineage:
@@ -32,11 +33,15 @@ def main(argv=sys.argv[1:]):
           if args.fail:
               raise Exception("Failing this step")
           else:
-              os.mkdir(join(BASE_DIR, 'intermediate-data/s1'))
+              immediate_dir = join(BASE_DIR, 'intermediate-data/s1')
+              if not exists(immediate_dir):
+                  os.mkdir(immediate_dir)
               with open(join(BASE_DIR, 'intermediate-data/s1/out.csv'), 'w') as f:
                   f.write('name,time,value\n')
                   f.write('r1,%s,%s\n' % (datetime.datetime.now().isoformat(),
                                           random.random()))
+              with open(join(BASE_DIR, 'intermediate-data/s1/test_case.txt'), 'w') as f:
+                  f.write(args.test_case)
     print("finished lineage step 1")
     return 0
 

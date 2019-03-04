@@ -25,6 +25,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--fail', action='store_true', default=False,
                         help="If specified, fail the step")
     add_lineage_parameters_to_arg_parser(parser, PARAMS)
+    parser.add_argument('test_case', metavar='TEST_CASE')
     args = parser.parse_args(argv)
     with make_lineage(get_lineage_parameter_values(PARAMS,args),
                       [ResourceRef('intermediate-data', 's1')]) as lineage:
@@ -33,9 +34,12 @@ def main(argv=sys.argv[1:]):
               raise Exception("Failing this step")
           else:
               with open(join(BASE_DIR, 'results/results.txt'), 'w') as f:
-                  f.write('name,time,value\n')
+                  f.write('name,time,value1\n')
                   f.write('r1,%s,%s\n' % (datetime.datetime.now().isoformat(),
                                           random.random()))
+              with open(join(BASE_DIR, 'results/test_case.txt'), 'w') as f:
+                  f.write(args.test_case)
+
     print("finished lineage step 2")
     return 0
 
