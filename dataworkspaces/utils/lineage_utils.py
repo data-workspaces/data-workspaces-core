@@ -8,11 +8,12 @@ match a subpath and replace it, or there is no intersection.
 
 import datetime
 import os
-from os.path import join, exists, isdir
+from os.path import join, exists, isdir, basename
 from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict
 from copy import copy
 import json
 import shutil
+import sys
 
 import click
 
@@ -891,3 +892,13 @@ def get_current_lineage_dir(workspace_dir):
 def get_snapshot_lineage_dir(workspace_dir, snapshot_hash):
     return join(workspace_dir, '.dataworkspace/snapshot_lineage/%s' % snapshot_hash)
 
+
+def infer_step_name(argv=sys.argv):
+    """Given the command line args, infer the step name
+    """
+    if argv[0].endswith('.py'):
+        return basename(argv[0])[:-3]
+    elif 'python' in argv[0] and argv[1].endswith('.py'):
+        return basename(argv[1])[:-3]
+    else:
+        return basename(argv[0])

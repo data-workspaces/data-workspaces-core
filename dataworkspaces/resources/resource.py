@@ -9,7 +9,7 @@ from os.path import join, exists, abspath, expanduser, dirname, isdir, realpath
 
 import click
 
-from dataworkspaces.errors import InternalError
+from dataworkspaces.errors import InternalError, ConfigurationError
 
 class ResourceRoles:
     SOURCE_DATA_SET='source-data'
@@ -260,13 +260,13 @@ class CurrentResources(ResourceCollection):
         raise ConfigurationError("Did not find a resource corresponding to local path %s"%
                                  path)
 
-    def validate_resource_ref(resource_name, subpath=None):
-        if resource_name not in self.resources_by_name:
+    def validate_resource_name(self, resource_name, subpath=None):
+        if resource_name not in self.by_name:
             raise ConfigurationError("No resource named '%s'" % resource_name)
         if subpath is None:
             return
         else:
-            self.resources_by_name[resource_name].validate_subpath_exists(subpath)
+            self.by_name[resource_name].validate_subpath_exists(subpath)
 
     def __str__(self):
         resources = sorted(self.by_name.keys())

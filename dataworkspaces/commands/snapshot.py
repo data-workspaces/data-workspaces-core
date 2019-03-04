@@ -19,8 +19,9 @@ from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\
                     get_config_param_value, get_local_param_from_file,\
                     HOSTNAME
 from .init import get_config_file_path
-from dataworkspaces.utils.lineage_utils import get_current_lineage_dir,\
-                                               get_snapshot_lineage_dir
+from dataworkspaces.utils.lineage_utils import \
+    get_current_lineage_dir, get_snapshot_lineage_dir,\
+    LineageStoreCurrent
 from dataworkspaces.errors import InternalError, ConfigurationError
 
 
@@ -112,6 +113,7 @@ class AppendSnapshotHistory(actions.Action):
 
 class SaveLineageData(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
+    @actions.requires_from_ns('map_of_hashes', dict)
     @actions.provides_to_ns('lineage_files', list)
     def __init__(self, ns, verbose, workspace_dir):
         super().__init__(ns, verbose)
@@ -128,7 +130,12 @@ class SaveLineageData(actions.Action):
         return self.basenames is not None
 
     def run(self):
+        assert self.basenames is not None
         snapshot_hash = self.ns.snapshot_hash
+        map_of_hashes = self.ns.map_of_hashes
+        store = LineageStoreCurrent.load(self.current_lineage_dir)
+        store.replace_placeholders_with_real_certs(map_of_hashes)
+        store.save(self.current_lineage_dir)
         lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
         lineage_files = []
         os.makedirs(lineage_dir)
