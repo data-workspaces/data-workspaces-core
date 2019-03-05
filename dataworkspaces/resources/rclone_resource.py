@@ -63,7 +63,7 @@ class RcloneResource(Resource):
             raise ConfigurationError("Cannot add the entire workspace as a file resource")
         known_remotes = self.rclone.listremotes()
         if self.remote_name not in known_remotes:
-            raise ConfigurationError('Remote ' + remote + ' not found by rclone')
+            raise ConfigurationError("Remote '" + self.remote_name + "' not found by rclone")
         
     def add(self):
         print("rclone: Add is called")
