@@ -7,6 +7,7 @@ import json
 import datetime
 import getpass
 import shutil
+from tempfile import NamedTemporaryFile
 
 import click
 
@@ -116,12 +117,13 @@ class SaveLineageData(actions.Action):
     @actions.requires_from_ns('map_of_hashes', dict)
     @actions.provides_to_ns('lineage_files', list)
     def __init__(self, ns, verbose, workspace_dir, resource_names,
-                 results_resource_names):
+                 results_resources, rel_dest_root):
         super().__init__(ns, verbose)
         self.workspace_dir = workspace_dir
         self.current_lineage_dir = get_current_lineage_dir(workspace_dir)
         self.resource_names = resource_names
-        self.results_resource_names = results_resource_names
+        self.results_resources = results_resources
+        self.rel_dest_root = rel_dest_root
         if not isdir(self.current_lineage_dir):
             self.num_files = 0
         else:
@@ -139,6 +141,22 @@ class SaveLineageData(actions.Action):
         store = LineageStoreCurrent.load(self.current_lineage_dir)
         store.replace_placeholders_with_real_certs(map_of_hashes)
         store.save(self.current_lineage_dir)
+        for rr in self.results_resources:
+            (lineages, complete) = store.get_lineage_for_resource(rr.name)
+            if len(lineages)>0:
+                data = {'resource_name':rr.name,
+                        'complete':complete,
+                        'lineages':[l.to_json() for l in lineages]}
+                tfname = None
+                try:
+                    with NamedTemporaryFile(mode='w', delete=False) as tf:
+                        tfname = tf.name
+                        json.dump(data, tf, indent=2)
+                    rr.add_results_file(tfname,
+                                        join(self.rel_dest_root, 'lineage.json'))
+                finally:
+                    if exists(tfname):
+                        os.remove(tfname)
         lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
         os.makedirs(lineage_dir)
         (dest_files, warnings) =\
@@ -148,9 +166,9 @@ class SaveLineageData(actions.Action):
         self.ns.lineage_files = dest_files
         # We need to invalidate the resource lineage for any results,
         # as we've moved the data to a subdirectory
-        if len(self.results_resource_names)>0:
+        if len(self.results_resources)>0:
             LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
-                                                           self.results_resource_names)
+                                                           [rr.name for rr in self.results_resources])
 
     def __str__(self):
         return "Copy lineage %d files from current workspace to snapshot lineage" % \
@@ -195,14 +213,14 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(results_dir_template))
 
     validate_git_fat_in_path_if_needed(workspace_dir)
-    results_resource_names = []
+    results_resources = []
     for r in current_resources.resources:
         if r.has_results_role():
             plan.append(MoveCurrentFilesForResults(ns, verbose, workspace_dir, r,
                                                    exclude_files,
                                                    rel_dest_root,
                                                    exclude_dirs_re))
-            results_resource_names.append(r.name)
+            results_resources.append(r)
         plan.append(
             TakeResourceSnapshot(ns, verbose, r))
     plan.append(WriteSnapshotFile(ns, verbose, workspace_dir, current_resources))
@@ -215,7 +233,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                                        snapshot_history_file]))
     # see if we need to add lineage files
     save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names,
-                                   results_resource_names)
+                                   results_resources, rel_dest_root)
     if save_lineage.has_lineage_files():
         plan.append(save_lineage)
         plan.append(actions.GitAdd(ns, verbose, workspace_dir,

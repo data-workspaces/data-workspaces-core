@@ -124,6 +124,18 @@ class RcloneResource(Resource):
         print('Snapshot returns ', ret, out)
         return ret
 
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Move a results file from the temporary location to
+        the specified path in the resource.
+        """
+        assert self.role==ResourceRoles.RESULTS
+        assert os.path.exists(temp_path)
+        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
+        parent_dir = os.path.dirname(abs_dest_path)
+        if not os.path.isdir(parent_dir):
+            os.makedirs(parent_dir)
+        os.rename(temp_path, abs_dest_path)
+
     def restore_prechecks(self, hashval):
         pass
         # rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)

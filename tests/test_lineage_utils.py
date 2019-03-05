@@ -15,7 +15,8 @@ except ImportError:
 from dataworkspaces.errors import LineageError
 from dataworkspaces.utils.lineage_utils import \
     StepLineage, LineageStoreCurrent, ResourceRef, SourceDataLineage,\
-    LineageConsistencyError, PlaceholderCertificate, HashCertificate
+    LineageConsistencyError, PlaceholderCertificate, HashCertificate,\
+    ResourceCert
 
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 LOCAL_STORE_DIR=os.path.join(TEMPDIR, 'local_store')
@@ -37,6 +38,18 @@ BASE_SNAPSHOT_HASHES={
     'intermediate':'intermediate_hash',
     'results':'results_hash'
 }
+
+class TestResourceCert(unittest.TestCase):
+    def test_rc(self):
+        rc1 = ResourceCert(R2_FOO_BAR, HashCertificate('hv1', 'comment1'))
+        rc1b = ResourceCert(R2_FOO_BAR, HashCertificate('hv1', 'comment1'))
+        self.assertEqual(rc1, rc1b)
+        self.assertTrue(rc1b==rc1)
+        self.assertFalse(rc1b!=rc1)
+        rc2 = ResourceCert(RESULTS, HashCertificate('results_hash', 'comment_r'))
+        s = set([rc1, rc2])
+        self.assertTrue(rc1b in s)
+        self.assertFalse(rc1b not in s)
 
 class TestLineageStoreCurrent(unittest.TestCase):
     """Tests for the lineage current store api
@@ -327,6 +340,45 @@ class TestLineageStoreCurrent(unittest.TestCase):
                                                                    RESOURCE_NAMES)
         self.assertEqual(0, warnings) 
 
+    def test_get_lineage_for_resource(self):
+        s = self._run_initial_workflow()
+        (lineages, complete) = s.get_lineage_for_resource('results')
+        self.assertTrue(complete)
+        rclist = []
+        for l in lineages:
+            rclist.extend(l.get_resource_certificates())
+            if isinstance(l, StepLineage):
+                print("  step %s" % l.step_name)
+            else:
+                print("  data source %s" % l.resource_cert)
+        def check_for_rc(ref, hashval):
+            for rc in rclist:
+                if rc.ref==ref and rc.certificate.hashval==hashval:
+                    return
+            self.fail("Did not find an rc %s %s in rc list %s" %
+                      (ref, hashval, rclist))
+        check_for_rc(RESULTS, 'results_hash')
+        check_for_rc(INTERMEDIATE_S2, 'intermediate_hash')
+        check_for_rc(INTERMEDIATE_S1, 'intermediate_hash')
+        check_for_rc(R2_FOO_BAR, 'r2hash')
+        check_for_rc(R1, 'r1hash')
+        self.assertEqual(len(rclist), 5)
+        self.assertEqual(len(lineages), 5)
+
+        # test case for an inconsistent lineage
+        step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
+                                                     [('p1', 'v1'), ('p2', 5)],
+                                                      [R1, R2_FOO_BAR], s)
+        step1_lineage.add_output(s, INTERMEDIATE_S1)
+        step1_lineage.execution_time_seconds = 5
+        s.add_step(step1_lineage)
+        (lineages, complete) = s.get_lineage_for_resource('results')
+        self.assertFalse(complete)
+
+        # test case where we don't have any lineage for a resource
+        (lineages, complete) = s.get_lineage_for_resource('non-existent')
+        self.assertFalse(complete)
+        self.assertEqual(len(lineages), 0)
 
 if __name__ == '__main__':
     unittest.main()

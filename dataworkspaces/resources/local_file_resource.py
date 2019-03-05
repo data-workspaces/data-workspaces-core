@@ -9,7 +9,7 @@ import os.path
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
-from .resource import Resource, ResourceFactory
+from .resource import Resource, ResourceFactory, ResourceRoles
 from . import hashtree
 from .snapshot_utils import move_current_files_local_fs
 
@@ -77,6 +77,18 @@ class LocalFileResource(Resource):
                              "Add snapshot hash files for resource %s" % self.name],
                             cwd=self.workspace_dir, verbose=False)
         return h
+
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Move a results file from the temporary location to
+        the specified path in the resource.
+        """
+        assert self.role==ResourceRoles.RESULTS
+        assert os.path.exists(temp_path)
+        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
+        parent_dir = os.path.dirname(abs_dest_path)
+        if not os.path.isdir(parent_dir):
+            os.makedirs(parent_dir)
+        os.rename(temp_path, abs_dest_path)
 
     def restore_prechecks(self, hashval):
         rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)

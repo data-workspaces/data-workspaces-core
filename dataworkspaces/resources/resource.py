@@ -113,6 +113,12 @@ class Resource:
         """
         pass
 
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Move a results file from the temporary location to
+        the specified path in the resource.
+        """
+        raise NotImplementedError(self.__class__.__name__)
+
     def snapshot(self):
         pass
 

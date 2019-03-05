@@ -135,6 +135,24 @@ class GitRepoResource(Resource):
                              '-m', "Move current results to %s" % rel_dest_root],
                             cwd=self.local_path, verbose=self.verbose)
 
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Copy a results file from the temporary location to
+        the specified path in the resource.
+        """
+        assert exists(temp_path)
+        assert self.role==ResourceRoles.RESULTS
+        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        abs_dest_path = join(self.local_path, rel_dest_path)
+        parent_dir = dirname(abs_dest_path)
+        if not exists(parent_dir):
+            os.makedirs(parent_dir)
+        os.rename(temp_path, abs_dest_path)
+        call_subprocess([GIT_EXE_PATH, 'add', rel_dest_path],
+                        cwd=self.local_path, verbose=self.verbose)
+        call_subprocess([GIT_EXE_PATH, 'commit',
+                         '-m', "Added %s" % rel_dest_path],
+                        cwd=self.local_path, verbose=self.verbose)
+
     def snapshot_prechecks(self):
         validate_git_fat_in_path_if_needed(self.local_path)
 
@@ -404,6 +422,23 @@ class GitRepoResultsSubdirResource(Resource):
                             cwd=self.workspace_dir,
                             verbose=self.verbose)
 
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Move a results file from the temporary location to
+        the specified path in the resource.
+        """
+        assert exists(temp_path)
+        abs_dest_path = join(self.local_path, rel_dest_path)
+        parent_dir = dirname(abs_dest_path)
+        if not exists(parent_dir):
+            os.makedirs(parent_dir)
+        os.rename(temp_path, abs_dest_path)
+        rel_path_in_repo = join(self.relative_path, rel_dest_path)
+        call_subprocess([GIT_EXE_PATH, 'add', rel_path_in_repo],
+                        cwd=self.workspace_dir, verbose=self.verbose)
+        call_subprocess([GIT_EXE_PATH, 'commit',
+                         '-m', "Added %s" % rel_path_in_repo],
+                        cwd=self.workspace_dir, verbose=self.verbose)
+
     def snapshot_prechecks(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
@@ -487,6 +522,13 @@ class GitRepoSubdirResource(Resource):
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
         raise InternalError("results_move_current_files should not be called for %s" % self.__class__.__name__)
+
+    def add_results_file(self, temp_path, rel_dest_path):
+        """Copy a results file from the temporary location to
+        the specified path in the resource.
+        """
+        raise InternalError("add_results_file should not be called for %s" %
+                            self.__class__.__name__)
 
     def snapshot_prechecks(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)

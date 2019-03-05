@@ -98,13 +98,15 @@ class HashCertificate(Certificate):
     def __str__(self):
         return self.__repr__()
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         equal = isinstance(other, HashCertificate) and other.hashval==self.hashval
         if equal and other.comment!=self.comment:
             raise TypeError("Two hash certificates are equal in hash values but not in comments: '%s' and '%s'"%
                             (self.comment, other.comment))
+        else:
+            return equal
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return (not isinstance(other, HashCertificate)) or other.hashval!=self.hashval
 
     def to_json(self) -> Dict[str, Any]:
@@ -126,7 +128,7 @@ class PlaceholderCertificate(Certificate):
     def __hash__(self):
         return hash(self.version)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         equal = isinstance(other, PlaceholderCertificate) and other.version==self.version
         if equal and other.comment!=self.comment:
             raise TypeError("Two placeholder certificates equal in versions, but not in comments: '%s' and '%s'" %
@@ -134,7 +136,7 @@ class PlaceholderCertificate(Certificate):
         else:
             return equal
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return (not isinstance(other, PlaceholderCertificate)) or other.version!=self.version
 
     def to_json(self) -> Dict[str, Any]:
@@ -154,10 +156,10 @@ class ResourceCert:
     def __hash__(self):
         return hash((self.ref, self.certificate),)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return isinstance(other, ResourceCert) and other.ref==self.ref and other.certificate==self.certificate
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return (not isinstance(other, ResourceCert)) or other.ref!=self.ref or other.certificate!=self.certificate
 
     def to_json(self)  -> dict:
@@ -265,6 +267,12 @@ class ResourceLineage:
                                 ', '.join(sorted(map_subpath(ol_subpaths))),
                                 ', '.join(sorted(map_subpath(nl_subpaths)))))
 
+    def get_resource_certificates(self) -> List[ResourceCert]:
+        """Get all resource certificates associated with this lineage.
+        Returns the output rc's for a step lineage and the certificate for
+        a source data lineage.
+        """
+        raise NotImplementedError(self.__class__.__name__)
 
 class StepLineage(ResourceLineage):
     __slots__ = ['step_name', 'start_time', 'parameters', 'input_resources',
@@ -277,7 +285,7 @@ class StepLineage(ResourceLineage):
         self.step_name = step_name
         self.start_time = start_time
         self.parameters = parameters
-        self.input_resources = input_resources
+        self.input_resources = input_resources # type: List[ResourceCert]
         self.execution_time_seconds = execution_time_seconds
         # map from output resource name to sets of subpaths
         self.outputs_by_resource = {} # type: Dict[str, Set[Optional[str]]]
@@ -383,6 +391,10 @@ class StepLineage(ResourceLineage):
         return self.outputs_by_resource[resource_name]
 
 
+    def get_resource_certificates(self) -> List[ResourceCert]:
+        """Get all resource certificates associated with this lineage."""
+        return self.output_resources
+
     def add_output(self, lineage_store:'LineageStoreCurrent', ref:ResourceRef):
         assert isinstance(ref, ResourceRef) # XXX Until we have typechecking working
         # first, validate that this path is compatibile with what we already have
@@ -470,6 +482,10 @@ class SourceDataLineage(ResourceLineage):
         in this lineage object. If not, return None
         """
         return self.resource_cert if self.resource_cert.ref==ref else None
+
+    def get_resource_certificates(self) -> List[ResourceCert]:
+        """Get all resource certificates associated with this lineage."""
+        return [self.resource_cert,]
 
     def validate_subpath_compatible(self, ref:ResourceRef) -> None:
         """Validate that specified subpath would be compatible with
@@ -792,6 +808,54 @@ class LineageStoreCurrent:
                         new_to_check.append(rc.ref)
             to_check = new_to_check
         return warnings
+
+    def get_lineage_for_resource(self, resource_name:str) -> \
+        Tuple[List[ResourceLineage], bool]:
+        """Return a list of all transitive lineage for the specified
+        resource and a boolean indicating whether the lineage is complete
+        """
+        if resource_name not in self.lineage_by_resource:
+            return ([], False)
+        complete = True
+        checked_set = set() # type: Set[ResourceCert]
+        lineages = [] # type: List[ResourceLineage]
+        to_check = [] # type: List[ResourceCert]
+        for lineage in self.lineage_by_resource[resource_name].lineages:
+            lineages.append(lineage)
+            checked_set = checked_set.union(set(lineage.get_resource_certificates()))
+            if isinstance(lineage, StepLineage):
+                sl = cast(StepLineage, lineage)
+                for rc in sl.input_resources:
+                    if rc not in checked_set:
+                        to_check.append(rc)
+        while len(to_check)>0:
+            new_to_check = [] # type: List[ResourceCert]
+            for rc in to_check:
+                if rc in checked_set:
+                    continue
+                try:
+                    (source_cert, source_lineage) = \
+                        self.get_cert_and_lineage_for_ref(rc.ref)
+                except KeyError:
+                    click.echo("WARNING: Lineage incomplete, could not find lineage for %s"
+                               % str(rc.ref),
+                               err=True)
+                    complete = False
+                    continue
+                if source_cert!=rc.certificate:
+                    click.echo("WARNING: Lineage incomplete, resource %s was overwritten"%
+                               rc, err=True)
+                    complete = False
+                    continue
+                lineages.append(source_lineage)
+                checked_set = checked_set.union(set(source_lineage.get_resource_certificates()))
+                if isinstance(source_lineage, StepLineage):
+                    sl = cast(StepLineage, source_lineage)
+                    for rc_in in sl.input_resources:
+                        if rc_in not in checked_set:
+                            new_to_check.append(rc_in)
+            to_check = new_to_check
+        return (lineages, complete)
 
     def to_json(self):
         return {
