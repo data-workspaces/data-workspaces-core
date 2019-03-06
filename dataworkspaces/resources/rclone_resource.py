@@ -18,6 +18,11 @@ from . import rclone
 
 LOCAL_FILE = 'rclone'
 
+"""
+dws add rclone [options] remote local
+
+See 
+"""
 class RcloneResource(Resource):
     def __init__(self, name, role, workspace_dir, remote_origin, local_path, config=None, compute_hash=False, ignore=[], verbose=False):
         super().__init__(LOCAL_FILE, name, role, workspace_dir)
