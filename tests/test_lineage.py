@@ -5,6 +5,7 @@ import os.path
 from os.path import dirname, abspath, expanduser, exists, join
 import shutil
 import subprocess
+import json
 
 TEST_DIR=abspath(expanduser(dirname(__file__)))
 
@@ -14,7 +15,8 @@ except ImportError:
     sys.path.append(os.path.abspath(".."))
 
 from dataworkspaces.utils.subprocess_utils import find_exe
-from dataworkspaces.utils.lineage_utils import LineageStoreCurrent, ResourceRef
+from dataworkspaces.utils.lineage_utils import LineageStoreCurrent, ResourceRef,\
+    ResourceLineage
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH
 
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
@@ -29,7 +31,7 @@ class TestLineage(unittest.TestCase):
         os.mkdir(TEMPDIR)
         os.mkdir(WS_DIR)
         self.dws=find_exe("dws", "Make sure you have enabled your python virtual environment")
-        self._run_dws(['init', '--use-basic-resource-template'],
+        self._run_dws(['init', '--hostname', 'test-host', '--use-basic-resource-template'],
                       verbose=False)
         with open(join(WS_DIR, 'source-data/data.csv'), 'w') as f:
             f.write('a,b,c\n')
@@ -53,7 +55,6 @@ class TestLineage(unittest.TestCase):
     def tearDown(self):
         if exists(TEMPDIR):
             shutil.rmtree(TEMPDIR)
-        # pass
 
     def _validate_test_case_file(self, expected_contents, resource_dir):
         with open(join(join(WS_DIR, resource_dir), 'test_case.txt'), 'r') as f:
@@ -78,6 +79,14 @@ class TestLineage(unittest.TestCase):
             f = join(WS_DIR, '.dataworkspace/current_lineage/%s.json' % r)
             self.assertFalse(exists(f), "Resource file %s exists, but should not be present" % f)
 
+    def _check_results_lineage(self, snapshot_tag, expected_num_lineages):
+        fpath = join(WS_DIR, 'results/snapshots/test-host-%s/lineage.json' % snapshot_tag)
+        self.assertTrue(exists(fpath), "%s does not exist" % fpath)
+        with open(fpath, 'r') as f:
+            data = json.load(f)
+        lineages = [ResourceLineage.from_json(r, filename=fpath) for r in data['lineages']]
+        self.assertEqual(expected_num_lineages, len(lineages))
+
     def test_lineage(self):
         self._run_step('lineage_step1.py', ['test_lineage1'])
         self._run_step('lineage_step2.py', ['test_lineage1'])
@@ -85,6 +94,7 @@ class TestLineage(unittest.TestCase):
         self._validate_test_case_file('test_lineage1', 'results')
         self._validate_store()
         self._run_dws(['snapshot', 'S1'])
+        self._check_results_lineage('S1', 3)
 
         self._run_step('lineage_step1.py', ['test_lineage2'])
         self._run_step('lineage_step2.py', ['test_lineage2'])
@@ -93,6 +103,7 @@ class TestLineage(unittest.TestCase):
 
         self._validate_store()
         self._run_dws(['snapshot', 'S2'])
+        self._check_results_lineage('S2', 3)
 
         self._run_dws(['restore', 'S1'])
         self._validate_test_case_file('test_lineage1', 'intermediate-data/s1')
