@@ -6,6 +6,7 @@ import json
 import copy
 import os
 from os.path import join, exists, abspath, expanduser, dirname, isdir, realpath
+from tempfile import NamedTemporaryFile
 
 import click
 
@@ -118,6 +119,21 @@ class Resource:
         the specified path in the resource.
         """
         raise NotImplementedError(self.__class__.__name__)
+
+    def add_results_file_from_buffer(self, str_buffer, rel_dest_path):
+        """Convenience function which saves the buffer as a temporary
+        file, calls add_results_file() and handles cleaning up
+        the temp file in case of an error.
+        """
+        tfname = None
+        try:
+            with NamedTemporaryFile(mode='w', delete=False) as tf:
+                tfname = tf.name
+                tf.write(str_buffer)
+            self.add_results_file(tfname, rel_dest_path)
+        finally:
+            if tfname is not None and exists(tfname):
+                os.remove(tfname)
 
     def snapshot(self):
         pass

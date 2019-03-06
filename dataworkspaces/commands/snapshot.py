@@ -7,7 +7,6 @@ import json
 import datetime
 import getpass
 import shutil
-from tempfile import NamedTemporaryFile
 
 import click
 
@@ -147,16 +146,9 @@ class SaveLineageData(actions.Action):
                 data = {'resource_name':rr.name,
                         'complete':complete,
                         'lineages':[l.to_json() for l in lineages]}
-                tfname = None
-                try:
-                    with NamedTemporaryFile(mode='w', delete=False) as tf:
-                        tfname = tf.name
-                        json.dump(data, tf, indent=2)
-                    rr.add_results_file(tfname,
-                                        join(self.rel_dest_root, 'lineage.json'))
-                finally:
-                    if exists(tfname):
-                        os.remove(tfname)
+                rr.add_results_file_from_buffer(json.dumps(data, indent=2),
+                                                join(self.rel_dest_root,
+                                                     'lineage.json'))
         lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
         os.makedirs(lineage_dir)
         (dest_files, warnings) =\

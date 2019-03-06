@@ -4,7 +4,8 @@ import os
 from os.path import abspath, expanduser, isdir, join, curdir, dirname
 
 def get_workspace(caller_workspace_arg:Optional[str]=None,
-                  exc_type:Type[Exception]=ConfigurationError) ->str:
+                  exc_type:Type[Exception]=ConfigurationError,
+                  current_dir:Optional[str]=None) ->str:
     """For commands that execute in the context of a containing
     workspace, find the nearest containging workspace and return
     its absolute path. If the caller provides one, we validate it
@@ -23,7 +24,10 @@ def get_workspace(caller_workspace_arg:Optional[str]=None,
         else:
             return workspace_dir
     else:
-        curr_dir_abs = abspath(expanduser(curdir))
+        if current_dir is not None:
+            curr_dir_abs = abspath(expanduser(current_dir))
+        else:
+            curr_dir_abs = abspath(expanduser(curdir))
         curr_base = curr_dir_abs
         while curr_base != '/':
             if isdir(join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
