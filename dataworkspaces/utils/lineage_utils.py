@@ -276,17 +276,20 @@ class ResourceLineage:
 
 class StepLineage(ResourceLineage):
     __slots__ = ['step_name', 'start_time', 'parameters', 'input_resources',
-                 'output_resources', 'execution_time_seconds']
+                 'output_resources', 'execution_time_seconds',
+                 'command_line']
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str, Any],
                  input_resources:List[ResourceCert],
                  output_resources:Optional[List[ResourceCert]]=None,
-                 execution_time_seconds:Optional[float]=None):
+                 execution_time_seconds:Optional[float]=None,
+                 command_line:Optional[List[str]]=None):
         self.step_name = step_name
         self.start_time = start_time
         self.parameters = parameters
         self.input_resources = input_resources # type: List[ResourceCert]
         self.execution_time_seconds = execution_time_seconds
+        self.command_line = command_line
         # map from output resource name to sets of subpaths
         self.outputs_by_resource = {} # type: Dict[str, Set[Optional[str]]]
         if output_resources is not None:
@@ -309,7 +312,8 @@ class StepLineage(ResourceLineage):
     def make_step_lineage(step_name:str, start_time:datetime.datetime,
                           parameters:Dict[str, Any],
                           input_resource_refs:List[ResourceRef],
-                          lineage_store:'LineageStoreCurrent') -> 'StepLineage':
+                          lineage_store:'LineageStoreCurrent',
+                          command_line:Optional[List[str]]=None) -> 'StepLineage':
         """At the start of a step's run, create a step lineage object
         to be updated as the step progesses. Validates that the inputs
         to the step are consistent.
@@ -335,7 +339,8 @@ class StepLineage(ResourceLineage):
                             next_to_process.append(input_rc)
             to_process = next_to_process
         # if we got here, we didn't find any inconsistencies
-        return StepLineage(step_name, start_time, parameters, input_certs)
+        return StepLineage(step_name, start_time, parameters, input_certs,
+                           command_line=command_line)
 
     def _validate_paths_compatible(self, resource_name:str,
                                    p1:Optional[str], p2:Optional[str]) -> None:
@@ -437,7 +442,8 @@ class StepLineage(ResourceLineage):
             'execution_time_seconds':self.execution_time_seconds,
             'parameters':self.parameters,
             'input_resources':[r.to_json() for r in self.input_resources],
-            'output_resources':[r.to_json() for r in self.output_resources]
+            'output_resources':[r.to_json() for r in self.output_resources],
+            'command_line':self.command_line
         }
 
     @staticmethod
@@ -452,7 +458,8 @@ class StepLineage(ResourceLineage):
                             in obj['input_resources']],
                            [ResourceCert.from_json(rcobj, filename) for rcobj
                             in obj['output_resources']],
-                           obj.get('execution_time_seconds', None))
+                           obj.get('execution_time_seconds', None),
+                           obj.get('command_line', None))
 
 
 class SourceDataLineage(ResourceLineage):

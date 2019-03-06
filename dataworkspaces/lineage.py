@@ -113,7 +113,8 @@ class Lineage(contextlib.AbstractContextManager):
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
-                 workspace_dir:str):
+                 workspace_dir:str,
+                 command_line:Optional[List[str]]=None):
         self.lineage_dir = get_current_lineage_dir(workspace_dir)
         if not exists(self.lineage_dir):
             os.makedirs(self.lineage_dir)
@@ -131,7 +132,8 @@ class Lineage(contextlib.AbstractContextManager):
                 input_resource_refs.append(ResourceRef(name, subpath))
         self.step = StepLineage.make_step_lineage(step_name, start_time,
                                                   parameters, input_resource_refs,
-                                                  self.store)
+                                                  self.store,
+                                                  command_line=command_line)
         self.in_progress = True
 
     def add_output_path(self, path:str):
@@ -177,11 +179,13 @@ class Lineage(contextlib.AbstractContextManager):
         return False # don't suppress any exception
 
 def make_lineage(parameters:Dict[str,Any], inputs:List[Union[str, ResourceRef]],
-                 step_name:Optional[str]=None, workspace_dir:Optional[str]=None)\
+                 step_name:Optional[str]=None,
+                 workspace_dir:Optional[str]=None)\
                  -> Lineage:
     workspace_dir = get_workspace(workspace_dir)
     assert workspace_dir is not None # make the type checker happy
     if step_name is None:
         step_name = infer_step_name()
     return Lineage(step_name, datetime.datetime.now(), parameters, inputs,
-                   workspace_dir=workspace_dir)
+                   workspace_dir=workspace_dir,
+                   command_line=[sys.executable]+sys.argv)
