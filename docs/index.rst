@@ -27,6 +27,8 @@ Windows Subsystem for Linux.
 
    intro
    tutorial
+   commands
+   resources
    internals
 
 

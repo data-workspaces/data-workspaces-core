@@ -73,8 +73,8 @@ You can clone the source tree and install it as follows::
   cd data-workspaces-python
   pip install `pwd`
 
-Commmand Line Inteface
-----------------------
+Commmand Line Interface
+-----------------------
 To run the command line interface, you use the ``dws`` command,
 which should have been installed into your environment by ``pip install``.
 ``dws`` operations have the form::
