@@ -93,6 +93,7 @@ The layout for the files under the ``.dataworkspace`` directory is as follows:
   * ``.dataworkspace/``
 
     * ``config.json`` - overall configuration (e.g. workspace name, global params)
+    * ``local_params.json`` - local parameters (e.g. hostname); not checked into git
     * ``resources.json`` - lists all resources and their config parameters
     * ``resource_local_params.json`` - configuration for resources that is local to
       this machine (e.g. path to the resource); not checked into git
