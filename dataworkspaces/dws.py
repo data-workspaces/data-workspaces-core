@@ -126,13 +126,36 @@ class HostParamType(click.ParamType):
 
 HOST_PARAM = HostParamType()
 
+class ResourceParamType(click.ParamType):
+    name = 'resources'
+
+    def convert(self, value, param, ctx):
+        parsed = []
+        for r in value.lower().split(','):
+            if r=='all':
+                return [r for r in RESOURCE_ROLE_CHOICES]
+            elif r in (ResourceRoles.SOURCE_DATA_SET, 's'):
+                parsed.append(ResourceRoles.SOURCE_DATA_SET)
+            elif r in (ResourceRoles.INTERMEDIATE_DATA, 'i'):
+                parsed.append(ResourceRoles.INTERMEDIATE_DATA)
+            elif r in (ResourceRoles.CODE, 'c'):
+                parsed.append(ResourceRoles.CODE)
+            elif r in (ResourceRoles.RESULTS, 'r'):
+                parsed.append(ResourceRoles.RESULTS)
+            else:
+                self.fail("Invalid resource role. Must be one of: %s, all" %
+                          ', '.join(RESOURCE_ROLE_CHOICES))
+        return parsed
+RESOURCE_PARAM = ResourceParamType()
+
 
 @click.command()
 @click.option('--hostname', type=HOST_PARAM, default=None,
               help="Hostname to identify this machine in snapshot directory paths, "+
                    "defaults to " + DEFAULT_HOSTNAME)
-@click.option('--use-basic-resource-template', default=False, is_flag=True,
-              help="Initialize the workspace with git subdirectory resources for source data, code, intermediate data, and results")
+@click.option('--create-resources', default=[], type=RESOURCE_PARAM,
+              help="Initialize the workspace with subdirectories for the specified resource roles. Choices are 'all' or any comma-separated combination of %s."
+              % ', '.join(RESOURCE_ROLE_CHOICES))
 @click.option('--git-fat-remote', type=str,
               help="Initialize the workspace with the git-fat large file extension "+
                    "and use the specified URL for the remote datastore")
@@ -146,7 +169,7 @@ HOST_PARAM = HostParamType()
               " here, you can always add the .gitattributes file later.")
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
-def init(ctx, hostname, name, use_basic_resource_template, git_fat_remote,
+def init(ctx, hostname, name, create_resources, git_fat_remote,
          git_fat_user, git_fat_port, git_fat_attributes):
     """Initialize a new workspace"""
     if hostname is None:
@@ -160,7 +183,7 @@ def init(ctx, hostname, name, use_basic_resource_template, git_fat_remote,
         raise click.BadOptionUsage(message="If you specify --git-fat-user, --git-fat-port-, or --git-fat-attributes, "+
                                    "you also need to specify --git-fat-remote",
                                    option_name='--git-fat-remote')
-    init_command(name, hostname, use_basic_resource_template, git_fat_remote,
+    init_command(name, hostname, create_resources, git_fat_remote,
                  git_fat_user, git_fat_port, git_fat_attributes, **vars(ctx.obj))
 
 

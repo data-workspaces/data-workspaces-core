@@ -13,10 +13,7 @@ from notebook.notebookapp import list_running_servers
 from typing import Dict, Any, List, Optional
 import datetime
 
-from dataworkspaces.utils.lineage_utils import ResourceRef
-from dataworkspaces.lineage import Lineage
-from dataworkspaces.utils.workspace_utils import get_workspace
-from dataworkspaces.resources.resource import CurrentResources
+from dataworkspaces.lineage import LineageBuilder
 
 
 def _get_notebook_name():
@@ -35,41 +32,41 @@ def _get_notebook_name():
                 relative_path = nn['notebook']['path']
                 return join(ss['notebook_dir'], relative_path)
 
-class NotebookLineage(Lineage):
-    def __init__(self, parameters:Dict[str,Any],
-                 inputs:List[str],
-                 results_path:str,
-                 other_outputs:Optional[List[str]]=None,
-                 run_description:Optional[str]=None):
-        notebook_path = _get_notebook_name()
-        step_name = basename(notebook_path)
-        if step_name.endswith('.ipynb'):
-            step_name = step_name[0:-6]
-        elif step_name.endswith('.py'):
-            step_name = step_name[0:-3]
-        workspace_dir = get_workspace(current_dir=dirname(notebook_path))
-        super().__init__(step_name, datetime.datetime.now(),
-                         parameters, inputs, workspace_dir)
-        self.results_path = results_path
-        self.run_description = run_description
-        (self.results_rname, self.results_subpath) = \
-            self.resources.map_local_path_to_resource(results_path)
-        self.add_output_ref(ResourceRef(self.results_rname,
-                                        self.results_subpath))
-        if other_outputs is not None:
-            for output in other_outputs:
-                self.add_output_path(output)
+def get_step_name_for_notebook():
+    notebook_path = _get_notebook_name()
+    step_name = basename(notebook_path)
+    if step_name.endswith('.ipynb'):
+        step_name = step_name[0:-6]
+    elif step_name.endswith('.py'):
+        step_name = step_name[0:-3]
+    return step_name
 
-    def write_results(self, results:Dict[str, Any]):
-        data = {
-            'step':self.step.step_name,
-            'start_time':self.step.start_time.isoformat(),
-            'execution_time_seconds':self.step.execution_time_seconds,
-            'pameters': self.step.parameters,
-            'run_description':self.run_description,
-            'results': results
-        }
-        self.resources.by_name[self.results_rname]\
-            .add_results_file_from_buffer(json.dumps(data, indent=2),
-                                          "results.json")
-        print("Wrote results to %s" % join(self.results_path, 'results.json'))
+
+def is_notebook():
+    try:
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':
+            return True   # Jupyter notebook or qtconsole
+        elif shell == 'TerminalInteractiveShell':
+            return False  # Terminal running IPython
+        else:
+            return False  # Other type (?)
+    except NameError:
+        return False      # Probably standard Python interpreter or a script
+
+
+class NotebookLineageBuilder(LineageBuilder):
+    """Notebooks are the final step in a pipeline
+    (and potentially the only step). We customizer
+    the standard lineage builder to get the step
+    name from the notebook's name and to always have
+    a results directory.
+    """
+    def __init__(self, results_dir:str,
+                 run_description:Optional[str]=None):
+        super().__init__()
+        self.step_name = step_name
+        self.results_dir = get_step_name_for_notebook()
+        self.run_description = run_description
+
+

@@ -112,7 +112,7 @@ class InitializeGitFat(actions.Action):
         return "Initialize the git-fat Git extension on the dataworkspace's repository, using remote %s." %\
             self.git_fat_remote
 
-def init_command(name, hostname, use_basic_resource_template,
+def init_command(name, hostname, create_resources,
                  git_fat_remote=None, git_fat_user=None, git_fat_port=None,
                  git_fat_attributes=None, batch=False, verbose=False):
     plan = []
@@ -148,17 +148,18 @@ def init_command(name, hostname, use_basic_resource_template,
     actions.run_plan(plan, 'initialize a workspace at %s' % workspace_dir,
                      'initialized a workspace at %s' % workspace_dir,
                      batch=batch, verbose=verbose)
-    if use_basic_resource_template:
+    if len(create_resources)>0:
         click.echo("Will now create sub-directory resources for "+
-                   ", ".join(RESOURCE_ROLE_CHOICES))
-        for role in RESOURCE_ROLE_CHOICES:
+                   ", ".join(create_resources))
+        for role in create_resources:
+            assert role in RESOURCE_ROLE_CHOICES, "bad role name %s" % role
             add_command('git-subdirectory', role, role,
                         workspace_dir, batch, verbose,
                         join(workspace_dir, role),
                         # no prompt for subdirectory
                         False)
         click.echo("Finished initializing resources:")
-        for role in RESOURCE_ROLE_CHOICES:
+        for role in create_resources:
             click.echo("  %s: ./%s" %(role, role))
 
 

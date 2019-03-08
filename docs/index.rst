@@ -24,7 +24,7 @@ benefits with minimal changes to your current projects and processes.
 
 Data Workspaces runs on
 Unix-like systems, including Linux, MacOS, and on Windows via the
-Windows Subsystem for Linux.
+`Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_.
 
 .. toctree::
    :maxdepth: 2
