@@ -125,13 +125,13 @@ Some things you can do from here:
 
 Documentation
 =============
-The full documentation is available under ``docs``. To build it, install
+The documentation is available here: https://data-workspaces-core.readthedocs.io/en/latest/. The source for the documentation is under ``docs``. To build it locally, install
 `Sphinx <https://www.sphinx-doc.org/en/master/>`_ and run the following::
 
   cd docs
   make html
 
-To view the documentation, open the file ``docs/_build/html/index.html`` in your
+To view the local documentation, open the file ``docs/_build/html/index.html`` in your
 browser.
 
 License
