@@ -22,8 +22,16 @@ class ReadSnapshotHistory(actions.Action):
             history = json.load(f)
             num_snapshots = len(history)
         click.echo("\nHistory of snapshots")
+        click.echo("%s %s %s %s" %
+                   ('Hash'.ljust(40), 'Tag'.ljust(10), 'Created'.ljust(19),
+                    'Message'))
         for v in reversed(history[-self.limit:]):
-            click.echo('Hash %s Version %s (created %s): %s' % (v['hash'],v['tag'], v['timestamp'], v['message']))
+            click.echo('%s %s %s %s' %
+                       (v['hash'],
+                        (v['tag'] if v['tag'] is not None else 'N/A').ljust(10),
+                        v['timestamp'][0:-7],
+                        v['message'] if v['message'] is not None and
+                                        v['message']!='' else 'N/A'))
         limit = num_snapshots if self.limit == 0 else self.limit
         click.echo('Showing %d of %d snapshots' % (limit, num_snapshots))
 
