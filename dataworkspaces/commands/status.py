@@ -23,7 +23,7 @@ class ReadSnapshotHistory(actions.Action):
             num_snapshots = len(history)
         click.echo("\nHistory of snapshots")
         for v in reversed(history[-self.limit:]):
-            click.echo('Version %s (created %s): %s' % (v['tag'], v['timestamp'], v['message']))
+            click.echo('Hash %s Version %s (created %s): %s' % (v['hash'],v['tag'], v['timestamp'], v['message']))
         limit = num_snapshots if self.limit == 0 else self.limit
         click.echo('Showing %d of %d snapshots' % (limit, num_snapshots))
 
