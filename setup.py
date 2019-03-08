@@ -5,16 +5,36 @@ import sys
 sys.path.insert(0, 'dataworkspaces')
 from dataworkspaces import __version__
 
+with open("README.rst", "r") as f:
+    long_description = f.read()
 setup(
-    name='Data Workspaces',
+    name='dataworkspaces',
     version=__version__,
+    author="Max Plack Institute for Software Systems, Data-ken Research",
+    author_email='jeff@data-ken.org',
+    description="Easy management of source data, intermediate data, and results for data science projects",
+    long_description=long_description,
+    long_description_content_type="text/x-rst",
+    url="https://github.com/data-workspaces/data-workspaces-core",
     py_modules=['dataworkspaces'],
     install_requires=[
         'Click',
+        'requests'
     ],
     entry_points="""
         [console_scripts]
         dws=dataworkspaces.__main__
         git-fat=dataworkspaces.third_party.git_fat:main
-    """
+    """,
+    classifiers=[
+        "Programming Language :: Python :: 3 :: Only",
+        "Development Status :: 4 - Beta",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: MacOS",
+        "Operating System :: POSIX :: Linux",
+        "Operating System :: POSIX",
+        "Operating System :: Microsoft :: Windows :: Windows 10",
+        "Topic :: Software Development :: Version Control",
+        "Topic :: Scientific/Engineering :: Information Analysis"
+    ]
 )
