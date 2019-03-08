@@ -136,5 +136,5 @@ browser.
 
 License
 =======
-This code is copyright 2018,2019 by the Max Planck Institute for Software Systems and Data-ken
+This code is copyright 2018, 2019 by the Max Planck Institute for Software Systems and Data-ken
 Research. It is licensed under the Apache 2.0 license. See the file LICENSE.txt for details.
