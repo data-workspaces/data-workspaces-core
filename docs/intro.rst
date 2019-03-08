@@ -10,7 +10,7 @@ and the famous digits dataset running in a Jupyter Notebook.
 
 First, install the libary::
 
-  pip install data-workspaces
+  pip install dataworkspaces
 
 Now, we will create a workspace::
 
