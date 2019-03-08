@@ -1,5 +1,5 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
-from setuptools import setup
+from setuptools import setup, find_packages
 
 import sys
 sys.path.insert(0, 'dataworkspaces')
@@ -16,14 +16,15 @@ setup(
     long_description=long_description,
     long_description_content_type="text/x-rst",
     url="https://github.com/data-workspaces/data-workspaces-core",
-    py_modules=['dataworkspaces'],
+    packages=find_packages(),
+    #py_modules=['dataworkspaces'],
     install_requires=[
-        'Click',
+        'click',
         'requests'
     ],
     entry_points="""
         [console_scripts]
-        dws=dataworkspaces.__main__
+        dws=dataworkspaces.__main__:main
         git-fat=dataworkspaces.third_party.git_fat:main
     """,
     classifiers=[
