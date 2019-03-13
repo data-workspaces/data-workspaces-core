@@ -8,7 +8,7 @@ Here is a quick example to give you a flavor of the project, using
 `scikit-learn <https://scikit-learn.org>`_
 and the famous digits dataset running in a Jupyter Notebook.
 
-First, install the libary::
+First, install [#introf1]_ the libary::
 
   pip install dataworkspaces
 
@@ -23,6 +23,8 @@ and initialized it with two subdirectories,
 one for the source code, and one for the results. These are special
 subdirectories, in that they are *resources* which can be tracked and versioned
 independently.
+
+.. [#introf1] See the :ref:`Installation section <installation>` for more options and details.
 
 Now, we are going to add our source data to the workspace. This resides in an
 external, third-party git repository. It is simple to add::
@@ -108,6 +110,60 @@ Some things you can do from here:
 * More complex scenarios involving multi-step data pipelines can easily
   be automated. See the documentation for details.
 
+.. _installation:
+
+Installation
+------------
+Now, let us look into more detail at the options for installation.
+
+Prerequisites
+~~~~~~~~~~~~~
+This software runs directly on Linux and MacOSx. Windows is supported by via the
+`Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_. The following software should be pre-installed:
+
+* git
+* Python 3.5 or later
+* Optionally, the `rclone <https://rclone.org>`_ utility, if you are going to be
+  using it to sync with a remote copy of your data.
+
+Installation from the Python Package Index (PyPi)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This is the easiest way to install Data Workspaces is via
+the Python Package Index at http://pypi.org.
+
+We recommend first creating a
+`virtual environment <https://docs.python.org/3/library/venv.html#venv-def>`_
+to contain the Data Workspaces software and any other software needed for your
+project. Using the standard Python 3 distribution, you can create and *activate*
+a virtual environment via::
+
+  python3 -m venv VIRTUAL_ENVIRONMENT_PATH
+  source VIRTUAL_ENVIRONMENT_PATH/bin/activate
+
+If you are using the `Anaconda <https://www.anaconda.com/distribution/>`_
+distribution of Python 3, you can create and activate a virtual environment via::
+
+  conda create --name VIRTUAL_ENVIRONMENT_NAME
+  conda activate VIRTUAL_ENVIRONMENT_NAME
+
+Now that you have your virtual environment set up, we can install the actual library::
+
+  pip install dataworkspaces
+
+To verify that it was installed correctly, run::
+
+  dws --help
+
+
+Installation via the source tree
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+You can clone the source tree and install it as follows::
+
+  git clone git@github.com:data-workspaces/data-workspaces-core.git
+  cd data-workspaces-python
+  pip install `pwd`
+  dws --help # just a sanity check that it was installed correctly
+
 
 Concepts
 --------
@@ -156,29 +212,6 @@ Taken together, these features let you:
 6. Easily reproduce your environment on a new machine to parallelize work.
 7. Publish your environment on a site like GitHub or GitLab for others to download and explore.
 
-Installation
-------------
-Rerequisites
-~~~~~~~~~~~~
-This software runs directly on Linux and MacOSx. Windows is supported by via the
-`Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_. The following software should be pre-installed:
-
-* git
-* Python 3.5 or later
-* Optionally, the `rclone <https://rclone.org>`_ utility, if you are going to be
-  using it to sync with a remote copy of your data.
-
-Installation via pip
-~~~~~~~~~~~~~~~~~~~~
-TODO
-
-Installation via the source tree
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-You can clone the source tree and install it as follows::
-
-  git clone git@github.com:jfischer/data-workspaces-python.git
-  cd data-workspaces-python
-  pip install `pwd`
 
 Commmand Line Interface
 -----------------------

@@ -34,6 +34,7 @@ Unix-like systems, including Linux, MacOS, and on Windows via the
    tutorial
    commands
    resources
+   lineage
    internals
 
 

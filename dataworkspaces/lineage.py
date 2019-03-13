@@ -1,5 +1,8 @@
 """
-API for tracking data lineage
+This module  provides an API for tracking
+*data lineage* -- the history of how a given result was created, including the
+versions of original source data and the various steps run in the *data pipeline*
+to produce the final result.
 """
 import sys
 from abc import ABC, abstractmethod
@@ -26,6 +29,10 @@ from dataworkspaces.resources.resource import CurrentResources
 ##########################################################################
 
 class Lineage(contextlib.AbstractContextManager):
+    """This is the main object for tracking the execution of a step.
+    Rather than instantiating it directly, use the :class:`~LineageBuilder`
+    class to construct your :class:`~Lineage` instance.
+    """
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
@@ -149,6 +156,56 @@ def make_lineage(parameters:Dict[str,Any], inputs:List[Union[str, ResourceRef]],
                    command_line=[sys.executable]+sys.argv)
 
 class LineageBuilder:
+    """Use this class to declaratively build :class:`~Lineage` objects. Instantiate
+    a LineageBuilder instance, and call a sequence of configuration methods
+    to specify your inputs, parameters, your workspace (if the script is not
+    already inside the workspace), and whether this is a results step. Each
+    configuration method returns the builder, so you can chain them together.
+    Finally, call :func:`~eval` to instantiate the :class:`~Lineage` object.
+
+    **Configuration Methods**
+
+    To specify the workflow step's name, call one of:
+
+    * :func:`~as_script_step` - the script's name will be used to infer the step
+    * with_step_name - explicitly specify the step name
+
+    To specify the parameters of the step (e.g. command line arguments), use the
+    :func:`~with_parameters` method.
+
+    To specify the input of the step call one or more of:
+
+    * :func:`~with_input_path` - resolve the local filesystem path to a resource and
+      subpath and add it to the lineage as inputs. May be called more than once.
+    * :func:`~with_input_paths` - resolve a list of local filesystem paths to
+      resources and subpaths and add them to the lineage as inputs. May be called
+      more than once.
+    * :func:`~with_input_ref` - add the resource and subpath to the lineage as an input.
+      May be called more than once.
+    * :func:`~with_no_inputs` - mutually exclusive with the other input methods. This
+      signals that there are no inputs to this step.
+
+    If you need to specify the workspace's root directory, use the
+    :func:`~with_workspace_directory` method. Otherwise, the lineage API will attempt
+    to infer the workspace directory by looking at the path of the script.
+
+    Call :func:`~as_results_step` to indicate that this step is producing results.
+    This will cause a ``results.json`` file and a ``lineage.json`` file to be created
+    in the specified directory.
+
+    **Example**
+
+    Here is an example where we build a :class:`~Lineage` object for a script,
+    that has one input, and that produces results::
+
+      lineage = LineageBuilder()\\
+                  .as_script_step()\\
+                  .with_parameters({'gamma':0.001})\\
+                  .with_input_path(args.intermediate_data)\\
+                  .as_results_step().eval()
+
+    **Methods**
+    """
     def __init__(self):
         self.step_name = None         # type: Optional[str]
         self.command_line = None      # type: Optional[List[str]]
@@ -219,6 +276,10 @@ class LineageBuilder:
         return self
 
     def eval(self) -> Lineage:
+        """Validate the current configuration, making sure all required
+        properties have been specified, and return a :class:`~Lineage` object
+        with the requested configuration.
+        """
         assert self.step_name is not None, "Need to specify step name"
         assert self.parameters is not None, "Need to specify parameters"
         assert self.no_inputs or (self.inputs is not None),\
