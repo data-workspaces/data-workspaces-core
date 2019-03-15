@@ -7,6 +7,8 @@ The Lineage API is provided by the module ``dataworkspaces.lineage``.
 .. automodule:: dataworkspaces.lineage
    :no-undoc-members:
 
+Classes
+-------
 
 .. autoclass:: Lineage()
    :members:
