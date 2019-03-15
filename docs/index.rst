@@ -26,6 +26,19 @@ Data Workspaces runs on
 Unix-like systems, including Linux, MacOS, and on Windows via the
 `Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_.
 
+Data Workspaces lets you:
+
+1. Track and version all the different resources for your data science project
+   from one place.
+2. Automatically track the full history of your experimental results. Scripts can easily be
+   developed to build reports on these results.
+3. Reproduce any prior experiment, including the source data, code, and configuration parameters used.
+4. Go back to a prior experiment as a "branching-off" point to explore additional permuations.
+5. Collaborate with others on the same project, sharing data, code, and results.
+6. Easily reproduce your environment on a new machine to parallelize work.
+7. Publish your environment on a site like GitHub or GitLab for others to download and explore.
+
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

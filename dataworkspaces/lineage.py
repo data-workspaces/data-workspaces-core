@@ -3,6 +3,7 @@ This module  provides an API for tracking
 *data lineage* -- the history of how a given result was created, including the
 versions of original source data and the various steps run in the *data pipeline*
 to produce the final result.
+
 """
 import sys
 from abc import ABC, abstractmethod
@@ -61,10 +62,20 @@ class Lineage(contextlib.AbstractContextManager):
         self.in_progress = True
 
     def add_output_path(self, path:str):
-       (name, subpath) = self.resources.map_local_path_to_resource(path)
-       self.step.add_output(self.store, ResourceRef(name, subpath))
+        """Resolve the path to a resource name and subpath. Add
+        that to the lineage as an output of the step. From this point on,
+        if the step fails (:func:`~abort` is called), the associated resource
+        and subpath will be marked as being in an "unknown" state.
+        """
+        (name, subpath) = self.resources.map_local_path_to_resource(path)
+        self.step.add_output(self.store, ResourceRef(name, subpath))
 
     def add_output_ref(self, ref:ResourceRef):
+        """Add the resource reference to the lineage as an output of the step.
+        From this point on, if the step fails (:func:`~abort` is called), the
+        associated resource and subpath will be marked as being in an
+        "unknown" state.
+        """
         self.step.add_output(self.store, ref)
 
     def abort(self):
@@ -103,7 +114,11 @@ class Lineage(contextlib.AbstractContextManager):
         return False # don't suppress any exception
 
 class ResultsLineage(Lineage):
-    """Lineage for a results step.
+    """Lineage for a results step. This marks the :class:`~Lineage`
+    object as generating results. At the end of the step execution,
+    a ``lineage.json`` file will be written to the results directory.
+    It also adds the :func:`~write_results` method for writing a
+    JSON summary of the final results.
     """
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
