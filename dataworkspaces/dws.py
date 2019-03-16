@@ -11,6 +11,7 @@ import re
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
+from collections.abc import Sequence
 
 from .commands.init import init_command
 from .commands.add import add_command
@@ -131,7 +132,14 @@ class ResourceParamType(click.ParamType):
 
     def convert(self, value, param, ctx):
         parsed = []
-        for r in value.lower().split(','):
+        if isinstance(value, str):
+            rl = value.lower().split(',')
+        elif isinstance(value, Sequence):
+            rl = value
+        else:
+            self.failed("Invalid resource role list '%s', must be a string or a sequence"
+                        % str(value))
+        for r in rl:
             if r=='all':
                 return [r for r in RESOURCE_ROLE_CHOICES]
             elif r in (ResourceRoles.SOURCE_DATA_SET, 's'):
