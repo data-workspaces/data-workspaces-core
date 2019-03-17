@@ -352,7 +352,7 @@ class LineageBuilder:
         if self.inputs is None:
             self.inputs = copy(paths)
         else:
-            self.inputs.extend(path)
+            self.inputs.extend(paths)
         return self
 
     def with_input_ref(self, ref:ResourceRef) -> 'LineageBuilder':

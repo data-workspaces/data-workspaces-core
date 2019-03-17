@@ -6,8 +6,7 @@ import json
 import click
 
 from dataworkspaces.resources.resource import SnapshotResources
-from .snapshot import get_snapshot_history_file_path,\
-                      get_snapshot_lineage_dir
+from .snapshot import get_snapshot_lineage_dir
 from .restore import find_snapshot
 
 def lineage_files_for_snapshot(workspace_dir, snapshot):
@@ -43,16 +42,13 @@ def compare_lineage_files(f1, f2):
 
 
 def diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, batch, verbose):
-    sh_file = get_snapshot_history_file_path(workspace_dir)
-    with open(sh_file, 'r') as f:
-        sh_data = json.load(f)
-    (snapshot1, tag1) = find_snapshot(snapshot_or_tag1, sh_data)
+    (snapshot1, tag1) = find_snapshot(snapshot_or_tag1, workspace_dir)
     snstr1 = "%s, tag %s" % (snapshot1, tag1) if tag1 else snapshot1
     sn1_resources = SnapshotResources.read_shapshot_manifest(snapshot1,
                                                              workspace_dir,
                                                              batch, verbose)
     sn1_names = sn1_resources.get_names()
-    (snapshot2, tag2) = find_snapshot(snapshot_or_tag2, sh_data)
+    (snapshot2, tag2) = find_snapshot(snapshot_or_tag2, workspace_dir)
     snstr2 = "%s, tag %s" % (snapshot2, tag2) if tag2 else snapshot2
     sn2_resources = SnapshotResources.read_shapshot_manifest(snapshot2,
                                                              workspace_dir,

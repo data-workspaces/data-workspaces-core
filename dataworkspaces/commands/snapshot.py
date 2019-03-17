@@ -6,11 +6,11 @@ import re
 import json
 import datetime
 import getpass
-import shutil
 
 import click
 
-from dataworkspaces.utils.git_utils import is_a_git_hash, validate_git_fat_in_path_if_needed
+from dataworkspaces.utils.git_utils import \
+    is_a_git_hash, is_a_shortened_git_hash, validate_git_fat_in_path_if_needed
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.snapshot_utils import \
     expand_dir_template, validate_template, make_re_pattern_for_dir_template
@@ -18,11 +18,30 @@ import dataworkspaces.commands.actions as actions
 from .params import RESULTS_DIR_TEMPLATE, RESULTS_MOVE_EXCLUDE_FILES,\
                     get_config_param_value, get_local_param_from_file,\
                     HOSTNAME
-from .init import get_config_file_path
+from .init import get_config_file_path, get_snapshot_metadata_dir_path
 from dataworkspaces.utils.lineage_utils import \
     get_current_lineage_dir, get_snapshot_lineage_dir,\
     LineageStoreCurrent
-from dataworkspaces.errors import InternalError, ConfigurationError
+from dataworkspaces.errors import ConfigurationError
+
+def find_metadata_for_tag(tag, workspace_dir):
+    """Return the snapshot metadata for the specified
+    tag. Returns None if no such tag exists.
+    """
+    md_dir=get_snapshot_metadata_dir_path(workspace_dir)
+    def process_dir(dirpath):
+        for f in os.listdir(dirpath):
+            p = join(dirpath, f)
+            if isdir(p):
+                result = process_dir(p)
+                if result is not None:
+                    return result
+            elif f.endswith('_md.json'):
+                with open(p, 'r') as fobj:
+                    data = json.load(fobj)
+                if tag in data['tags']:
+                    return data
+    return process_dir(md_dir)
 
 
 class TakeResourceSnapshot(actions.Action):
@@ -38,6 +57,7 @@ class TakeResourceSnapshot(actions.Action):
 
     def __str__(self):
         return "Run snapshot actions for %s" % str(self.resource)
+
 
 class WriteSnapshotFile(actions.Action):
     """Creates a snapshot file and populates the
@@ -85,31 +105,102 @@ class MoveCurrentFilesForResults(actions.Action):
         return 'Move results files for resource %s to subdirectory %s' %\
             (self.resource.name, self.rel_dest_root)
 
+def get_next_snapshot_number(workspace_dir):
+    """Snapshot numbers are assigned based on how many snapshots have
+    already been taken. Counting starts at 1. Note that snaphsot
+    numbers are not necessarily unique, as people could simultaneously
+    take snapshots in different copies of the workspace. Thus, we
+    usually combine the snapshot with the hostname.
+    """
+    md_dirpath = get_snapshot_metadata_dir_path(workspace_dir)
+    if not isdir(md_dirpath):
+        return 1
+    # we recursively walk the tree to be future-proof in case we
+    # find that we need to start putting metadata into subdirectories.
+    def process_dir(dirpath):
+        cnt=0
+        for f in os.listdir(dirpath):
+            p = join(dirpath, f)
+            if isdir(p):
+                cnt += process_dir(p)
+            elif f.endswith('_md.json'):
+                cnt += 1
+        return cnt
+    return 1 + process_dir(md_dirpath)
 
-# TODO: If not a new snapshot, merge history entries!
-class AppendSnapshotHistory(actions.Action):
+
+_CONF_MESSAGE=\
+"A snapshot with this hash already exists. Do you want to update "+\
+"the message from '%s' to '%s'?"
+
+def merge_snapshot_metadata(old, new, batch):
+    """Merge two snapshot metadata dicts for when someone creates
+    a snapshot without making changes. They might have
+    added more tags or changed the message.
+    """
+    assert old['hash'] == new['hash']
+    tags = old['tags'] + [tag for tag in new['tags']
+                          if tag not in old['tags']]
+    if old['message']!=new['message'] and (new['message'] is not None) \
+       and (not batch) and \
+       click.confirm(_CONF_MESSAGE%(old['message'], new['message'])):
+        message = new['message']
+    else:
+        message = old['message']
+    return {
+        'hash':old['hash'],
+        'tags':tags,
+        'message':message,
+        'relative_destination_path':old['relative_destination_path'],
+        'hostname':old['hostname'],
+        'timestamp':old['timestamp'],
+        # Save a new timestamp to indicate that a snapshot was taken.
+        # This also servces to force there to be a change in the dws
+        # git repo.
+        'updated_timestamp':new['timestamp']
+    }
+
+
+class WriteSnapshotMetadata(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
-    def __init__(self, ns, verbose, snapshot_history_file,
-                 snapshot_history_data, tag, message, timestamp, rel_dest_root,
+    @actions.provides_to_ns('snapshot_metadata_file', str)
+    def __init__(self, ns, verbose, batch, workspace_dir,
+                 tag, message, timestamp, rel_dest_root,
                  hostname):
         super().__init__(ns, verbose)
-        self.snapshot_data = {
-            'tag':tag, 'message':message,
-            'relative_destination_path':rel_dest_root,
-            'hostname':hostname,
-            'timestamp':timestamp.isoformat()
-        }
-        self.snapshot_history_file = snapshot_history_file
-        self.snapshot_history_data = snapshot_history_data
+        self.batch = batch
+        self.snapshot_metadata_dir = get_snapshot_metadata_dir_path(workspace_dir)
+        self.tag = tag
+        self.message = message
+        self.timestamp = timestamp
+        self.rel_dest_root = rel_dest_root
+        self.hostname = hostname
 
     def run(self):
-        self.snapshot_data['hash'] = self.ns.snapshot_hash
-        self.snapshot_history_data.append(self.snapshot_data)
-        with open(self.snapshot_history_file, 'w') as f:
-            json.dump(self.snapshot_history_data, f, indent=2)
+        snapshot_data = {
+            'hash':self.ns.snapshot_hash,
+            'tags':[self.tag] if self.tag is not None else [],
+            'message':self.message,
+            'relative_destination_path':self.rel_dest_root,
+            'hostname':self.hostname,
+            'timestamp':self.timestamp.isoformat()
+        }
+        if not isdir(self.snapshot_metadata_dir):
+            os.mkdir(self.shapshot_metadata_dir) # just in case
+        filename = join(self.snapshot_metadata_dir,
+                        self.ns.snapshot_hash+'_md.json')
+        if exists(filename):
+            with open(filename, 'r') as f:
+                old_snapshot_data = json.load(f)
+            snapshot_data = merge_snapshot_metadata(old_snapshot_data,
+                                                    snapshot_data,
+                                                    self.batch)
+        with open(filename, 'w') as f:
+            json.dump(snapshot_data, f, indent=2)
+        self.ns.snapshot_metadata_file = filename
 
     def __str__(self):
-        return "Append snapshot metadata to .dataworkspace/snapshots/snapshot_history.json"
+        return "Write snapshot metadata file to .dataworkspace/snapshot_metadata/HASH_md.json"
 
 class SaveLineageData(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
@@ -167,30 +258,25 @@ class SaveLineageData(actions.Action):
             self.num_files
 
 
-def get_snapshot_history_file_path(workspace_dir):
-    return join(workspace_dir,
-                '.dataworkspace/snapshots/snapshot_history.json')
 
 def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     print("snapshot of %s, tag=%s, message=%s" % (workspace_dir, tag, message))
     snapshot_timestamp = datetime.datetime.now()
-    if (tag is not None) and is_a_git_hash(tag):
+    if (tag is not None) and (is_a_git_hash(tag) or is_a_shortened_git_hash(tag)):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
+    if tag is not None:
+        existing_tag_md = find_metadata_for_tag(tag, workspace_dir)
+        if existing_tag_md:
+            raise ConfigurationError("Tag '%s' already exists for snapshot %s taken %s"%
+                                     (tag, existing_tag_md['hash'],
+                                      existing_tag_md['timestamp']))
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     resource_names = current_resources.by_name.keys()
     plan = []
     ns = actions.Namespace()
     ns.map_of_hashes = actions.Promise(dict, "TakeResourceSnapshot")
 
-    snapshot_history_file = get_snapshot_history_file_path(workspace_dir)
-    if not exists(snapshot_history_file):
-        raise InternalError("Missing snapshot history file at %s" %
-                            snapshot_history_file)
-    with open(snapshot_history_file, 'r') as f:
-        snapshot_history_data = json.load(f)
-    # Snapshot numbers are just assigned based on where they are in the
-    # history file. Counting starts at 1.
-    snapshot_number = len(snapshot_history_data)+1
+    snapshot_number = get_next_snapshot_number(workspace_dir)
     with open(get_config_file_path(workspace_dir), 'r') as f:
         config_data = json.load(f)
     exclude_files = set(get_config_param_value(config_data, RESULTS_MOVE_EXCLUDE_FILES))
@@ -216,13 +302,12 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
         plan.append(
             TakeResourceSnapshot(ns, verbose, r))
     plan.append(WriteSnapshotFile(ns, verbose, workspace_dir, current_resources))
-    plan.append(AppendSnapshotHistory(ns, verbose, snapshot_history_file,
-                                      snapshot_history_data, tag, message,
-                                      snapshot_timestamp, rel_dest_root,
-                                      hostname))
+    plan.append(WriteSnapshotMetadata(ns, verbose, batch, workspace_dir,
+                                      tag, message, snapshot_timestamp,
+                                      rel_dest_root, hostname))
     plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                lambda:[ns.snapshot_filename,
-                                       snapshot_history_file]))
+                                       ns.snapshot_metadata_file]))
     # see if we need to add lineage files
     save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names,
                                    results_resources, rel_dest_root)

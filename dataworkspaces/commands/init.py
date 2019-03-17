@@ -23,9 +23,8 @@ def get_config_file_path(workspace_dir):
 def get_snapshot_dir_path(workspace_dir):
     return join(workspace_dir, '.dataworkspace/snapshots')
 
-def get_snapshot_history_file_path(workspace_dir):
-    return join(get_snapshot_dir_path(workspace_dir),
-                "snapshot_history.json")
+def get_snapshot_metadata_dir_path(workspace_dir):
+    return join(workspace_dir, '.dataworkspace/snapshot_metadata')
 
 
 class MakeWorkSpaceConfig(actions.Action):
@@ -39,7 +38,7 @@ class MakeWorkSpaceConfig(actions.Action):
         self.local_params_fpath = get_local_params_file_path(workspace_dir)
         self.gitignore_fpath = join(workspace_dir, '.dataworkspace/.gitignore')
         self.snapshots_dir  = get_snapshot_dir_path(workspace_dir)
-        self.snapshots_fpath =  get_snapshot_history_file_path(workspace_dir)
+        self.snapshot_metadata_dir = get_snapshot_metadata_dir_path(workspace_dir)
         self.workspace_name = workspace_name
         self.local_params = get_local_defaults(hostname)
         if isdir(self.dataworkspace_dir):
@@ -49,6 +48,7 @@ class MakeWorkSpaceConfig(actions.Action):
     def run(self):
         os.mkdir(self.dataworkspace_dir)
         os.mkdir(self.snapshots_dir)
+        os.mkdir(self.snapshot_metadata_dir)
         with open(self.config_fpath, 'w') as f:
             json.dump({'name':self.workspace_name, 'dws-version':__version__,
                        'global_params':get_all_defaults()},
@@ -59,8 +59,6 @@ class MakeWorkSpaceConfig(actions.Action):
             json.dump(self.local_params, f, indent=2)
         with open(self.resource_local_params_fpath, 'w') as f:
             json.dump({}, f, indent=2)
-        with open(self.snapshots_fpath, 'w') as f:
-            json.dump([], f, indent=2)
         with open(self.gitignore_fpath, 'w') as f:
             f.write("%s\n" % basename(self.local_params_fpath))
             f.write("%s\n" % basename(self.resource_local_params_fpath))
@@ -125,11 +123,9 @@ def init_command(name, hostname, create_resources,
     step = MakeWorkSpaceConfig(ns, verbose, workspace_dir, name, hostname)
     config_fpath = step.config_fpath
     resources_fpath = step.resources_fpath
-    snapshots_fpath = step.snapshots_fpath
     gitignore_fpath = step.gitignore_fpath
     plan.append(step)
-    files_to_add = [config_fpath, resources_fpath, snapshots_fpath,
-                    gitignore_fpath]
+    files_to_add = [config_fpath, resources_fpath, gitignore_fpath]
     if git_fat_remote is not None:
         validate_git_fat_in_path()
         dot_git_fat_fpath = get_dot_gitfat_file_path(workspace_dir)

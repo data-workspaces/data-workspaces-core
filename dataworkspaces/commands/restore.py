@@ -3,17 +3,17 @@ import json
 import os
 from os.path import join, isdir
 import datetime
-import shutil
-
 import click
 
-from dataworkspaces.utils.git_utils import is_a_git_hash, is_a_git_fat_repo, validate_git_fat_in_path_if_needed
+from dataworkspaces.utils.git_utils import \
+    is_a_git_hash, is_a_shortened_git_hash, is_a_git_fat_repo, \
+    validate_git_fat_in_path_if_needed
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort
 from dataworkspaces.resources.resource import \
     CurrentResources, SnapshotResources
-from .snapshot import TakeResourceSnapshot, AppendSnapshotHistory,\
-                      get_snapshot_history_file_path,\
+from .init import get_snapshot_metadata_dir_path
+from .snapshot import TakeResourceSnapshot, WriteSnapshotMetadata,\
                       get_snapshot_lineage_dir
 from dataworkspaces.utils.lineage_utils import \
     get_current_lineage_dir, LineageStoreCurrent
@@ -163,26 +163,51 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
                 names_to_leave.add(name)
     return (sorted(names_to_restore), sorted(names_to_add), sorted(names_to_leave))
 
-def find_snapshot(tag_or_hash, sh_data):
-    is_hash = is_a_git_hash(tag_or_hash)
-    for snapshot in sh_data:
-        if is_hash and snapshot['hash']==tag_or_hash:
-            return (tag_or_hash, snapshot['tag'])
-        elif (not is_hash) and snapshot['tag']==tag_or_hash:
-            return (snapshot['hash'], snapshot['tag'])
-    if is_hash:
+
+def find_snapshot(tag_or_hash, workspace_dir):
+    """Return a (hash, tag) pair for the tag or hash. Throws
+    a configuration error if not found.
+    """
+    if is_a_git_hash(tag_or_hash):
+        is_hash = True
+        is_short_hash = False
+        # we'll be case-insensitive for full hashes
+        tag_or_hash = tag_or_hash.lower()
+    elif is_a_shortened_git_hash(tag_or_hash):
+        is_short_hash = True
+        is_hash = False
+    else:
+        is_hash = is_short_hash = False
+    md_dir=get_snapshot_metadata_dir_path(workspace_dir)
+    def process_dir(dirpath):
+        for f in os.listdir(dirpath):
+            p = join(dirpath, f)
+            if isdir(p):
+                result = process_dir(p)
+                if result is not None:
+                    return result
+            elif f.endswith('_md.json'):
+                with open(p, 'r') as fobj:
+                    data = json.load(fobj)
+                if (is_hash and data['hash']==tag_or_hash) or \
+                   (is_short_hash and data['hash'].endswith(tag_or_hash)) or\
+                   ((not (is_hash or is_short_hash)) and
+                    tag_or_hash in data['tags']):
+                    return (data['hash'], data['tags'])
+    result = process_dir(md_dir)
+    if result is not None:
+        return result
+    elif is_hash or is_short_hash:
         raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
     else:
         raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
+
 
 def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                     only=None, leave=None, no_new_snapshot=False):
     validate_git_fat_in_path_if_needed(workspace_dir)
     # First, find the history entry
-    sh_file = get_snapshot_history_file_path(workspace_dir)
-    with open(sh_file, 'r') as f:
-        sh_data = json.load(f)
-    (snapshot_hash, snapshot_tag) = find_snapshot(tag_or_hash, sh_data)
+    (snapshot_hash, snapshot_tags) = find_snapshot(tag_or_hash, workspace_dir)
     snapshot_resources = SnapshotResources.read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     original_current_resource_names = current_resources.get_names()
@@ -190,10 +215,10 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         process_names(original_current_resource_names, snapshot_resources.get_names(), only, leave)
     plan = []
     creating_new_snapshot = False # True if we are creating a new snapshot and hash
-    need_to_clear_lineage = False # True if we did a partial restore and we need to clear out lineage data
     ns = actions.Namespace()
     ns.map_of_hashes = {}
     names_to_restore_lineage = []
+    results_resources = set()
     for name in names_to_restore:
         # resources in both current and restored
         r = current_resources.by_name[name]
@@ -207,6 +232,9 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                 raise click.BadOptionUsage(message="Resource '%s' has a Results role and should not be included in the --only list" %
                                            name)
             names_to_leave.append(name)
+            results_resources.add(name)
+    # remove any names that were results (they were moved to names_to_leave)
+    names_to_restore = [name for name in names_to_restore if name not in results_resources]
     for name in names_to_add:
         # These are resources which are in the restored snapshot, but not the
         # current resources. We'll grab the resource objects from snapshot_resources
@@ -225,12 +253,12 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
         if not snapshot_resources.is_a_current_name(name):
             # we are just leaving a resource added since snapshot was taken
             plan.append(AddResourceToSnapshotResourceList(ns, verbose, r, snapshot_resources))
-        if not no_new_snapshot:
+        if (name not in results_resources) and  (not no_new_snapshot):
             plan.append(TakeResourceSnapshot(ns, verbose, r))
             creating_new_snapshot = True
     need_to_write_resources_file = \
         original_current_resource_names!=snapshot_resources.get_names()
-    tagstr = ', tag=%s' % snapshot_tag if snapshot_tag else ''
+    tagstr = ', tags=%s' % ', '.join(snapshot_tags) if snapshot_tags else ''
     if creating_new_snapshot:
         new_snapshot_desc = \
             "Partial restore of snapshot %s%s, resulting in a new snapshot"% \
@@ -239,21 +267,22 @@ def restore_command(workspace_dir, batch, verbose, tag_or_hash,
                                                  snapshot_resources)
         plan.append(write_revised)
         hostname = get_local_param_from_file(workspace_dir, HOSTNAME)
-        history_action = \
-            AppendSnapshotHistory(ns, verbose, sh_file, sh_data, None,
-                                  new_snapshot_desc,
+        metadata_action = \
+            WriteSnapshotMetadata(ns, verbose, batch, workspace_dir,
+                                  None, new_snapshot_desc,
                                   datetime.datetime.now(),
                                   rel_dest_root=None, hostname=hostname)
-        plan.append(history_action)
+        plan.append(metadata_action)
         if need_to_write_resources_file:
             plan.append(WriteRevisedResourceFile(ns, verbose, snapshot_resources))
             plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                        lambda:[ns.snapshot_filename,
-                                               sh_file,
+                                               ns.snapshot_metadata_file,
                                                snapshot_resources.resource_file]))
         else:
             plan.append(actions.GitAdd(ns, verbose, workspace_dir,
-                                       lambda:[ns.snapshot_filename, sh_file]))
+                                       lambda:[ns.snapshot_filename,
+                                               ns.snapshot_metadata_file]))
     elif need_to_write_resources_file:
         plan.append(actions.GitAdd(ns, verbose, workspace_dir,
                                    [snapshot_resources.resource_file]))

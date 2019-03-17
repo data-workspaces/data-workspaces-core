@@ -83,7 +83,7 @@ class TestApi(unittest.TestCase):
         self.assertEqual(1, len(history))
         self.assertEqual(1, history[0].snapshot_number)
         self.assertEqual(hash1, history[0].hash)
-        self.assertEqual('V1', history[0].tag)
+        self.assertEqual(['V1'], history[0].tags)
         self.assertEqual('first snapshot', history[0].message)
         with open(join(TEMPDIR, 'code/test.py'), 'a') as f:
             f.write('print("Version 2")\n')
@@ -92,7 +92,7 @@ class TestApi(unittest.TestCase):
         self.assertEqual(2, len(history))
         self.assertEqual(2, history[1].snapshot_number)
         self.assertEqual(hash2, history[1].hash)
-        self.assertEqual('V2', history[1].tag)
+        self.assertEqual(['V2'], history[1].tags)
         self.assertEqual('second snapshot', history[1].message)
         restore('V1', TEMPDIR)
         history = get_snapshot_history(TEMPDIR)

@@ -1,39 +1,58 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 import os
+from os.path import join, isdir
 import json
 
 import click
 
 import dataworkspaces.commands.actions as actions
+from .init import get_snapshot_metadata_dir_path
+from dataworkspaces.resources.resource import \
+    RESOURCE_ROLE_CHOICES, get_resource_file_path
 
-from dataworkspaces.resources.resource import RESOURCE_ROLE_CHOICES 
 
-SNAPSHOT_HISTORY_FILE = '.dataworkspace/snapshots/snapshot_history.json'
-RESOURCE_FILE = '.dataworkspace/resources.json'
+def get_snapshot_metadata(workspace, reverse=True):
+    def process_dir(dirpath):
+        for f in os.listdir(dirpath):
+            p = join(dirpath, f)
+            if isdir(p):
+                process_dir(p)
+            elif f.endswith('_md.json'):
+                with open(p, 'r') as fobj:
+                    data = json.load(fobj)
+                yield data
+    md_path = get_snapshot_metadata_dir_path(workspace)
+    metadata = [data for data in process_dir(md_path)]
+    metadata.sort(key=lambda data:data['timestamp'], reverse=reverse)
+    return metadata
+
 
 class ReadSnapshotHistory(actions.Action):
-    def __init__(self, ns, verbose, snapshot_history_file, limit=0):
+    def __init__(self, ns, verbose, workspace_dir, limit=None):
         super().__init__(ns, verbose)
-        self.snapshot_history_file = snapshot_history_file
+        self.workspace_dir = workspace_dir
         self.limit = limit
 
     def run(self):
-        with open(self.snapshot_history_file, 'r') as f:
-            history = json.load(f)
-            num_snapshots = len(history)
+        # with open(self.snapshot_history_file, 'r') as f:
+        #     history = json.load(f)
+        #     num_snapshots = len(history)
+        history = get_snapshot_metadata(self.workspace_dir)
         click.echo("\nHistory of snapshots")
         click.echo("%s %s %s %s" %
-                   ('Hash'.ljust(40), 'Tag'.ljust(10), 'Created'.ljust(19),
+                   ('Hash'.ljust(40), 'Tags'.ljust(10), 'Created'.ljust(19),
                     'Message'))
-        for v in reversed(history[-self.limit:]):
+        for v in history[0:self.limit] if self.limit is not None else history:
             click.echo('%s %s %s %s' %
                        (v['hash'],
-                        (v['tag'] if v['tag'] is not None else 'N/A').ljust(10),
+                        (', '.join(v['tags']) if v['tags'] is not None else 'N/A').ljust(10),
                         v['timestamp'][0:-7],
                         v['message'] if v['message'] is not None and
                                         v['message']!='' else 'N/A'))
-        limit = num_snapshots if self.limit == 0 else self.limit
-        click.echo('Showing %d of %d snapshots' % (limit, num_snapshots))
+        num_shown = len(history) if self.limit is None \
+                    else min(self.limit, len(history))
+        click.echo('Showing %d of %d snapshots' %
+                   (num_shown, len(history)))
 
     def __str__(self):
         return ("Read snapshot metadata from %s" % self.snapshot_history_file)
@@ -83,16 +102,17 @@ class ReadResources(actions.Action):
 
 
 def show_snapshot_history(ns, workspace_dir, limit, batch, verbose):
-    snapshot_file = os.path.join(workspace_dir, SNAPSHOT_HISTORY_FILE)
-    if not os.path.exists(snapshot_file):
-        if verbose:
-            click.echo('No snapshot file')
-        return
-    output_history = ReadSnapshotHistory(ns, verbose, snapshot_file, limit=limit)
+    # snapshot_file = os.path.join(workspace_dir, SNAPSHOT_HISTORY_FILE)
+    # if not os.path.exists(snapshot_file):
+    #     if verbose:
+    #         click.echo('No snapshot file')
+    #     return
+    output_history = ReadSnapshotHistory(ns, verbose, workspace_dir,
+                                         limit=limit)
     return output_history
 
 def show_current_status(ns, workspace_dir, batch, verbose):
-    rsrc_file = os.path.join(workspace_dir, RESOURCE_FILE)
+    rsrc_file = get_resource_file_path(workspace_dir)
     if not os.path.exists(rsrc_file):
         if verbose:
             click.echo('No resource file')
