@@ -309,6 +309,8 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
                 raise UserAbort()
         else:
             existing_tag_md = None
+    else:
+        existing_tag_md = None
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     resource_names = current_resources.by_name.keys()
     plan = []
