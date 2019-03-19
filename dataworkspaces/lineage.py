@@ -36,7 +36,11 @@ The lineage API captures this data for each step. Here is a view of the data cap
 To do this, we need use the following classes:
 
 * :class:`~ResourceRef` - A reference to a resource for use as a step input or output.
-  A reference contains a resource name and an optional path within that resource.
+  A ResourceRef contains a resource name and an optional path within that resource.
+  This lets you manage lineage down to the directory or even file level. The APIs also
+  support specifying a path o the local filesystem instead of a ResourceRef. This path
+  is automatically resolved to a ResourceRef (it must map to the a location under the
+  local path of a resource).
 * :class:`~Lineage` - The main lineage object, instantiated at the start of your step.
   At the beginning of your step, you specify the inputs, parameters, and outputs. At the
   end of the step, the data is saved, along with any results you might have from that step.
@@ -94,6 +98,7 @@ Here is an example usage of the lineage API in a command line script::
   # boilerplate to call our main function if this is called as a script.
   if __name__ == '__main__:
       sys.exit(main())
+
 """
 import sys
 from abc import ABC, abstractmethod
