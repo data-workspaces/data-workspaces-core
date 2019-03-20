@@ -38,9 +38,11 @@ To do this, we need use the following classes:
 * :class:`~ResourceRef` - A reference to a resource for use as a step input or output.
   A ResourceRef contains a resource name and an optional path within that resource.
   This lets you manage lineage down to the directory or even file level. The APIs also
-  support specifying a path o the local filesystem instead of a ResourceRef. This path
+  support specifying a path on the local filesystem instead of a ResourceRef. This path
   is automatically resolved to a ResourceRef (it must map to the a location under the
-  local path of a resource).
+  local path of a resource). By storing :class:`~ResourceRef`s instead of hard-coded
+  filesystem paths, we can include non-local resources (like an S3 bucket) and ensure
+  that the workspace is easily deployed on a new machine.
 * :class:`~Lineage` - The main lineage object, instantiated at the start of your step.
   At the beginning of your step, you specify the inputs, parameters, and outputs. At the
   end of the step, the data is saved, along with any results you might have from that step.
