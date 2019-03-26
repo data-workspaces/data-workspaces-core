@@ -10,6 +10,7 @@ and execute them via run_plan()
 import os
 from os.path import isfile, abspath, expanduser, join, isabs, isdir, dirname, exists
 import click
+import shutil
 from subprocess import run, PIPE
 import re
 from tempfile import NamedTemporaryFile
@@ -50,7 +51,9 @@ def write_and_hash_file(write_fn, filename_template, verbose):
         if exists(target_name):
             return (hashval, target_name, False)
         else:
-            os.rename(tfilename, target_name)
+            # issue #21 - need to use a copy instead of a rename,
+            # in case /tmp is on a different filesystem.
+            shutil.copyfile(tfilename, target_name)
             return (hashval, target_name, True)
     finally:
         if exists(tfilename):
