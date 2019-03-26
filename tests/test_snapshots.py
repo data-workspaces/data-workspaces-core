@@ -74,6 +74,7 @@ class TestSnapshots(BaseCase):
         self._run_dws(['snapshot', '-m', "'first tag'", 'S1'])
         got_error = False
         try:
+            print("Re-use of snapshot tag in batch mode should fail:")
             self._run_dws(['snapshot', '-m', "'second tag'", 'S1'])
         except subprocess.CalledProcessError:
             got_error = True
