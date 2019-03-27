@@ -1,5 +1,6 @@
 """
-Integration with Jupyter notebooks
+Integration with Jupyter notebooks. This module provides a
+:class:`~LineageBuilder` subclass to simplify Lineage for Notebooks.
 """
 
 import ipykernel
@@ -57,7 +58,7 @@ def is_notebook():
 
 class NotebookLineageBuilder(LineageBuilder):
     """Notebooks are the final step in a pipeline
-    (and potentially the only step). We customizer
+    (and potentially the only step). We customize
     the standard lineage builder to get the step
     name from the notebook's name and to always have
     a results directory.

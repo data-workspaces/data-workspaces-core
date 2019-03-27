@@ -33,6 +33,7 @@ The lineage API captures this data for each step. Here is a view of the data cap
                              =>|          |=>
                                ------------
 
+
 To do this, we need use the following classes:
 
 * :class:`~ResourceRef` - A reference to a resource for use as a step input or output.

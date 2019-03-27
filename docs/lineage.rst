@@ -1,6 +1,6 @@
 .. _lineage:
 
-5. Lineage API
+4. Lineage API
 ==============
 The Lineage API is provided by the module ``dataworkspaces.lineage``.
 

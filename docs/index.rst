@@ -46,8 +46,9 @@ Data Workspaces lets you:
    intro
    tutorial
    commands
-   resources
    lineage
+   kits
+   resources
    internals
 
 
