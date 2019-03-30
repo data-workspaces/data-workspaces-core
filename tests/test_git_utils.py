@@ -22,7 +22,8 @@ from dataworkspaces.utils.git_utils import \
     is_git_dirty, is_git_subdir_dirty, is_git_staging_dirty,\
     commit_changes_in_repo, checkout_and_apply_commit,\
     get_local_head_hash, commit_changes_in_repo_subdir,\
-    checkout_subdir_and_apply_commit, GIT_EXE_PATH
+    checkout_subdir_and_apply_commit, GIT_EXE_PATH,\
+    get_subdirectory_hash
 
 
 def makefile(relpath, contents):
@@ -381,6 +382,28 @@ class TestCheckoutSubdirAndApplyCommit(BaseCase):
         # run again with the same hash. It should do nothing, as there
         # are no changes
         checkout_subdir_and_apply_commit(TEMPDIR, 'subdir', restored_hash, True)
+
+TESTS_DIR=os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
+THIS_REPO_DIR=os.path.abspath(join(TESTS_DIR, '..'))
+class TestGetSubdirectoryHash(unittest.TestCase):
+    def test_subdir_hash(self):
+        """Test that we can obtain git's hash entry for data-workspaces-core/tests.
+        We validate the hash by running a git cat-file on the object and then
+        verifying that it contains this file and the makefile
+        """
+        tests_dir_hash = get_subdirectory_hash(THIS_REPO_DIR, 'tests', verbose=True)
+        r = subprocess.run([GIT_EXE_PATH, 'cat-file', '-p', tests_dir_hash],
+                           cwd=THIS_REPO_DIR, stdout=subprocess.PIPE, encoding='utf-8')
+        r.check_returncode()
+        files = set()
+        for line in r.stdout.split('\n'):
+            if len(line)==0:
+                continue
+            fields = line.split()
+            self.assertEqual(len(fields), 4, "Unexpected cat-file output: %s"%line)
+            files.add(fields[3])
+        self.assertTrue('test_git_utils.py' in files)
+        self.assertTrue('Makefile' in files)
 
 
 if __name__ == '__main__':
