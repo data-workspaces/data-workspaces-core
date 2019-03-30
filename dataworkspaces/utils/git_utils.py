@@ -254,7 +254,7 @@ def get_local_head_hash(git_root, verbose=False):
 
 def get_remote_head_hash(cwd, branch, verbose):
     cmd = [GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/'+branch]
-    try:
+    try: 
         output = call_subprocess(cmd, cwd, verbose).split('\n')[0].strip()
         if output=='':
             return None # remote has not commits
@@ -264,6 +264,32 @@ def get_remote_head_hash(cwd, branch, verbose):
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
+
+def get_subdirectory_hash(repo_dir, relpath, verbose=False):
+    """Get the hash of a subdirectory in the current repo using the
+    HEAD revision. This hash
+    includes file permissions. Is computed differently from how
+    directory hashes are computed.
+    """
+    cmd = "%s ls-tree -r HEAD '%s' | %s hash-object --stdin" % \
+          (GIT_EXE_PATH, relpath, GIT_EXE_PATH)
+    # cmd = "%s ls-files -s '%s' | %s hash-object --stdin" % \
+    #       (GIT_EXE_PATH, relpath, GIT_EXE_PATH)
+    if verbose:
+        click.echo("%s [run in %s]" % (cmd, repo_dir))
+    cp = run(cmd, cwd=repo_dir, encoding='utf-8', stdout=PIPE, stderr=PIPE,
+             shell=True)
+    cp.check_returncode()
+    if verbose:
+        click.echo(cp.stdout)
+    hashval = cp.stdout.strip()
+    if is_a_git_hash(hashval):
+        return hashval
+    else:
+        raise InternalError("Hash of git subdirectory %s returned a non-hash: '%s'"%
+                            (relpath, hashval))
+
+
 
 def get_dot_gitfat_file_path(workspace_dir):
     return join(workspace_dir, '.gitfat')
