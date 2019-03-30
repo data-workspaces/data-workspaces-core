@@ -267,14 +267,13 @@ def get_remote_head_hash(cwd, branch, verbose):
 
 def get_subdirectory_hash(repo_dir, relpath, verbose=False):
     """Get the hash of a subdirectory in the current repo using the
-    HEAD revision. This hash
-    includes file permissions. Is computed differently from how
-    directory hashes are computed.
+    HEAD revision. This hash includes file permissions.
+    Is computed differently from how directory hashes are computed, as it
+    is hashing a single recursive file listing rather than computing hashes
+    of individual subtree objects and rolling them up.
     """
     cmd = "%s ls-tree -r HEAD '%s' | %s hash-object --stdin" % \
           (GIT_EXE_PATH, relpath, GIT_EXE_PATH)
-    # cmd = "%s ls-files -s '%s' | %s hash-object --stdin" % \
-    #       (GIT_EXE_PATH, relpath, GIT_EXE_PATH)
     if verbose:
         click.echo("%s [run in %s]" % (cmd, repo_dir))
     cp = run(cmd, cwd=repo_dir, encoding='utf-8', stdout=PIPE, stderr=PIPE,
