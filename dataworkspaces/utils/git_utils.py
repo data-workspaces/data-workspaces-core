@@ -265,29 +265,29 @@ def get_remote_head_hash(cwd, branch, verbose):
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
 
-def get_subdirectory_hash(repo_dir, relpath, verbose=False):
-    """Get the hash of a subdirectory in the current repo using the
-    HEAD revision. This hash includes file permissions.
-    Is computed differently from how directory hashes are computed, as it
-    is hashing a single recursive file listing rather than computing hashes
-    of individual subtree objects and rolling them up.
-    """
-    cmd = "%s ls-tree -r HEAD '%s' | %s hash-object --stdin" % \
-          (GIT_EXE_PATH, relpath, GIT_EXE_PATH)
-    if verbose:
-        click.echo("%s [run in %s]" % (cmd, repo_dir))
-    cp = run(cmd, cwd=repo_dir, encoding='utf-8', stdout=PIPE, stderr=PIPE,
-             shell=True)
-    cp.check_returncode()
-    if verbose:
-        click.echo(cp.stdout)
-    hashval = cp.stdout.strip()
-    if is_a_git_hash(hashval):
-        return hashval
-    else:
-        raise InternalError("Hash of git subdirectory %s returned a non-hash: '%s'"%
-                            (relpath, hashval))
+LS_TREE_RE=re.compile(r'^\d+\s+tree\s([0-9a-f]{40})\s+(\w+.*)$')
 
+def get_subdirectory_hash(repo_dir, relpath, verbose=False):
+    """Get the subdirectory hash for the HEAD revision of the
+    specified path. This matches the hash that git is storing
+    internally. You should be able to run: git cat-file -p HASH
+    to see a listing of the contents.
+    """
+    cmd = [GIT_EXE_PATH, 'ls-tree', '-t', 'HEAD', relpath]
+    if verbose:
+        click.echo("%s [run in %s]" % (' '.join(cmd), repo_dir))
+    cp = run(cmd, cwd=repo_dir, encoding='utf-8', stdout=PIPE, stderr=PIPE)
+    cp.check_returncode()
+    for line in cp.stdout.split('\n'):
+        m = LS_TREE_RE.match(line)
+        if m is None:
+            continue
+        hashval = m.group(1)
+        subdir = m.group(2)
+        if subdir==relpath:
+            return hashval
+    raise InternalError("Did not find subdirectory '%s' in git ls-tree"%
+                        relpath)
 
 
 def get_dot_gitfat_file_path(workspace_dir):
