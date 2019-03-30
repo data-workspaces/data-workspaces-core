@@ -56,7 +56,9 @@ class TakeResourceSnapshot(actions.Action):
         self.resource.snapshot_prechecks()
 
     def run(self):
-        self.ns.map_of_hashes[self.resource.name] = self.resource.snapshot()
+        (compare_hash, restore_hash) = self.resource.snapshot()
+        self.ns.map_of_hashes[self.resource.name] = compare_hash
+        self.ns.map_of_restore_hashes[self.resource.name] = restore_hash
 
     def __str__(self):
         return "Run snapshot actions for %s" % str(self.resource)
@@ -166,6 +168,7 @@ def merge_snapshot_metadata(old, new, batch):
 
 class WriteSnapshotMetadata(actions.Action):
     @actions.requires_from_ns('snapshot_hash', str)
+    @actions.requires_from_ns('map_of_restore_hashes', dict)
     @actions.provides_to_ns('snapshot_metadata_file', str)
     def __init__(self, ns, verbose, batch, workspace_dir,
                  tag, message, timestamp, rel_dest_root,
@@ -186,7 +189,8 @@ class WriteSnapshotMetadata(actions.Action):
             'message':self.message,
             'relative_destination_path':self.rel_dest_root,
             'hostname':self.hostname,
-            'timestamp':self.timestamp.isoformat()
+            'timestamp':self.timestamp.isoformat(),
+            'restore_hashes':self.ns.map_of_restore_hashes
         }
         if not isdir(self.snapshot_metadata_dir):
             os.mkdir(self.shapshot_metadata_dir) # just in case
@@ -316,6 +320,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     plan = []
     ns = actions.Namespace()
     ns.map_of_hashes = actions.Promise(dict, "TakeResourceSnapshot")
+    ns.map_of_restore_hashes = actions.Promise(dict, "TakeResourceSnapshot")
 
     snapshot_number = get_next_snapshot_number(workspace_dir)
     with open(get_config_file_path(workspace_dir), 'r') as f:
@@ -362,6 +367,7 @@ def snapshot_command(workspace_dir, batch, verbose, tag=None, message=''):
     plan.append(actions.GitCommit(ns, verbose, workspace_dir,
                                   commit_message=lambda:"Snapshot "+ns.snapshot_hash))
     ns.map_of_hashes = {}
+    ns.map_of_restore_hashes = {}
     actions.run_plan(plan, "take snapshot of workspace",
                      "taken snapshot of workspace", batch=batch, verbose=verbose)
     return ns.snapshot_hash

@@ -42,14 +42,14 @@ def compare_lineage_files(f1, f2):
 
 
 def diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, batch, verbose):
-    (snapshot1, tag1) = find_snapshot(snapshot_or_tag1, workspace_dir)
-    snstr1 = "%s, tag %s" % (snapshot1, tag1) if tag1 else snapshot1
+    (snapshot1, tags1, _) = find_snapshot(snapshot_or_tag1, workspace_dir)
+    snstr1 = "%s, tags %s" % (snapshot1, ','.join(tags1)) if tags1 else snapshot1
     sn1_resources = SnapshotResources.read_shapshot_manifest(snapshot1,
                                                              workspace_dir,
                                                              batch, verbose)
     sn1_names = sn1_resources.get_names()
-    (snapshot2, tag2) = find_snapshot(snapshot_or_tag2, workspace_dir)
-    snstr2 = "%s, tag %s" % (snapshot2, tag2) if tag2 else snapshot2
+    (snapshot2, tags2, _) = find_snapshot(snapshot_or_tag2, workspace_dir)
+    snstr2 = "%s, tags %s" % (snapshot2, ','.join(tags2)) if tags2 else snapshot2
     sn2_resources = SnapshotResources.read_shapshot_manifest(snapshot2,
                                                              workspace_dir,
                                                              batch, verbose)

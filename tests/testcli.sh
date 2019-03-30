@@ -1,4 +1,4 @@
-#!/bin/bash
+e!/bin/bash
 # A simple test case
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 set -e
@@ -215,8 +215,8 @@ assert_workspace_clean
 assert_string_in_file V3 ./code/test.py
 
 # restore to V1
-echo dws $ARGS restore V1
-dws $ARGS restore V1
+echo dws $ARGS restore --leave code-local,workspace V1
+dws $ARGS restore --leave code-local,workspace V1
 assert_workspace_clean
 # verify that we correctly went to the V1 version of test.py
 assert_string_not_in_file Changes ./code/test.py
@@ -316,7 +316,7 @@ dws $ARGS snapshot -m "Second snapshot of subdir resources" subdir-v2
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
 assert_string_in_file v2 code_subdir/test.py
-run dws $ARGS restore subdir-v1
+run dws $ARGS restore --leave code-local,workspace subdir-v1
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
 assert_string_in_file v1 code_subdir/test.py
@@ -328,7 +328,7 @@ assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v3/results.json
 assert_string_in_file v1 code_subdir/test.py
-run dws $ARGS restore subdir-v2
+run dws $ARGS restore --leave=code-local,workspace subdir-v2
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v1/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v2/results.json
 assert_file_exists results_subdir/snapshots/$HOSTNAME-subdir-v3/results.json

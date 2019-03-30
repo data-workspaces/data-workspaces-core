@@ -7,6 +7,7 @@ import copy
 import os
 from os.path import join, exists, abspath, expanduser, dirname, isdir, realpath
 from tempfile import NamedTemporaryFile
+from typing import Union, Tuple
 
 import click
 
@@ -135,13 +136,22 @@ class Resource:
             if tfname is not None and exists(tfname):
                 os.remove(tfname)
 
-    def snapshot(self):
+    def snapshot(self) -> Tuple[str, str]:
+        """Take the actual snapshot of the resource and return a tuple
+        of two hash values, the first for comparison, and the second for restoring.
+        The comparison hash value is the one we save in the snapshot file. The
+        restore hash value is saved in the snapshot metadata.
+        In many cases both hashes are the same. If the resource does not support
+        restores, it can return None for the second hash. This will cause
+        attempted restores involving this resource to error out, unless it
+        is explicitly left out with the --leave option.
+        """
+        raise NotImplementedError(self.__class__.__name__)
+
+    def restore_prechecks(self, restore_hashval):
         pass
 
-    def restore_prechecks(self, hashval):
-        pass
-
-    def restore(self, hashval):
+    def restore(self, restore_hashval):
         pass
 
     def push_prechecks(self):

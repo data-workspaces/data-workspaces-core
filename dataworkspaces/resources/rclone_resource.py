@@ -127,7 +127,7 @@ class RcloneResource(Resource):
         else:
             (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way', '--size-only']) 
         print('Snapshot returns ', ret, out)
-        return ret
+        return (ret, None) # None for the restore hash since we cannot restore
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to

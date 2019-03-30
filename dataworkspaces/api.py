@@ -110,7 +110,7 @@ def restore(tag_or_hash, workspace_dir=None, only=None, leave=None):
     """
     workspace_dir = _get_workspace(workspace_dir)
     restore_command(workspace_dir, batch=True, verbose=False, tag_or_hash=tag_or_hash,
-                    only=only, leave=leave, no_new_snapshot=True)
+                    only=only, leave=leave)
 
 
 

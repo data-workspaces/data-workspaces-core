@@ -2,7 +2,6 @@
 """
 Definition of configuration parameters
 """
-import re
 import json
 import socket
 from os.path import join
