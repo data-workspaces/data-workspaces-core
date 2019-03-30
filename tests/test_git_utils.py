@@ -318,6 +318,7 @@ class TestCheckoutSubdirAndApplyCommit(BaseCase):
                        'subdir/to_be_modified.txt', 'root_file1.txt'])
         self._run(['commit', '-m', 'initial version'])
         initial_hash = get_local_head_hash(TEMPDIR, True)
+        subdir_hash = get_subdirectory_hash(TEMPDIR, 'subdir', verbose=True)
 
         self._run(['rm', 'subdir/to_be_deleted.txt'])
         with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
@@ -349,6 +350,8 @@ class TestCheckoutSubdirAndApplyCommit(BaseCase):
                                         "root file v1\nroot file v2")
         restored_hash = get_local_head_hash(TEMPDIR, True)
         self.assertNotEqual(initial_hash, restored_hash) # should be differemt
+        restored_subdir_hash = get_subdirectory_hash(TEMPDIR, 'subdir', verbose=True)
+        self.assertEqual(subdir_hash, restored_subdir_hash)
 
         # add a commit at this point
         with open(join(TEMPDIR, 'subdir/to_be_modified.txt'), 'a') as f:
