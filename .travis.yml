@@ -7,4 +7,4 @@ install:
   - pip install mypy
 script:
   - pip install --editable `pwd`
-  - cd tests; make test
+  - cd tests; make install-rclone-deb test
