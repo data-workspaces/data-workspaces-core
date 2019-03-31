@@ -196,7 +196,7 @@ def find_snapshot(tag_or_hash, workspace_dir):
                 with open(p, 'r') as fobj:
                     data = json.load(fobj)
                 if (is_hash and data['hash']==tag_or_hash) or \
-                   (is_short_hash and data['hash'].endswith(tag_or_hash)) or\
+                   (is_short_hash and data['hash'].startswith(tag_or_hash)) or\
                    ((not (is_hash or is_short_hash)) and
                     tag_or_hash in data['tags']):
                     return (data['hash'], data['tags'], data['restore_hashes'])

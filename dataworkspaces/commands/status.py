@@ -40,12 +40,12 @@ class ReadSnapshotHistory(actions.Action):
         history = get_snapshot_metadata(self.workspace_dir)
         click.echo("\nHistory of snapshots")
         click.echo("%s %s %s %s" %
-                   ('Hash'.ljust(40), 'Tags'.ljust(10), 'Created'.ljust(19),
+                   ('Hash'.ljust(8), 'Tags'.ljust(20), 'Created'.ljust(19),
                     'Message'))
         for v in history[0:self.limit] if self.limit is not None else history:
             click.echo('%s %s %s %s' %
-                       (v['hash'],
-                        (', '.join(v['tags']) if v['tags'] is not None else 'N/A').ljust(10),
+                       (v['hash'][0:7]+' ',
+                        (', '.join(v['tags']) if v['tags'] is not None else 'N/A').ljust(20),
                         v['timestamp'][0:-7],
                         v['message'] if v['message'] is not None and
                                         v['message']!='' else 'N/A'))

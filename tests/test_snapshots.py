@@ -54,6 +54,11 @@ class BaseCase(unittest.TestCase):
         self.assertTrue(filecmp.cmp(f1, f2, shallow=False),
                         "Files %s and %s are different" % (f1, f2))
 
+    def _assert_file_contents(self, filepath, expected_contents):
+        with open(filepath, 'r') as f:
+            data = f.read()
+        self.assertEqual(expected_contents, data, "File %s does not contain expected data"%filepath)
+
 class TestSnapshots(BaseCase):
     def test_snapshot_no_tag(self):
         """Just a minimal test case without any tag. It turns out we
@@ -63,6 +68,20 @@ class TestSnapshots(BaseCase):
         with open(join(CODE_DIR, 'test.py'), 'w') as f:
             f.write("print('this is a test')\n")
         self._run_dws(['snapshot', '-m', "'test of snapshot with no tag'"])
+
+    def test_restore_short_hash(self):
+        HASH='cdce6a5'
+        self._run_dws(['init', '--create-resources=code,results'])
+        with open(join(CODE_DIR, 'test.py'), 'w') as f:
+            f.write("print('this is a test')\n")
+        self._run_dws(['snapshot', '-m', "'test of restore short hash'", 'TAG1'])
+        with open(join(CODE_DIR, 'test.py'), 'w') as f:
+            f.write("print('this is a test for the second snapshot')\n")
+        self._run_dws(['snapshot', '-m', "'second snapshot'", 'TAG2'])
+        self._run_dws(['restore', HASH])
+        self._assert_file_contents(join(CODE_DIR, 'test.py'),
+                                   "print('this is a test')\n")
+
 
     def test_snapshot_with_duplicate_tag(self):
         """Test the case where we try to take a snapshot with a tag
@@ -74,7 +93,7 @@ class TestSnapshots(BaseCase):
         self._run_dws(['snapshot', '-m', "'first tag'", 'S1'])
         got_error = False
         try:
-            print("Re-use of snapshot tag in batch mode should fail:")
+            print(">>> Re-use of snapshot tag in batch mode should fail:")
             self._run_dws(['snapshot', '-m', "'second tag'", 'S1'])
         except subprocess.CalledProcessError:
             got_error = True
