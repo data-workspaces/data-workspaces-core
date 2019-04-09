@@ -118,7 +118,7 @@ from copy import copy
 from dataworkspaces.utils.workspace_utils import get_workspace
 from dataworkspaces.utils.lineage_utils import \
     ResourceRef, StepLineage, LineageStoreCurrent,\
-    get_current_lineage_dir, infer_step_name
+    get_current_lineage_dir, infer_step_name, infer_script_path
 from dataworkspaces.resources.resource import CurrentResources
 
 
@@ -135,6 +135,7 @@ class Lineage(contextlib.AbstractContextManager):
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
+                 code:List[Union[str, ResourceRef]],
                  workspace_dir:str,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
@@ -153,8 +154,25 @@ class Lineage(contextlib.AbstractContextManager):
             else:
                 (name, subpath) = self.resources.map_local_path_to_resource(r_or_p)
                 input_resource_refs.append(ResourceRef(name, subpath))
+        code_resource_refs=[] # type: List[ResourceRef]
+        for r_or_p in code:
+            if isinstance(r_or_p, ResourceRef):
+                self.resources.validate_resource_name(r_or_p.name, r_or_p.subpath,
+                                                      expecting_a_code_resource=True)
+                code_resource_refs.append(r_or_p)
+            else:
+                (name, subpath) = \
+                  self.resources.map_local_path_to_resource(r_or_p,
+                                                            expecting_a_code_resource=True)
+                # For now, we will resolve code paths at the resource level.
+                # We drop the subpath, unless the user provided it explicitly
+                # through a ResourceRef.
+                crr = ResourceRef(name, None)
+                if crr not in code_resource_refs:
+                    code_resource_refs.append(crr)
         self.step = StepLineage.make_step_lineage(step_name, start_time,
                                                   parameters, input_resource_refs,
+                                                  code_resource_refs,
                                                   self.store,
                                                   command_line=command_line)
         self.in_progress = True
@@ -221,13 +239,14 @@ class ResultsLineage(Lineage):
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
+                 code:List[Union[str, ResourceRef]],
                  results_dir:str,
                  workspace_dir:str,
                  run_description:Optional[str]=None,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
         super().__init__(step_name, start_time, parameters,
-                         inputs, workspace_dir, command_line, current_directory)
+                         inputs, code, workspace_dir, command_line, current_directory)
         self.results_dir = results_dir
         (self.results_rname, self.results_subpath) = \
             self.resources.map_local_path_to_resource(results_dir)
@@ -254,19 +273,6 @@ class ResultsLineage(Lineage):
         print("Wrote results to %s:%s" % (self.results_rname, results_relpath))
 
 
-def make_lineage(parameters:Dict[str,Any], inputs:List[Union[str, ResourceRef]],
-                 step_name:Optional[str]=None,
-                 workspace_dir:Optional[str]=None)\
-                 -> Lineage:
-    print("WARNING: make_lineage is depricated, use the LineageBuilder instead!",
-          file=sys.stderr)
-    workspace_dir = get_workspace(workspace_dir)
-    assert workspace_dir is not None # make the type checker happy
-    if step_name is None:
-        step_name = infer_step_name()
-    return Lineage(step_name, datetime.datetime.now(), parameters, inputs,
-                   workspace_dir=workspace_dir,
-                   command_line=[sys.executable]+sys.argv)
 
 class LineageBuilder:
     """Use this class to declaratively build :class:`~Lineage` objects. Instantiate
@@ -281,6 +287,7 @@ class LineageBuilder:
     To specify the workflow step's name, call one of:
 
     * :func:`~as_script_step` - the script's name will be used to infer the step
+      and the associated code resource
     * with_step_name - explicitly specify the step name
 
     To specify the parameters of the step (e.g. command line arguments), use the
@@ -297,6 +304,13 @@ class LineageBuilder:
       May be called more than once.
     * :func:`~with_no_inputs` - mutually exclusive with the other input methods. This
       signals that there are no inputs to this step.
+
+    To specify code resource dependencies for the step, you can call
+    :func:`~with_code_ref`. For command-line Python scripts, the
+    main code resource is handled automatically in :func:`~as_script_step`.
+    Other subclasses of the LineageBuilder may provide similar functionality
+    (e.g. the LineageBuilder for JupyterNotebooks will figure out the resource
+    containing your notebook and set it in the lineage).
 
     If you need to specify the workspace's root directory, use the
     :func:`~with_workspace_directory` method. Otherwise, the lineage API will attempt
@@ -326,6 +340,7 @@ class LineageBuilder:
         self.parameters = None        # type: Optional[Dict[str, Any]]
         self.inputs = None            # type: Optional[List[Union[str, ResourceRef]]]
         self.no_inputs = False        # type: Boolean
+        self.code = []                # type: List[Union[str, ResourceRef]]
         self.workspace_dir = None     # type: Optional[str]
         self.results_dir = None       # type: Optional[str]
         self.run_description = None   # type: Optional[str]
@@ -335,6 +350,7 @@ class LineageBuilder:
         self.step_name = infer_step_name()
         self.command_line = [sys.executable]+sys.argv
         self.current_directory = curdir
+        self.code.append(infer_script_path())
         return self
 
     def with_step_name(self, step_name:str) -> 'LineageBuilder':
@@ -376,6 +392,10 @@ class LineageBuilder:
         self.no_inputs = True
         return self
 
+    def with_code_ref(self, ref:ResourceRef) -> 'LineageBuilder':
+        self.code.append(ref)
+        return self
+
     def with_workspace_directory(self, workspace_dir:str) -> 'LineageBuilder':
         self.workspace_dir = get_workspace(workspace_dir) # does validation
         return self
@@ -402,13 +422,13 @@ class LineageBuilder:
             self.workspace_dir = get_workspace()
         if self.results_dir is not None:
             return ResultsLineage(self.step_name, datetime.datetime.now(),
-                                  self.parameters, inputs,
+                                  self.parameters, inputs, self.code,
                                   self.results_dir,
                                   self.workspace_dir, self.run_description,
                                   self.command_line, self.current_directory)
         else:
             return Lineage(self.step_name, datetime.datetime.now(),
-                           self.parameters, inputs,
+                           self.parameters, inputs, self.code,
                            self.workspace_dir,
                            self.command_line, self.current_directory)
 

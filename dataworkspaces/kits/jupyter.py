@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional
 import datetime
 
 from dataworkspaces.lineage import LineageBuilder
+from dataworkspaces.utils.lineage_utils import infer_script_path
 
 
 def _get_notebook_name():
@@ -66,8 +67,9 @@ class NotebookLineageBuilder(LineageBuilder):
     def __init__(self, results_dir:str,
                  run_description:Optional[str]=None):
         super().__init__()
-        self.step_name = step_name
-        self.results_dir = get_step_name_for_notebook()
+        self.step_name = get_step_name_for_notebook()
+        self.code.append(_get_notebook_name())
+        self.results_dir = results_dir
         self.run_description = run_description
 
 

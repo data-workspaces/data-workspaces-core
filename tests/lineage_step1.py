@@ -8,7 +8,7 @@ from os.path import abspath, expanduser, join, exists
 import random
 import datetime
 
-from dataworkspaces.lineage import make_lineage, CmdLineParameter,\
+from dataworkspaces.lineage import LineageBuilder, CmdLineParameter,\
     add_lineage_parameters_to_arg_parser, get_lineage_parameter_values,\
     ResourceRef
 
@@ -27,8 +27,11 @@ def main(argv=sys.argv[1:]):
     add_lineage_parameters_to_arg_parser(parser, PARAMS)
     parser.add_argument('test_case', metavar='TEST_CASE')
     args = parser.parse_args(argv)
-    with make_lineage(get_lineage_parameter_values(PARAMS,args),
-                      [ResourceRef('source-data')]) as lineage:
+    with LineageBuilder().as_script_step()\
+                         .with_parameters(get_lineage_parameter_values(PARAMS,args))\
+                         .with_input_ref(ResourceRef('source-data'))\
+                         .eval()\
+      as lineage:
           lineage.add_output_path(join(BASE_DIR, 'intermediate-data/s1'))
           if args.fail:
               raise Exception("Failing this step")

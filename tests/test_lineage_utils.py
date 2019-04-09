@@ -30,13 +30,15 @@ INTERMEDIATE_S2=ResourceRef('intermediate', 's2')
 INTERMEDIATE_S3=ResourceRef('intermediate', 's3')
 INTERMEDIATE_ROOT=ResourceRef('intermediate')
 INTERMEDIATE_S1_SUBDIR=ResourceRef('intermediate', 's1/subdir')
+CODE=ResourceRef('code')
 OUT4=ResourceRef('out4')
 RESULTS=ResourceRef=ResourceRef("results")
 BASE_SNAPSHOT_HASHES={
     'r1':'r1hash',
     'r2':'r2hash',
     'intermediate':'intermediate_hash',
-    'results':'results_hash'
+    'results':'results_hash',
+    'code':'code_hash'
 }
 
 class TestResourceCert(unittest.TestCase):
@@ -94,20 +96,22 @@ class TestLineageStoreCurrent(unittest.TestCase):
         s = self.store = LineageStoreCurrent()
         step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
                                                      [('p1', 'v1'), ('p2', 5)],
-                                                      [R1, R2_FOO_BAR], s)
+                                                      [R1, R2_FOO_BAR], [CODE],
+                                                      s)
         step1_lineage.add_output(s, INTERMEDIATE_S1)
         step1_lineage.execution_time_seconds = 5
         s.add_step(step1_lineage)
         step2_lineage = StepLineage.make_step_lineage('step2', datetime.datetime.now(),
                                                       [('p3', 'v3')],
-                                                      [INTERMEDIATE_S1], s)
+                                                      [INTERMEDIATE_S1], [CODE],
+                                                      s)
         step2_lineage.add_output(s, INTERMEDIATE_S2)
         step2_lineage.execution_time_seconds = 20
         s.add_step(step2_lineage)
         step3_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
                                                       [('p4', 4)],
                                                       [R2_FOO_BAR,
-                                                       INTERMEDIATE_S2], s)
+                                                       INTERMEDIATE_S2], [CODE], s)
         for output in s3_outputs:
             step3_lineage.add_output(s, output)
         step3_lineage.execution_time_seconds = 3
@@ -135,13 +139,15 @@ class TestLineageStoreCurrent(unittest.TestCase):
         # Overwrite R2_FOO_BAR to create an inconsistent lineage
         step4_lineage = StepLineage.make_step_lineage('step4', datetime.datetime.now(),
                                                       [('p4', 'v4')],
-                                                      [R1,], s)
+                                                      [R1,], [CODE], s)
         step4_lineage.add_output(s, R2_FOO_BAR)
         s.add_step(step4_lineage)
         self.assertEqual(s.validate([RESULTS]), 2)
         try:
             step3b_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
-                                                           [('p4', 5)], [R2_FOO_BAR, INTERMEDIATE_S2], s)
+                                                           [('p4', 5)],
+                                                           [R2_FOO_BAR, INTERMEDIATE_S2],
+                                                           [CODE], s)
         except LineageConsistencyError as e:
             pass
             #print("Got expected consistency error: %s" % e)
@@ -151,21 +157,21 @@ class TestLineageStoreCurrent(unittest.TestCase):
         # now go back, and rerun steps to get our consistent output
         step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
                                                      [('p1', 'v1'), ('p2', 5)],
-                                                      [R1, R2_FOO_BAR], s)
+                                                      [R1, R2_FOO_BAR], [CODE], s)
         step1_lineage.add_output(s, INTERMEDIATE_S1)
         step1_lineage.execution_time_seconds = 5
         s.add_step(step1_lineage)
         #print(json.dumps(s.to_json(), indent=2))
         step2_lineage = StepLineage.make_step_lineage('step2', datetime.datetime.now(),
                                                       [('p3', 'v3')],
-                                                      [INTERMEDIATE_S1], s)
+                                                      [INTERMEDIATE_S1], [CODE], s)
         step2_lineage.add_output(s, INTERMEDIATE_S2)
         step2_lineage.execution_time_seconds = 20
         s.add_step(step2_lineage)
         step3_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
                                                       [('p4', 4)],
                                                       [R2_FOO_BAR,
-                                                       INTERMEDIATE_S2], s)
+                                                       INTERMEDIATE_S2], [CODE], s)
         step3_lineage.add_output(s, RESULTS)
         step3_lineage.execution_time_seconds = 3
         s.add_step(step3_lineage)
@@ -180,7 +186,7 @@ class TestLineageStoreCurrent(unittest.TestCase):
         step3_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
                                                       [('p4', 4)],
                                                       [R2_FOO_BAR,
-                                                       INTERMEDIATE_S2], s)
+                                                       INTERMEDIATE_S2], [CODE], s)
         step3_lineage.add_output(s, RESULTS)
         step3_lineage.execution_time_seconds = 5
         s.add_step(step3_lineage)
@@ -210,13 +216,13 @@ class TestLineageStoreCurrent(unittest.TestCase):
         s = self.store = LineageStoreCurrent()
         step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
                                                      [('p1', 'v1'), ('p2', 5)],
-                                                      [R1, R2_FOO_BAR], s)
+                                                      [R1, R2_FOO_BAR], [CODE], s)
         step1_lineage.add_output(s, INTERMEDIATE_S1)
         step1_lineage.execution_time_seconds = 5
         s.add_step(step1_lineage)
         step2_lineage = StepLineage.make_step_lineage('step2', datetime.datetime.now(),
                                                       [('p3', 'v3')],
-                                                      [INTERMEDIATE_S1], s)
+                                                      [INTERMEDIATE_S1], [CODE], s)
         try:
             step2_lineage.add_output(s, INTERMEDIATE_ROOT)
         except LineageError as e:
@@ -252,7 +258,7 @@ class TestLineageStoreCurrent(unittest.TestCase):
         step3_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
                                                       [('p4', 4)],
                                                       [R2_FOO_BAR,
-                                                       INTERMEDIATE_S2], s)
+                                                       INTERMEDIATE_S2], [CODE], s)
         step3_lineage.add_output(s, RESULTS)
         step3_lineage.add_output(s, INTERMEDIATE_S3)
         s.invalidate_step_outputs(step3_lineage.output_resources)
@@ -264,7 +270,7 @@ class TestLineageStoreCurrent(unittest.TestCase):
 
     def test_snapshot_and_restore(self):
         # save a first snapshot
-        RESOURCE_NAMES=['r1', 'r2', 'results', 'intermediate']
+        RESOURCE_NAMES=['r1', 'r2', 'results', 'intermediate', 'code']
         s = self._run_initial_workflow()
         self.assertEqual(set(LineageStoreCurrent.get_resource_names_in_fsstore(LOCAL_STORE_DIR)),
                          set(RESOURCE_NAMES))
@@ -325,7 +331,7 @@ class TestLineageStoreCurrent(unittest.TestCase):
         step3_lineage = StepLineage.make_step_lineage('step3', datetime.datetime.now(),
                                                       [('p4', 4)],
                                                       [R2_FOO_BAR,
-                                                       INTERMEDIATE_S2], s)
+                                                       INTERMEDIATE_S2], [CODE], s)
         step3_lineage.add_output(s, RESULTS)
         step3_lineage.execution_time_seconds = 3
         s.add_step(step3_lineage)
@@ -368,7 +374,7 @@ class TestLineageStoreCurrent(unittest.TestCase):
         # test case for an inconsistent lineage
         step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
                                                      [('p1', 'v1'), ('p2', 5)],
-                                                      [R1, R2_FOO_BAR], s)
+                                                      [R1, R2_FOO_BAR], [CODE], s)
         step1_lineage.add_output(s, INTERMEDIATE_S1)
         step1_lineage.execution_time_seconds = 5
         s.add_step(step1_lineage)

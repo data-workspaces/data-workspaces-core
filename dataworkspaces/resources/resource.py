@@ -46,6 +46,16 @@ class Resource:
     def has_results_role(self):
         return self.role==ResourceRoles.RESULTS
 
+    def _validate_role(self, expecting_a_code_resource=False):
+        # validation helper function - don't mix up code and data resources
+        # in the lineage.
+        if expecting_a_code_resource and self.role!=ResourceRoles.CODE:
+            raise ConfigurationError("Expecting a code resource, but %s is a %s resource"%
+                                     (self.name, self.role))
+        elif (not expecting_a_code_resource) and self.role==ResourceRoles.CODE:
+            raise ConfigurationError("%s is a code resource, but expecting a non-code resource (source-data, intermediate-data, or results)"%
+                                     self.name)
+
     def to_json(self):
         """Return a json (unserialized) representation of this
         resource for the resources file.
@@ -268,7 +278,8 @@ class CurrentResources(ResourceCollection):
         with open(snapshot_filepath, 'w') as f:
             json.dump(sn_json, f, indent=2)
 
-    def map_local_path_to_resource(self, path):
+    def map_local_path_to_resource(self, path,
+                                   expecting_a_code_resource=False):
         """Given a path on the local filesystem, map it to
         a resource and the path within the resource.
         Raises ConfigurationError if no match is found.
@@ -284,21 +295,27 @@ class CurrentResources(ResourceCollection):
                 lp = lp[0:-1] # remove trailing slash
             rlp = realpath(lp)
             if rp==rlp or path==lp:
+                r._validate_role(expecting_a_code_resource)
                 return (r.name, None)
             elif path.startswith(lp):
+                r._validate_role(expecting_a_code_resource)
                 return (r.name, path[len(lp)+1:])
             elif rp.startswith(rlp):
+                r._validate_role(expecting_a_code_resource)
                 return (r.name, rp[len(rlp)+1:])
         raise ConfigurationError("Did not find a resource corresponding to local path %s"%
                                  path)
 
-    def validate_resource_name(self, resource_name, subpath=None):
+    def validate_resource_name(self, resource_name, subpath=None,
+                               expecting_a_code_resource=False):
         if resource_name not in self.by_name:
             raise ConfigurationError("No resource named '%s'" % resource_name)
+        r = self.by_name[resource_name]
+        r._validate_role(expecting_a_code_resource)
         if subpath is None:
             return
         else:
-            self.by_name[resource_name].validate_subpath_exists(subpath)
+            r.validate_subpath_exists(subpath)
 
     def __str__(self):
         resources = sorted(self.by_name.keys())

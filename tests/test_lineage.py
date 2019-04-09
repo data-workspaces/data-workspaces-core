@@ -21,6 +21,7 @@ from dataworkspaces.utils.git_utils import GIT_EXE_PATH
 
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR, 'workspace')
+CODE_DIR=join(WS_DIR, 'code')
 WS_ORIGIN=join(TEMPDIR, 'workspace_origin.git')
 
 
@@ -37,6 +38,10 @@ class TestLineage(unittest.TestCase):
         with open(join(WS_DIR, 'source-data/data.csv'), 'w') as f:
             f.write('a,b,c\n')
             f.write('1,2,3\n')
+        shutil.copyfile(join(TEST_DIR, 'lineage_step1.py'),
+                        join(CODE_DIR, 'lineage_step1.py'))
+        shutil.copyfile(join(TEST_DIR, 'lineage_step2.py'),
+                        join(CODE_DIR, 'lineage_step2.py'))
 
     def _run_dws(self, dws_args, cwd=WS_DIR, env=None, verbose=True):
         if verbose:
@@ -48,7 +53,7 @@ class TestLineage(unittest.TestCase):
         r.check_returncode()
 
     def _run_step(self, script_name, args):
-        command = [sys.executable, join(TEST_DIR, script_name)]+args
+        command = [sys.executable, join(CODE_DIR, script_name)]+args
         print(" ".join(command))
         r = subprocess.run(command, cwd=WS_DIR, shell=False)
         r.check_returncode()
@@ -62,9 +67,11 @@ class TestLineage(unittest.TestCase):
             data = f.read()
         self.assertEqual(expected_contents, data)
 
-    def _validate_store(self):
+    def _validate_store(self, resources=[ResourceRef('results')],
+                        verify_no_placeholders=False):
         store = LineageStoreCurrent.load(join(WS_DIR, '.dataworkspace/current_lineage'))
-        store.validate([ResourceRef('results')])
+        warnings = store.validate(resources, verify_no_placeholders=verify_no_placeholders)
+        self.assertEqual(0, warnings)
 
     def _run_git(self, git_args, cwd=WS_DIR):
         args = [GIT_EXE_PATH]+git_args
@@ -96,6 +103,10 @@ class TestLineage(unittest.TestCase):
         self._validate_store()
         self._run_dws(['snapshot', 'S1'])
         self._check_results_lineage('S1', 3)
+        # we don't verify from the results resource as we've already moved
+        # the results as a part of the snapshot
+        self._validate_store([ResourceRef('intermediate-data', 's1')],
+                             verify_no_placeholders=True)
 
         self._run_step('lineage_step1.py', ['test_lineage2'])
         self._run_step('lineage_step2.py', ['test_lineage2'])
@@ -108,7 +119,8 @@ class TestLineage(unittest.TestCase):
 
         self._run_dws(['restore', 'S1'])
         self._validate_test_case_file('test_lineage1', 'intermediate-data/s1')
-        #self._validate_store()
+        self._validate_store(resources=[ResourceRef('intermediate-data', 's1')],
+                             verify_no_placeholders=True)
 
     def test_pull(self):
         """Pull should invalidate the current resources
