@@ -113,14 +113,6 @@ class RcloneResource(Resource):
         move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
 
     def snapshot(self):
-        # rsrcdir = os.path.abspath(self.workspace_dir + 'resources/' + self.role + '/' + self.name)
-        # h = hashtree.generate_hashes(self.rsrcdir, self.local_path, ignore=self.ignore)
-        # assert os.path.exists(os.path.join(self.rsrcdir, h))
-        # if is_git_staging_dirty(self.workspace_dir, subdir=self.rsrcdir_relative):
-        #     call_subprocess([GIT_EXE_PATH, 'commit', '-m',
-        #                      "Add snapshot hash files for resource %s" % self.name],
-        #                     cwd=self.workspace_dir, verbose=False)
-        # return h
         print("In snapshot: ", self.remote_name,  self.remote_path, self.local_path)
         if self.compute_hash:
             (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way']) 

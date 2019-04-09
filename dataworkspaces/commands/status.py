@@ -20,6 +20,20 @@ def get_snapshot_metadata(workspace, reverse=True):
             elif f.endswith('_md.json'):
                 with open(p, 'r') as fobj:
                     data = json.load(fobj)
+                    data['metric'] = None
+                    data['value']   = None
+                    # print("Data in get_snapshot_metadata = ", data)
+                    rel_dest_path = data['relative_destination_path']
+                    results_file = join(join(join(workspace, 'results'), rel_dest_path), 'results.json') 
+                    # print("results_file at ", results_file)
+                    if os.path.exists(results_file):
+                        with open(results_file, 'r') as rfile:
+                            results_json = json.load(rfile)
+                            metrics = results_json.get('metrics', None)
+                            if metrics:
+                                data['metric'] = next(iter(metrics.keys())) # get the first attribute from metrics
+                                                                             # we'll print this in the status summary
+                                data['value'] =   metrics[data['metric']] 
                 yield data
     md_path = get_snapshot_metadata_dir_path(workspace)
     metadata = [data for data in process_dir(md_path)]
@@ -39,14 +53,17 @@ class ReadSnapshotHistory(actions.Action):
         #     num_snapshots = len(history)
         history = get_snapshot_metadata(self.workspace_dir)
         click.echo("\nHistory of snapshots")
-        click.echo("%s %s %s %s" %
+        click.echo("%s %s %s %s %s %s" %
                    ('Hash'.ljust(8), 'Tags'.ljust(20), 'Created'.ljust(19),
+                    'Metric'.ljust(32), 'Value'.ljust(32),
                     'Message'))
         for v in history[0:self.limit] if self.limit is not None else history:
-            click.echo('%s %s %s %s' %
+            click.echo('%s %s %s %s %s %s' %
                        (v['hash'][0:7]+' ',
                         (', '.join(v['tags']) if v['tags'] is not None else 'N/A').ljust(20),
                         v['timestamp'][0:-7],
+                        (v['metric'] if v['metric'] is not None else 'N/A').ljust(32),
+                        (str(v['value']) if v['metric'] is not None else 'N/A').ljust(32),
                         v['message'] if v['message'] is not None and
                                         v['message']!='' else 'N/A'))
         num_shown = len(history) if self.limit is None \
