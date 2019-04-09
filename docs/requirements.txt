@@ -1,3 +1,4 @@
 # requirements for building the doc
+click
 sphinx_rtd_theme
 sphinx-click
