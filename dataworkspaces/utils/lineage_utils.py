@@ -60,6 +60,12 @@ def validate_json_keys(obj, classobj, keys, filename=None):
 
 
 class ResourceRef(NamedTuple):
+    """A namedtuple that is used to identify an input or output of a step.
+    The ``name`` parameter is the name of a resource. The optional
+    ``subpath`` parameter is a relative path within that resource.
+    The subpath lets you store inputs/outputs from multiple steps
+    within the same resource and track them independently.
+    """
     name: str
     subpath: Optional[str] = None
 

@@ -1,6 +1,6 @@
 .. _resources:
 
-4. Resource Reference
+6. Resource Reference
 =====================
 This section provide a little detail on how to use specific
 resource types.

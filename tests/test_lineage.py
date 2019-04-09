@@ -31,7 +31,8 @@ class TestLineage(unittest.TestCase):
         os.mkdir(TEMPDIR)
         os.mkdir(WS_DIR)
         self.dws=find_exe("dws", "Make sure you have enabled your python virtual environment")
-        self._run_dws(['init', '--hostname', 'test-host', '--use-basic-resource-template'],
+        self._run_dws(['init', '--hostname', 'test-host',
+                       '--create-resources=code,source-data,intermediate-data,results'],
                       verbose=False)
         with open(join(WS_DIR, 'source-data/data.csv'), 'w') as f:
             f.write('a,b,c\n')

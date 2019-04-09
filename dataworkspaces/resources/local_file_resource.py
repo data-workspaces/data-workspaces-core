@@ -76,7 +76,7 @@ class LocalFileResource(Resource):
             call_subprocess([GIT_EXE_PATH, 'commit', '-m',
                              "Add snapshot hash files for resource %s" % self.name],
                             cwd=self.workspace_dir, verbose=False)
-        return h
+        return (h, None)
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to

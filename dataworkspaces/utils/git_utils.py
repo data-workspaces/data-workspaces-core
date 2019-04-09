@@ -30,6 +30,16 @@ HASH_RE = re.compile(r'^[0-9a-fA-F]+$')
 def is_a_git_hash(s):
     return len(s)==40 and (HASH_RE.match(s) is not None)
 
+MIN_SHORT_HASH_LEN=6
+# short hashes must be lowercase
+SHORT_HASH_RE = re.compile(r'^[0-9a-f]+$')
+
+def is_a_shortened_git_hash(s):
+    """We can refer to snapshots using the first 6+ characters
+    of the hash
+    """
+    return len(s)>=MIN_SHORT_HASH_LEN and (SHORT_HASH_RE.match(s) is not None)
+
 
 def is_git_dirty(cwd):
     """See if the git repo is dirty. We are looking for untracked
@@ -244,7 +254,7 @@ def get_local_head_hash(git_root, verbose=False):
 
 def get_remote_head_hash(cwd, branch, verbose):
     cmd = [GIT_EXE_PATH, 'ls-remote', 'origin', '-h', 'refs/heads/'+branch]
-    try:
+    try: 
         output = call_subprocess(cmd, cwd, verbose).split('\n')[0].strip()
         if output=='':
             return None # remote has not commits
@@ -254,6 +264,31 @@ def get_remote_head_hash(cwd, branch, verbose):
     except Exception as e:
         raise ConfigurationError("Problem in accessing remote repository associated with '%s'" %
                                  cwd) from e
+
+LS_TREE_RE=re.compile(r'^\d+\s+tree\s([0-9a-f]{40})\s+(\w+.*)$')
+
+def get_subdirectory_hash(repo_dir, relpath, verbose=False):
+    """Get the subdirectory hash for the HEAD revision of the
+    specified path. This matches the hash that git is storing
+    internally. You should be able to run: git cat-file -p HASH
+    to see a listing of the contents.
+    """
+    cmd = [GIT_EXE_PATH, 'ls-tree', '-t', 'HEAD', relpath]
+    if verbose:
+        click.echo("%s [run in %s]" % (' '.join(cmd), repo_dir))
+    cp = run(cmd, cwd=repo_dir, encoding='utf-8', stdout=PIPE, stderr=PIPE)
+    cp.check_returncode()
+    for line in cp.stdout.split('\n'):
+        m = LS_TREE_RE.match(line)
+        if m is None:
+            continue
+        hashval = m.group(1)
+        subdir = m.group(2)
+        if subdir==relpath:
+            return hashval
+    raise InternalError("Did not find subdirectory '%s' in git ls-tree"%
+                        relpath)
+
 
 def get_dot_gitfat_file_path(workspace_dir):
     return join(workspace_dir, '.gitfat')

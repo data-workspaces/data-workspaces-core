@@ -18,7 +18,7 @@ from dataworkspaces.utils.git_utils import \
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
-    validate_git_fat_in_path_if_needed
+    validate_git_fat_in_path_if_needed, get_subdirectory_hash
 from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES
 from .snapshot_utils import move_current_files_local_fs
@@ -161,7 +161,8 @@ class GitRepoResource(Resource):
         commit_changes_in_repo(self.local_path, 'autocommit ahead of snapshot',
                                verbose=self.verbose)
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        return get_local_head_hash(self.local_path, self.verbose)
+        hashval = get_local_head_hash(self.local_path, self.verbose)
+        return (hashval, hashval)
 
     def restore_prechecks(self, hashval):
         rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
@@ -443,8 +444,11 @@ class GitRepoResultsSubdirResource(Resource):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
     def snapshot(self):
-        # Todo: handle tags
-        return get_local_head_hash(self.workspace_dir, verbose=self.verbose)
+        # The subdirectory hash is used for comparison and the head
+        # hash used for restoring
+        return (get_subdirectory_hash(self.workspace_dir, self.relative_path,
+                                      verbose=self.verbose),
+                get_local_head_hash(self.workspace_dir, verbose=self.verbose))
 
 
     def restore_prechecks(self, hashval):
@@ -537,8 +541,9 @@ class GitRepoSubdirResource(Resource):
         # Todo: handle tags
         commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path, 'autocommit ahead of snapshot',
                                       verbose=self.verbose)
-        return get_local_head_hash(self.workspace_dir, verbose=self.verbose)
-
+        return (get_subdirectory_hash(self.workspace_dir, self.relative_path,
+                                      verbose=self.verbose),
+                get_local_head_hash(self.workspace_dir, verbose=self.verbose))
 
     def restore_prechecks(self, hashval):
         validate_git_fat_in_path_if_needed(self.workspace_dir)

@@ -3,6 +3,105 @@ This module  provides an API for tracking
 *data lineage* -- the history of how a given result was created, including the
 versions of original source data and the various steps run in the *data pipeline*
 to produce the final result.
+
+The basic idea is that your workflow is a sequence of *pipeline steps*::
+
+      ----------     ----------     ----------     ----------
+      |        |     |        |     |        |     |        |
+      | Step 1 |---->| Step 2 |---->| Step 3 |---->| Step 4 |
+      |        |     |        |     |        |     |        |
+      ----------     ----------     ----------     ----------
+
+A step could be a command line script, a Jupyter notebook or perhaps
+a step in an automated workflow tool (e.g. Apache Airflow).
+Each step takes a number of *inputs* and *parameters* and generates *outputs*.
+The inputs are resources in your workspace (or subpaths within a resource) from
+which the step will read to perform its task. The parameters are configuration
+values passed to the step (e.g. the command line arguments of a script). The outputs
+are the resources (or subpaths within a resource), which are written to by
+the step. The outputs may represent results or intermediate data to be consumed
+by downstream steps.
+
+The lineage API captures this data for each step. Here is a view of the data captured::
+
+                                Parameters
+                                ||  ||  ||
+                                \/  \/  \/
+                               ------------
+                             =>|          |=>
+            Input resources  =>|  Step i  |=> Output resources
+                             =>|          |=>
+                               ------------
+
+
+To do this, we need use the following classes:
+
+* :class:`~ResourceRef` - A reference to a resource for use as a step input or output.
+  A ResourceRef contains a resource name and an optional path within that resource.
+  This lets you manage lineage down to the directory or even file level. The APIs also
+  support specifying a path on the local filesystem instead of a ResourceRef. This path
+  is automatically resolved to a ResourceRef (it must map to the a location under the
+  local path of a resource). By storing :class:`~ResourceRef`s instead of hard-coded
+  filesystem paths, we can include non-local resources (like an S3 bucket) and ensure
+  that the workspace is easily deployed on a new machine.
+* :class:`~Lineage` - The main lineage object, instantiated at the start of your step.
+  At the beginning of your step, you specify the inputs, parameters, and outputs. At the
+  end of the step, the data is saved, along with any results you might have from that step.
+  Lineage instances are
+  `context managers <https://docs.python.org/3/reference/datamodel.html#context-managers>`_,
+  which means you can use a ``with`` statement to manage their lifecycle.
+* :class:`~LineageBuilder` - This is a helper class to guide the creation of your lineage
+  object.
+
+**Example**
+
+Here is an example usage of the lineage API in a command line script::
+
+  import argparse 
+  from dataworkspaces.lineage import LineageBuilder
+
+  def main():
+      ...
+      parser = argparse.ArgumentParser()
+      parser.add_argument('--gamma', type=float, default=0.01,
+                          help="Regularization parameter")
+      parser.add_argument('input_data_dir', metavar='INPUT_DATA_DIR', type=str,
+                          help='Path to input data')
+      parser.add_argument('results_dir', metavar='RESULTS_DIR', type=str,
+                          help='Path to where results should be stored')
+      args = parser.parse_args()
+      ...
+      # Create a LineageBuilder instance to specify the details of the step
+      # to the lineage API.
+      builder = LineageBuilder()\\
+                  .as_script_step()\\
+                  .with_paramerers({'gamma':args.gamma})\\
+                  .with_input_path(args.input_data_dir)\\
+                  .as_results_step(args.results_dir)
+    
+      # builder.eval() will construct the lineage object. We call it within a
+      # with statement to get automatic save/cleanup when we leave the
+      # with block.
+      with builder.eval() as lineage:
+  
+          ... do your work here ...
+  
+          # all done, write the results
+          lineage.write_results({'accuracy':accuracy,
+                                 'precision':precision,
+                                 'recall':recall,
+                                 'roc_auc':roc_auc})
+  
+      # When leaving the with block, the lineage is automatically saved to the
+      # workspace. If an exception is thrown, the lineage is not saved, but the
+      # outputs are marked as being in an unknown state.
+
+      return 0
+
+  # boilerplate to call our main function if this is called as a script.
+  if __name__ == '__main__:
+      sys.exit(main())
+
 """
 import sys
 from abc import ABC, abstractmethod
@@ -61,10 +160,20 @@ class Lineage(contextlib.AbstractContextManager):
         self.in_progress = True
 
     def add_output_path(self, path:str):
-       (name, subpath) = self.resources.map_local_path_to_resource(path)
-       self.step.add_output(self.store, ResourceRef(name, subpath))
+        """Resolve the path to a resource name and subpath. Add
+        that to the lineage as an output of the step. From this point on,
+        if the step fails (:func:`~abort` is called), the associated resource
+        and subpath will be marked as being in an "unknown" state.
+        """
+        (name, subpath) = self.resources.map_local_path_to_resource(path)
+        self.step.add_output(self.store, ResourceRef(name, subpath))
 
     def add_output_ref(self, ref:ResourceRef):
+        """Add the resource reference to the lineage as an output of the step.
+        From this point on, if the step fails (:func:`~abort` is called), the
+        associated resource and subpath will be marked as being in an
+        "unknown" state.
+        """
         self.step.add_output(self.store, ref)
 
     def abort(self):
@@ -103,7 +212,11 @@ class Lineage(contextlib.AbstractContextManager):
         return False # don't suppress any exception
 
 class ResultsLineage(Lineage):
-    """Lineage for a results step.
+    """Lineage for a results step. This marks the :class:`~Lineage`
+    object as generating results. At the end of the step execution,
+    a ``lineage.json`` file will be written to the results directory.
+    It also adds the :func:`~write_results` method for writing a
+    JSON summary of the final results.
     """
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
@@ -202,7 +315,7 @@ class LineageBuilder:
                   .as_script_step()\\
                   .with_parameters({'gamma':0.001})\\
                   .with_input_path(args.intermediate_data)\\
-                  .as_results_step().eval()
+                  .as_results_step('../results').eval()
 
     **Methods**
     """
@@ -247,7 +360,7 @@ class LineageBuilder:
         if self.inputs is None:
             self.inputs = copy(paths)
         else:
-            self.inputs.extend(path)
+            self.inputs.extend(paths)
         return self
 
     def with_input_ref(self, ref:ResourceRef) -> 'LineageBuilder':

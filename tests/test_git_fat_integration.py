@@ -106,7 +106,8 @@ class BaseCase(unittest.TestCase):
 
 class TestGitFatInWorkspace(BaseCase):
     def test_git_fat_in_workspace(self):
-        self._run_dws(['init', '--use-basic-resource-template',
+        self._run_dws(['init',
+                       '--create-resources=code,source-data,intermediate-data,results',
                        '--git-fat-remote',
                        FAT_FILES,
                        '--git-fat-user='+USERNAME,
@@ -234,7 +235,8 @@ class TestGitFatExeMissing(BaseCase):
         self._run_dws_for_git_fat(['init', '--git-fat-remote', FAT_FILES, '--git-fat-user='+USERNAME])
 
     def _setup_ws_with_git_fat(self, relpath):
-        self._run_dws(['init', '--use-basic-resource-template',
+        self._run_dws(['init',
+                       '--create-resources=code,source-data,intermediate-data,results',
                        '--git-fat-remote',
                        FAT_FILES,
                        '--git-fat-user='+USERNAME,

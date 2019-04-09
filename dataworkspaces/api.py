@@ -10,8 +10,9 @@ import json
 from dataworkspaces import __version__
 from .errors import ApiParamError
 from .resources.resource import CurrentResources
-from .commands.snapshot import get_snapshot_history_file_path, snapshot_command
+from .commands.snapshot import snapshot_command
 from .commands.restore import restore_command
+from .commands.status import get_snapshot_metadata
 
 __api_version__ = '0.1'
 
@@ -72,7 +73,8 @@ def get_resource_info(workspace_dir=None):
 
 
 SnapshotInfo=namedtuple('SnapshotInfo',
-                        ['snapshot_number', 'hash', 'tag', 'timestamp', 'message'])
+                        ['snapshot_number', 'hash', 'tags', 'timestamp',
+                         'message'])
 
 
 def take_snapshot(workspace_dir=None, tag=None, message=''):
@@ -91,10 +93,9 @@ def get_snapshot_history(workspace_dir=None):
     hash, tag, timestamp, and message.
     """
     workspace_dir = _get_workspace(workspace_dir)
-    with open(get_snapshot_history_file_path(workspace_dir), 'r') as f:
-        data = json.load(f)
+    data = get_snapshot_metadata(workspace_dir, reverse=False)
     return [
-        SnapshotInfo(snapshot_number+1, s['hash'], s['tag'], s['timestamp'],
+        SnapshotInfo(snapshot_number+1, s['hash'], s['tags'], s['timestamp'],
                      s['message'])
         for (snapshot_number, s) in enumerate(data)
     ]
@@ -109,7 +110,7 @@ def restore(tag_or_hash, workspace_dir=None, only=None, leave=None):
     """
     workspace_dir = _get_workspace(workspace_dir)
     restore_command(workspace_dir, batch=True, verbose=False, tag_or_hash=tag_or_hash,
-                    only=only, leave=leave, no_new_snapshot=True)
+                    only=only, leave=leave)
 
 
 

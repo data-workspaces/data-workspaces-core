@@ -11,6 +11,7 @@ import re
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
+from collections.abc import Sequence
 
 from .commands.init import init_command
 from .commands.add import add_command
@@ -131,7 +132,14 @@ class ResourceParamType(click.ParamType):
 
     def convert(self, value, param, ctx):
         parsed = []
-        for r in value.lower().split(','):
+        if isinstance(value, str):
+            rl = value.lower().split(',')
+        elif isinstance(value, Sequence):
+            rl = value
+        else:
+            self.failed("Invalid resource role list '%s', must be a string or a sequence"
+                        % str(value))
+        for r in rl:
             if r=='all':
                 return [r for r in RESOURCE_ROLE_CHOICES]
             elif r in (ResourceRoles.SOURCE_DATA_SET, 's'):
@@ -304,15 +312,9 @@ cli.add_command(snapshot)
 @click.option('--leave', type=str, default=None,
               metavar="RESOURCE1[,RESOURCE2,...]",
               help="Comma-separated list of resource names that you wish to leave in their current state. The rest will be restored to the specified snapshot.")
-@click.option('--no-new-snapshot', is_flag=True, default=False,
-              metavar="RESOURCE1[,RESOURCE2,...]",
-              help="By default, a new snapshot will be taken if the restore leaves the "+
-                   "workspace in a different state than the requested shapshot (e.g. due "+
-                   "to --only or --leave or added resources). If --no-new-snapshot is "+
-                   "specified, we adjust the individual resource states without taking a new snapshot.")
 @click.argument('tag_or_hash', type=str, default=None, required=True)
 @click.pass_context
-def restore(ctx, workspace_dir, only, leave, no_new_snapshot, tag_or_hash):
+def restore(ctx, workspace_dir, only, leave, tag_or_hash):
     """Restore the workspace to a prior state"""
     ns = ctx.obj
     if (only is not None) and (leave is not None):
@@ -324,7 +326,7 @@ def restore(ctx, workspace_dir, only, leave, no_new_snapshot, tag_or_hash):
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
     restore_command(workspace_dir, ns.batch, ns.verbose, tag_or_hash,
-                    only=only, leave=leave, no_new_snapshot=no_new_snapshot)
+                    only=only, leave=leave)
 
 cli.add_command(restore)
 
@@ -413,7 +415,8 @@ cli.add_command(clone)
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
 @click.option('--history', is_flag=True, default=False, help='Show previous snapshots')
-@click.option('--limit', type=int, default=0, help='Number of previous snapshots to show (most recent first)')
+@click.option('--limit', type=int, default=None,
+              help='Number of previous snapshots to show (most recent first)')
 @click.pass_context
 def status(ctx, workspace_dir, history, limit):
     """Show the history of snapshots"""
