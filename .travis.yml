@@ -4,7 +4,7 @@ python:
   - "3.6"
 install:
   - pip install -r requirements.txt
-  - pip install mypy
+  - pip install mypy jupyter
 script:
   - pip install --editable `pwd`
   - cd tests; make install-rclone-deb test
