@@ -40,6 +40,8 @@ def get_snapshot_metadata(workspace, reverse=True):
     metadata.sort(key=lambda data:data['timestamp'], reverse=reverse)
     return metadata
 
+METRIC_NAME_WIDTH=18
+METRIC_VAL_WIDTH=12
 
 class ReadSnapshotHistory(actions.Action):
     def __init__(self, ns, verbose, workspace_dir, limit=None):
@@ -55,15 +57,25 @@ class ReadSnapshotHistory(actions.Action):
         click.echo("\nHistory of snapshots")
         click.echo("%s %s %s %s %s %s" %
                    ('Hash'.ljust(8), 'Tags'.ljust(20), 'Created'.ljust(19),
-                    'Metric'.ljust(32), 'Value'.ljust(32),
+                    'Metric'.ljust(METRIC_NAME_WIDTH),
+                    'Value'.ljust(METRIC_VAL_WIDTH),
                     'Message'))
+        def format_metric_val(val):
+            if val is None:
+                return 'N/A'.ljust(METRIC_VAL_WIDTH)
+            elif not isinstance(val, float):
+                return str(val).ljust(METRIC_VAL_WIDTH)
+            elif val<1.0 and val>-1.0:
+                return ('%.3f'%val).ljust(METRIC_VAL_WIDTH)
+            else:
+                return ('%.1f'%val).ljust(METRIC_VAL_WIDTH)
         for v in history[0:self.limit] if self.limit is not None else history:
             click.echo('%s %s %s %s %s %s' %
                        (v['hash'][0:7]+' ',
                         (', '.join(v['tags']) if v['tags'] is not None else 'N/A').ljust(20),
                         v['timestamp'][0:-7],
-                        (v['metric'] if v['metric'] is not None else 'N/A').ljust(32),
-                        (str(v['value']) if v['metric'] is not None else 'N/A').ljust(32),
+                        (v['metric'] if v['metric'] is not None else 'N/A').ljust(METRIC_NAME_WIDTH),
+                        format_metric_val(v.get('value', None)),
                         v['message'] if v['message'] is not None and
                                         v['message']!='' else 'N/A'))
         num_shown = len(history) if self.limit is None \
