@@ -32,6 +32,10 @@ The lineage API captures this data for each step. Here is a view of the data cap
             Input resources  =>|  Step i  |=> Output resources
                              =>|          |=>
                                ------------
+                                    /\
+                                    ||
+                                   Code
+                               Dependencies
 
 
 To do this, we need use the following classes:
@@ -309,7 +313,7 @@ class LineageBuilder:
     :func:`~with_code_ref`. For command-line Python scripts, the
     main code resource is handled automatically in :func:`~as_script_step`.
     Other subclasses of the LineageBuilder may provide similar functionality
-    (e.g. the LineageBuilder for JupyterNotebooks will figure out the resource
+    (e.g. the LineageBuilder for JupyterNotebooks will try to figure out the resource
     containing your notebook and set it in the lineage).
 
     If you need to specify the workspace's root directory, use the
