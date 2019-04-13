@@ -65,6 +65,8 @@ def get_step_name_for_notebook() -> Optional[str]:
 
 
 def is_notebook() -> bool:
+    """Return true if this code is running in a notebook.
+    """
     try:
         shell = get_ipython().__class__.__name__
         if shell == 'ZMQInteractiveShell':

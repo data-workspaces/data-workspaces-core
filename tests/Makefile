@@ -8,14 +8,16 @@ UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration te
 
 MYPY_UTILS=workspace_utils.py lineage_utils.py
 MYPY_APIS=lineage.py
+MYPY_KITS=scikit_learn.py
 
 test: clean mypy
 	./testcli.sh --batch
 	python -m unittest $(UNIT_TESTS)
 
 mypy:
-	cd $(DATAWORKSPACES)/utils; mypy --ignore-missing-imports $(MYPY_UTILS); \
-    cd $(DATAWORKSPACES); mypy --ignore-missing-imports $(MYPY_APIS)
+	cd $(DATAWORKSPACES)/utils; mypy --ignore-missing-imports $(MYPY_UTILS)
+	cd $(DATAWORKSPACES); mypy --ignore-missing-imports $(MYPY_APIS)
+	cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 RCLONE_VERSION=v1.46
 RCLONE_FILE=rclone-$(RCLONE_VERSION)-linux-amd64.deb

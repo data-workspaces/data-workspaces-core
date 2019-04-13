@@ -2,6 +2,7 @@
 
 1. Introduction
 ===============
+.. _quickstart:
 Quick Start
 -----------
 Here is a quick example to give you a flavor of the project, using
@@ -47,7 +48,7 @@ Now, type the following Python code in the first cell::
   import numpy as np
   from os.path import join
   from sklearn.svm import SVC
-  from dataworkspaces.kits.sklearn import train_and_predict_with_cv
+  from dataworkspaces.kits.scikit_learn import train_and_predict_with_cv
   
   DATA_DIR='../sklearn-digits-dataset'
   RESULTS_DIR='../results'

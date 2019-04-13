@@ -9,21 +9,14 @@ Jupyter
 -------
 .. automodule:: dataworkspaces.kits.jupyter
    :no-undoc-members:
-
-.. autoclass:: NotebookLineageBuilder
-   :members:
+   :members: NotebookLineageBuilder, is_notebook, get_step_name_for_notebook
 
 Scikit-learn
 ------------
 
-.. automodule:: dataworkspaces.kits.sklearn
+.. automodule:: dataworkspaces.kits.scikit_learn
    :no-undoc-members:
+   :members: train_and_predict_with_cv,Metrics,BinaryClassificationMetrics,MulticlassClassificationMetrics
 
-.. autoclass:: Metrics
-   :members:
 
-.. autoclass:: BinaryClassificationMetrics
-   :members:
-
-.. autoclass:: MulticlassClassificationMetrics
-   :members:
+  
