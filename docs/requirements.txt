@@ -2,3 +2,6 @@
 click
 sphinx_rtd_theme
 sphinx-click
+jupyter # needed for kits doc
+numpy # needed for kits doc
+scikit-learn # needed for kits doc
