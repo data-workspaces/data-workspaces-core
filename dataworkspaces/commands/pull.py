@@ -116,7 +116,8 @@ def pull_command(workspace_dir, batch=False, verbose=False,
     if not only_workspace:
         current_resources = CurrentResources.read_current_resources(workspace_dir,
                                                                     batch, verbose)
-        remote_resources_json = get_resouces_file_from_git_origin(workspace_dir, verbose)
+        # temporary workaround for issue #30 - skip check for added remote resources
+        #remote_resources_json = get_resouces_file_from_git_origin(workspace_dir, verbose)
         pulled_resource_names = []
         for name in get_resources_to_process(current_resources, only, skip):
             r = current_resources.by_name[name]
@@ -124,18 +125,19 @@ def pull_command(workspace_dir, batch=False, verbose=False,
             pulled_resource_names.append(name)
         plan.append(PullWorkspace(ns, verbose, workspace_dir))
         gitignore_path = None
-        for resource_json in remote_resources_json:
-            if current_resources.is_a_current_name(resource_json['name']):
-                continue
-            # resouce not local, was added to the remote workspace
-            add_remote_action = AddRemoteResource(ns, verbose, batch, workspace_dir, resource_json)
-            plan.append(add_remote_action)
-            plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, workspace_dir))
-            add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
-                                                             workspace_dir)
-            if add_to_gi:
-                plan.append(add_to_gi)
-                gitignore_path = add_to_gi.gitignore_path
+        # temporary workaround for issue #30 - skip check for added remote resources
+        # for resource_json in remote_resources_json:
+        #     if current_resources.is_a_current_name(resource_json['name']):
+        #         continue
+        #     # resouce not local, was added to the remote workspace
+        #     add_remote_action = AddRemoteResource(ns, verbose, batch, workspace_dir, resource_json)
+        #     plan.append(add_remote_action)
+        #     plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, workspace_dir))
+        #     add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
+        #                                                      workspace_dir)
+        #     if add_to_gi:
+        #         plan.append(add_to_gi)
+        #         gitignore_path = add_to_gi.gitignore_path
         if gitignore_path:
             plan.append(actions.GitAdd(ns, verbose, workspace_dir, [gitignore_path]))
             plan.append(actions.GitCommit(ns, verbose, workspace_dir, "Added new resources to gitignore"))
