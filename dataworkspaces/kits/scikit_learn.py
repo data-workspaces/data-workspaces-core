@@ -19,7 +19,7 @@ import numpy as np
 from os.path import join, abspath, expanduser
 
 from dataworkspaces.lineage import LineageBuilder
-from .jupyter import is_notebook, get_step_name_for_notebook
+from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
 
 
 class Metrics:
@@ -206,7 +206,9 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
     lb = LineageBuilder().with_parameters(lineage_params)\
                          .as_results_step(results_dir, run_description)\
                          .with_input_path(input_dir)
-    lb = lb.with_step_name(get_step_name_for_notebook()) if is_notebook()\
+    lb = lb.with_step_name(get_step_name_for_notebook())\
+           .with_code_path(get_notebook_directory()) \
+         if is_notebook() \
          else lb.as_script_step()
 
     with lb.eval() as lineage:

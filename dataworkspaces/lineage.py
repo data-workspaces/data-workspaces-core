@@ -396,6 +396,10 @@ class LineageBuilder:
         self.no_inputs = True
         return self
 
+    def with_code_path(self, path:str) -> 'LineageBuilder':
+        self.code.append(path)
+        return self
+    
     def with_code_ref(self, ref:ResourceRef) -> 'LineageBuilder':
         self.code.append(ref)
         return self

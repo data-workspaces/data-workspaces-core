@@ -16,7 +16,7 @@ import datetime
 import sys
 
 from dataworkspaces.lineage import LineageBuilder
-from dataworkspaces.utils.lineage_utils import infer_script_path
+from dataworkspaces.utils.lineage_utils import infer_script_path, ResourceRef
 
 
 def _get_notebook_name() -> Optional[str]:
@@ -77,6 +77,14 @@ def is_notebook() -> bool:
             return False  # Other type (?)
     except NameError:
         return False      # Probably standard Python interpreter or a script
+
+
+def get_notebook_directory():
+    notebook_path = _get_notebook_name()
+    if notebook_path is not None:
+        return dirname(notebook_path)
+    else:
+        return curdir
 
 
 class NotebookLineageBuilder(LineageBuilder):
