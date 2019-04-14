@@ -17,22 +17,6 @@ Data Workspaces runs on
 Unix-like systems, including Linux, MacOS, and on Windows via the
 Windows Subsystem for Linux.
 
-|build-badge| |spacing| |docs-badge|
-
-.. |build-badge| image:: https://travis-ci.org/data-workspaces/data-workspaces-core.svg?branch=master
-    :target: https://travis-ci.org/data-workspaces/data-workspaces-core
-    :width: 39%
-    :alt: Build Status
-
-.. |spacing| raw:: html
-
-   &nbsp;&nbsp;&nbsp;
-   
-.. |docs-badge| image:: https://readthedocs.org/projects/data-workspaces-core/badge/?version=latest
-    :target: https://data-workspaces-core.readthedocs.io/en/latest/?badge=latest
-    :width: 39%
-    :alt: Documentation Status
-
 Quick Start
 ===========
 Here is a quick example to give you a flavor of the project, using
