@@ -13,8 +13,10 @@ from typing import Optional, Union, Dict, List, Any
 from sklearn.base import ClassifierMixin
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.externals import joblib
 import sys
 import numpy as np
+from os.path import join, abspath, expanduser
 
 from dataworkspaces.lineage import LineageBuilder
 from .jupyter import is_notebook, get_step_name_for_notebook
@@ -99,6 +101,7 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
                               input_dir:str, results_dir:str,
                               test_size:float=0.2, folds:int=5,
                               cv_scoring:str='accuracy',
+                              model_name:Optional[str]=None,
                               random_state:Optional[int]=None,
                               run_description:Optional[str]=None) -> None:
     """This function implements a common workflow for sklearn classifiers:
@@ -111,7 +114,9 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
     4. Predicts the classes of the validation test data set and computes
        common metrics comparing the training and testing data.
     5. Writes the metrics to a results file at RESULTS_DIR/results.json.
-    6. Write out the lineage data for this experiment.
+    6. If the ``model_name`` parameter was specified, retrain the classifier
+       on all the data and save the (pickled) model to the results directory.
+    7. Write out the lineage data for this experiment.
 
     **Parameters**
 
@@ -146,6 +151,11 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
         combinations in cross validation. Defaults to 'accuracy'. See
         `here <https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter>`_
         for details.
+    model_name
+        If specified, retrain the model using the entire data set (train + test)
+        and the best parameters found during cross validation. Pickle and save
+        this model to the file RESULTS_DIR/MODEL_NAME.pkl. If the model name is
+        not specified, skip this step.
     random_state
         Optional integer to be used as a random seed.
     run_description
@@ -212,3 +222,9 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
         m.print_metrics()
         lineage.write_results(m.to_dict())
 
+        if model_name is not None:
+            classifier = classifier_class(**best_params)
+            classifier.fit(data, target)
+            model_file = join(abspath(expanduser(results_dir)), model_name+'.pkl')
+            joblib.dump(classifier, model_file)
+            print("Wrote trained model to %s"% model_file)

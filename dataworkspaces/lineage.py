@@ -26,13 +26,13 @@ The lineage API captures this data for each step. Here is a view of the data cap
 
                                 Parameters
                                 ||  ||  ||
-                                \/  \/  \/
+                                \\/  \\/  \\/
                                ------------
                              =>|          |=>
             Input resources  =>|  Step i  |=> Output resources
                              =>|          |=>
                                ------------
-                                    /\
+                                    /\\
                                     ||
                                    Code
                                Dependencies
@@ -79,7 +79,7 @@ Here is an example usage of the lineage API in a command line script::
       # to the lineage API.
       builder = LineageBuilder()\\
                   .as_script_step()\\
-                  .with_paramerers({'gamma':args.gamma})\\
+                  .with_parameters({'gamma':args.gamma})\\
                   .with_input_path(args.input_data_dir)\\
                   .as_results_step(args.results_dir)
     

@@ -3,6 +3,7 @@
 1. Introduction
 ===============
 .. _quickstart:
+
 Quick Start
 -----------
 Here is a quick example to give you a flavor of the project, using
@@ -95,7 +96,8 @@ the workspace and save the data lineage along with our results::
 ``SVC-1`` is the *tag* of our snapshot.
 If you look in ``quickstart/results``, you will see that the results
 (currently just ``results.json``) have been moved to the subdirectory
-``snapshots/HOSTNAME-SVC-1``). A file, ``lineage.json``, containing a full
+``snapshots/HOSTNAME-SVC-1``, where ``HOSTNAME`` is the hostname for your
+local machine). A file, ``lineage.json``, containing a full
 data lineage graph for our experiment has also been
 created in that directory.
 
