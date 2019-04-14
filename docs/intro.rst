@@ -113,6 +113,10 @@ Some things you can do from here:
 * More complex scenarios involving multi-step data pipelines can easily
   be automated. See the documentation for details.
 
+See the :ref:`Tutorial Section <tutorial>` for a continuation of
+this example.
+
+
 .. _installation:
 
 Installation
