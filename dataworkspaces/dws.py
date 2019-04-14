@@ -205,7 +205,8 @@ cli.add_command(init)
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
 @click.pass_context
 def add(ctx, workspace_dir):
-    """Add a data collection to the workspace"""
+    """Add a data collection to the workspace as a resource. 
+       Possible types of resources are ``git``, ``local-files``, or ``rclone``; these are subcommands of add."""
     ns = ctx.obj
     if workspace_dir is None:
         if ns.batch:
@@ -222,17 +223,19 @@ cli.add_command(add)
 @click.option('--role', type=ROLE_PARAM)
 @click.option('--name', type=str, default=None,
               help="Short name for this resource")
+@click.option('--compute-hash', is_flag=True, default=False,
+              help="Compute hashes for all files. If this option is not set, we use a lightweight comparison of file sizes only.")
 @click.argument('path', type=DIRECTORY_PARAM)
 @click.pass_context
-def local_files(ctx, role, name, path):
-    """Local file directory (not managed by git)"""
+def local_files(ctx, role, name, path, compute_hash):
+    """Add a local file directory (not managed by git) to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
         if ns.batch:
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    add_command('file', role, name, ns.workspace_dir, ns.batch, ns.verbose, path)
+    add_command('file', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, compute_hash)
 
 add.add_command(local_files)
 
@@ -248,7 +251,7 @@ add.add_command(local_files)
 @click.argument('dest', type=str) # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
 def rclone(ctx, role, name, config, compute_hash, source, dest): 
-    """rclone-d repository"""
+    """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
         if ns.batch:
@@ -272,7 +275,7 @@ add.add_command(rclone)
 @click.argument('path', type=str)
 @click.pass_context
 def git(ctx, role, name, branch, path): 
-    """Local git repository"""
+    """Add a local git repository as a resource. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
         if ns.batch:

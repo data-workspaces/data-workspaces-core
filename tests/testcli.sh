@@ -131,9 +131,13 @@ echo 'File 3' > local_files/dir/f3
 cp $TESTSDIR/data.csv $WORKDIR/local_files/data.csv
 ls
 
-# create a local directory for storing intermediate data
+# create two local directories for storing intermediate data
 cd $WORKDIR
 mkdir workspace
+
+cd $WORKDIR
+mkdir hashed_workspace
+echo "FILE DATA" > hashed_workspace/f1
 
 # create a git repo for storing results
 cd $REMOTE
@@ -160,6 +164,7 @@ run dws $ARGS add git --role=code --name=code-git ./code
 run dws $ARGS add rclone --role=source-data --name=code-local localfs:./local_files my_local_files
 echo "local_files/" >> .gitignore
 run dws $ARGS add local-files --role=intermediate-data --name=workspace ./workspace
+run dws $ARGS add local-files --role=results --compute-hash --name=hspace ./hashed_workspace
 run dws $ARGS add git --role=results --name=results-git ./results_git
 
 # Add a git subdirectory resource

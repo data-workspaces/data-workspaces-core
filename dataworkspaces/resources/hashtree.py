@@ -18,6 +18,11 @@ def compute_hash(tmpname):
             sha1.update(data)
     return sha1.hexdigest()
 
+def compute_size(fname):
+    if not(os.path.exists(fname)):
+        raise Exception("File %s does not exist" % fname)
+    statinfo = os.stat(fname)
+    return statinfo.st_size
 
 BLOB = 'blob'
 TREE = 'tree'
@@ -141,7 +146,7 @@ class HashTree(object):
 HashTree._map_id_to_type[TREE] = HashTree
 
 
-def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[],
+def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[], hash_fun=compute_hash,
                     add_to_git=True):
     """traverse a directory tree rooted at :local_dir: and construct the tree hashes
        in the directory :path_where_hashes_are_stored:
@@ -154,11 +159,11 @@ def generate_hashes(path_where_hashes_are_stored, local_dir, ignore=[],
 
         t = HashTree(path_where_hashes_are_stored, root, add_to_git=add_to_git)
         for f in files:
-            print(f)
-            sha = compute_hash(os.path.join(root, f))
+            # print(f)
+            sha = hash_fun(os.path.join(root, f))
             t.add(f, BLOB, sha)
         for dir in dirs:
-            print(dir)
+            # print(dir)
             if dir in ignore: 
                 continue
             dirsha = hashtbl[os.path.join(root, dir)]
@@ -176,7 +181,7 @@ def _get_next_element(dl, startindex, ignore):
         return d, index
     return None, -1 
 
-def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]):
+def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[], hash_fun=compute_hash):
     """Traverse a directory tree rooted at :local_dir: and check that the files
        match the hashes kept in :basedir_where_hashes_are_stored: and that no new
        files have been added.
@@ -217,7 +222,7 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
                     if f != name:
                         print("File mismatch:", f, " and (hash says)", name)
                         return False
-                    sha = compute_hash(os.path.join(root, f))
+                    sha = hash_fun(os.path.join(root, f))
                     if sha != h:
                         print("Hash mismatch for file: ", f, ":", sha, " and (hash says)", h)
                         return False
@@ -233,6 +238,18 @@ def check_hashes(roothash, basedir_where_hashes_are_stored, local_dir, ignore=[]
         finally:
             fd.close()
     return True
+
+def generate_sha_signature(rsrcdir, localpath, ignore=[]):
+    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_hash)
+
+def check_sha_signature(hashval, rsrdir, localpath, ignore=[]):
+    return check_hashes(hashval, rsrcdir, localpath, ignore=ignore, hash_fun=compute_hash)
+
+def generate_size_signature(rsrcdir, localpath, ignore=[]):
+    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_size)
+
+def check_sha_signature(hashval, rsrdir, localpath, ignore=[]):
+    return check_hashes(hashval, rsrcdir, localpath, ignore=ignore, hash_fun=compute_size)
 
 def test_walk(base):
     for root, dir, files in os.walk(base, topdown=True):
