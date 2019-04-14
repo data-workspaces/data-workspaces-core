@@ -96,15 +96,30 @@ class ReadResources(actions.Action):
             click.echo(' '*indent, nl=False)
             click.echo('git repo %s' % rsrc['name'])
             if self.verbose:
-                click.echo(' '*(indent+2)+ ('Remote=%s' % rsrc['remote_origin_url']))
+                click.echo(' '*(indent+2)+ ('Remote: %s' % rsrc['remote_origin_url']))
             return
-        if rsrc['resource_type'] == 'file':
+        elif rsrc['resource_type'] == 'git-subdirectory':
+            click.echo(' '*indent, nl=False)
+            click.echo('git subdirectory %s' % rsrc['name'])
+            if self.verbose:
+                click.echo(' '*(indent+2)+ ('Relative path: %s' % rsrc['relative_path']))
+            return
+        elif rsrc['resource_type'] == 'file':
             click.echo(' '*indent, nl=False)
             click.echo('local files %s' % rsrc['name'])
             if self.verbose:
                 click.echo(' '*(indent+2), nl=False)
-                click.echo('LocalPath=%s' % rsrc['local_path'])
+                click.echo('LocalPath: %s' % rsrc['local_path'])
             return
+        else:
+            click.echo(' '*indent, nl=False)
+            click.echo("%s %s" % (rsrc['resource_type'], rsrc['name']))
+            if self.verbose:
+                for p in rsrc.keys():
+                    if p in ['resource_type', 'name']:
+                        continue
+                    click.echo(' '*(indent+2), nl=False)
+                    click.echo("%s: %s" % (p, rsrc[p]))
 
     def run(self):
         with open(self.resource_file, 'r') as f:
@@ -123,7 +138,9 @@ class ReadResources(actions.Action):
                 for e in items[r]:
                     self.pretty(e, indent=2) 
             else:
-                click.echo('No items with role %s' % r)
+                click.echo('Role %s' % r)
+                click.echo('-' *(5+len(r)))
+                click.echo('  No items with role %s' % r)
 
 
     def __str__(self):
