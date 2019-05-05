@@ -127,7 +127,8 @@ class Resource:
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to
-        the specified path in the resource.
+        the specified path in the resource. Caller responsible for
+        cleanup of temp_path.
         """
         raise NotImplementedError(self.__class__.__name__)
 

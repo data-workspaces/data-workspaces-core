@@ -7,6 +7,7 @@ import os
 from os.path import realpath, basename, isdir, join, dirname, exists
 import stat
 import click
+import shutil
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -137,7 +138,8 @@ class GitRepoResource(Resource):
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Copy a results file from the temporary location to
-        the specified path in the resource.
+        the specified path in the resource. Caller responsible for
+        cleanup of temp_path.
         """
         assert exists(temp_path)
         assert self.role==ResourceRoles.RESULTS
@@ -146,7 +148,9 @@ class GitRepoResource(Resource):
         parent_dir = dirname(abs_dest_path)
         if not exists(parent_dir):
             os.makedirs(parent_dir)
-        os.rename(temp_path, abs_dest_path)
+        # Need to use copy instead of move, because /tmp might be in a separate
+        # filesystem (see issue #21). Caller will do cleanup of temp file.
+        shutil.copyfile(temp_path, abs_dest_path)
         call_subprocess([GIT_EXE_PATH, 'add', rel_dest_path],
                         cwd=self.local_path, verbose=self.verbose)
         call_subprocess([GIT_EXE_PATH, 'commit',
@@ -425,14 +429,17 @@ class GitRepoResultsSubdirResource(Resource):
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to
-        the specified path in the resource.
+        the specified path in the resource. Caller responsible
+        for cleanup of temp_path
         """
         assert exists(temp_path)
         abs_dest_path = join(self.local_path, rel_dest_path)
         parent_dir = dirname(abs_dest_path)
         if not exists(parent_dir):
             os.makedirs(parent_dir)
-        os.rename(temp_path, abs_dest_path)
+        # Need to use copy instead of move, because /tmp might be in a separate
+        # filesystem (see issue #21). Caller will do cleanup of temp file.
+        shutil.copyfile(temp_path, abs_dest_path)
         rel_path_in_repo = join(self.relative_path, rel_dest_path)
         call_subprocess([GIT_EXE_PATH, 'add', rel_path_in_repo],
                         cwd=self.workspace_dir, verbose=self.verbose)
@@ -529,7 +536,7 @@ class GitRepoSubdirResource(Resource):
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Copy a results file from the temporary location to
-        the specified path in the resource.
+        the specified path in the resource. Caller responsible for cleanup.
         """
         raise InternalError("add_results_file should not be called for %s" %
                             self.__class__.__name__)

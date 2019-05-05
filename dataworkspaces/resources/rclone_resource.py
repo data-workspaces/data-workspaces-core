@@ -6,6 +6,7 @@ from errno import EEXIST
 import os
 import os.path 
 import stat
+import shutil
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
@@ -123,7 +124,8 @@ class RcloneResource(Resource):
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to
-        the specified path in the resource.
+        the specified path in the resource. Caller responsible
+        for cleanup.
         """
         assert self.role==ResourceRoles.RESULTS
         assert os.path.exists(temp_path)
@@ -131,7 +133,7 @@ class RcloneResource(Resource):
         parent_dir = os.path.dirname(abs_dest_path)
         if not os.path.isdir(parent_dir):
             os.makedirs(parent_dir)
-        os.rename(temp_path, abs_dest_path)
+        shutil.copy(temp_path, abs_dest_path)
 
     def restore_prechecks(self, hashval):
         pass
