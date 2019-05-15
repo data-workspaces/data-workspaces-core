@@ -11,7 +11,8 @@ from dataworkspaces.utils.git_utils import is_a_git_fat_repo, validate_git_fat_i
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path
 import dataworkspaces.commands.actions as actions
-from .init import get_config_file_path
+from .init import get_config_file_path, get_snapshot_metadata_dir_path,\
+                  get_snapshot_dir_path
 from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .pull import AddRemoteResource
 from .params import get_local_defaults, get_local_params_file_path
@@ -61,6 +62,14 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
                 raise ConfigurationError("Clone target directory %s already exists" % new_name)
             os.rename(initial_path, new_name)
             directory = new_name
+        snapshot_md_dir = get_snapshot_metadata_dir_path(directory)
+        if not exists(snapshot_md_dir):
+            # It is possible that we are cloning a repo with no snapshots
+            os.mkdir(snapshot_md_dir)
+        snapshot_dir = get_snapshot_dir_path(directory)
+        if not exists(snapshot_dir):
+            # It is possible that we are cloning a repo with no snapshots
+            os.mkdir(snapshot_dir)
         if is_a_git_fat_repo(directory):
             validate_git_fat_in_path()
             import dataworkspaces.third_party.git_fat as git_fat

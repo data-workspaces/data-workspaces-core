@@ -677,8 +677,10 @@ class GitRepoSubdirFactory(ResourceFactory):
         relative_path = json_data['relative_path']
         local_path = join(workspace_dir, relative_path)
         if not exists(local_path):
-            raise ConfigurationError("Subdirectory %s for resource %s not found at %s"%
-                                     (relative_path, rname, local_path))
+            # this subdirectory most have been created in the remote
+            # resource. We can just wait for the "git pull" to populate the
+            # the contents, but will create a placeholder so our checks pass.
+            os.mkdir(local_path)
         if role==ResourceRoles.RESULTS:
             return GitRepoResultsSubdirResource(rname, workspace_dir, relative_path,
                                                  verbose)

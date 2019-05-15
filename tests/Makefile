@@ -4,7 +4,7 @@ DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 help:
 	@echo targets are: test clean mypy help install-rclone-deb
 
-UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit
+UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull
 
 MYPY_UTILS=workspace_utils.py lineage_utils.py
 MYPY_APIS=lineage.py

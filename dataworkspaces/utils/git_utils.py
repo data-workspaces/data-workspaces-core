@@ -2,9 +2,12 @@
 """
 Utility functions related to interacting with git
 """
-from os.path import isdir, join, dirname, exists
+from os.path import isdir, join, dirname, exists, isdir
 from subprocess import run, PIPE
+import shutil
 import re
+import tempfile
+import json
 
 import click
 
@@ -326,3 +329,31 @@ def validate_git_fat_in_path_if_needed(repo_dir):
     find_exe('git-fat', GIT_FAT_ERRMSG,
              additional_search_locations=[])
 
+
+def get_remote_origin_url(repo_dir, verbose):
+    try:
+        url = call_subprocess([GIT_EXE_PATH, 'config', '--get', 'remote.origin.url'],
+                              cwd=repo_dir, verbose=verbose)
+        return url.strip()
+    except Exception as e:
+        raise ConfigurationError("Problem getting remote origin from repository at %s. Do you have a remote origin configured?"%
+                                 repo_dir) from e
+
+def get_json_file_from_remote(relpath, repo_dir, verbose):
+    """Download a JSON file from the remote master, parse it,
+    and return it.
+    """
+    remote_url = get_remote_origin_url(repo_dir, verbose)
+    tdir = None
+    try:
+        with tempfile.TemporaryDirectory() as tdir:
+            # Issue #30 - we wanted to use the git-archive command,
+            # but it is not supported by GitHub.
+            call_subprocess([GIT_EXE_PATH, 'clone', '--depth=1', remote_url, 'root'],
+                            cwd=tdir, verbose=verbose)
+            with open(join(join(tdir, 'root'), relpath), 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        if (tdir is not None) and isdir(tdir):
+            shutil.rmtree(tdir)
+        raise ConfigurationError("Problem retrieving file %s from remote"%relpath) from e

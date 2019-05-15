@@ -23,7 +23,7 @@ from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, checkout_and_apply_commit,\
     get_local_head_hash, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, GIT_EXE_PATH,\
-    get_subdirectory_hash
+    get_subdirectory_hash, get_json_file_from_remote
 
 
 def makefile(relpath, contents):
@@ -408,6 +408,19 @@ class TestGetSubdirectoryHash(unittest.TestCase):
         self.assertTrue('test_git_utils.py' in files)
         self.assertTrue('Makefile' in files)
 
+
+class TestMisc(unittest.TestCase):
+    def test_get_json_file_from_remote(self):
+        """We get the data.json file in this directory from the origin repo
+        and then check its contents.
+        """
+        this_dir = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
+        repo_dir = os.path.abspath(join(this_dir, '..'))
+        data = get_json_file_from_remote('tests/data.json', repo_dir, verbose=True)
+        keys = frozenset(data.keys())
+        self.assertEqual(keys, frozenset(['foo', 'bat']))
+        self.assertEqual(data['foo'], 'bar')
+        self.assertEqual(data['bat'], 3)
 
 if __name__ == '__main__':
     unittest.main()
