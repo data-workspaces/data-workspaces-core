@@ -67,17 +67,19 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
 
 class GitRepoResource(Resource):
     def __init__(self, name, role, workspace_dir, remote_origin_url,
-                 local_path, branch, verbose=False):
+                 local_path, branch, read_only, verbose=False):
         super().__init__('git', name, role, workspace_dir)
         self.local_path = local_path
         self.remote_origin_url = remote_origin_url
         self.branch = branch
+        self.read_only = read_only
         self.verbose = verbose
 
     def to_json(self):
         d = super().to_json()
         d['remote_origin_url'] = self.remote_origin_url
         d['branch'] = self.branch
+        d['read_only'] = self.read_only
         return d
 
     def local_params_to_json(self):
@@ -199,6 +201,8 @@ class GitRepoResource(Resource):
 
 
     def push_prechecks(self):
+        if self.read_only:
+            return
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
@@ -215,6 +219,9 @@ class GitRepoResource(Resource):
 
     def push(self):
         """Push to remote origin, if any"""
+        if self.read_only:
+            click.echo("Skipping push of resource %s, as it is read-only" % self.name)
+            return
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         call_subprocess([GIT_EXE_PATH, 'push', 'origin', self.branch],
                         cwd=self.local_path, verbose=self.verbose)
@@ -318,7 +325,7 @@ class GitLocalPathType(LocalPathType):
 
 class GitRepoFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace_dir, batch, verbose,
-                          local_path, branch):
+                          local_path, branch, read_only):
         """Instantiate a resource object from the add command's
         arguments"""
         lpr = realpath(local_path)
@@ -327,6 +334,8 @@ class GitRepoFactory(ResourceFactory):
             if lpr.startswith(wdr):
                 if branch!='master':
                     raise ConfigurationError("Only the branch 'master' is available for resources that are within the workspace's git repository")
+                elif read_only:
+                    raise ConfigurationError("The --read-only parameter is only valid for separate git repositories, not subdirectories.")
                 return GitRepoSubdirFactory().from_command_line(role, name,
                                                                 workspace_dir, batch, verbose,
                                                                 local_path)
@@ -337,7 +346,7 @@ class GitRepoFactory(ResourceFactory):
         remote_origin = get_remote_origin(local_path, verbose=verbose)
 
         return GitRepoResource(name, role, workspace_dir,
-                               remote_origin, local_path, branch, verbose)
+                               remote_origin, local_path, branch, read_only, verbose)
 
     def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
         """Instantiate a resource object from the parsed resources.json file"""
@@ -345,7 +354,7 @@ class GitRepoFactory(ResourceFactory):
         return GitRepoResource(json_data['name'], json_data['role'],
                                workspace_dir, json_data['remote_origin_url'],
                                local_params['local_path'], json_data['branch'],
-                               verbose)
+                               json_data.get('read_only'), verbose)
 
     def from_json_remote(self, json_data, workspace_dir, batch, verbose):
         assert json_data['resource_type']=='git'
@@ -353,6 +362,7 @@ class GitRepoFactory(ResourceFactory):
         remote_origin_url = json_data['remote_origin_url']
         default_local_path = join(workspace_dir, rname)
         branch = json_data['branch']
+        read_only = json_data.get('read_only')
         if not batch:
             # ask the user for a local path
             local_path = \
@@ -371,9 +381,9 @@ class GitRepoFactory(ResourceFactory):
             local_path = default_local_path
         return GitRepoResource(rname, json_data['role'],
                                workspace_dir, remote_origin_url,
-                               local_path, branch, verbose)
+                               local_path, branch, read_only, verbose)
 
-    def suggest_name(self, local_path, branch):
+    def suggest_name(self, local_path, branch, read_only):
         return basename(local_path)
 
 

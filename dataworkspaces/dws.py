@@ -272,9 +272,11 @@ add.add_command(rclone)
               help="Short name for this resource")
 @click.option('--branch', type=str, default='master',
               help="Branch of the repo to use, defaults to master.")
+@click.option('--read-only', '-r', is_flag=True, default=False,
+              help='If specified, treat the origin repository as read-only and never push to it.')
 @click.argument('path', type=str)
 @click.pass_context
-def git(ctx, role, name, branch, path): 
+def git(ctx, role, name, branch, read_only, path): 
     """Add a local git repository as a resource. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
@@ -283,7 +285,7 @@ def git(ctx, role, name, branch, path):
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     path = abspath(expanduser(path))
-    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, branch)
+    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, branch, read_only)
 
 add.add_command(git)
 
