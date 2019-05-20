@@ -48,7 +48,7 @@ external, third-party git repository. It is simple to add::
   dws add git --role=source-data --read-only ./sklearn-digits-dataset
 
 The first line (``git clone ...``) makes a local copy of the Git repository for the
-Digits dataset. The second line (``dws add git..``) adds the repository to the workspace
+Digits dataset. The second line (``dws add git ...``) adds the repository to the workspace
 as a resource to be tracked as part of our project.  The ``--role`` option tells Data
 Workspaces how we will use the resource (as source data), and the ``--read-only``
 option indicates that we should treat the repository as read-only and never try to
