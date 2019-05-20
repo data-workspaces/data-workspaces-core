@@ -32,7 +32,18 @@ Now, we are going to add our source data to the workspace. This resides in an
 external, third-party git repository. It is simple to add::
 
   git clone https://github.com/jfischer/sklearn-digits-dataset.git
-  dws add git --role=source-data ./sklearn-digits-dataset
+  dws add git --role=source-data --read-only ./sklearn-digits-dataset
+
+The first line (``git clone ...``) makes a local copy of the Git repository for the
+Digits dataset. The second line (``dws add git..``) adds the repository to the workspace
+as a resource to be tracked as part of our project.  The ``--role`` option tells Data Workspaces
+how we will use the resource (as source data), and the ``--read-only`` option indicates that
+we should treat the repository as read-only and never try to push it to its
+``origin`` [#introf2]_
+(as you do not have write permissions to the ``origin`` copy of this repository).
+
+.. [#introf2] In Git, each remote copy of a repository is assigned a name. By
+   convention, the ``origin`` is the copy from which the local copy was cloned.
 
 Now, we can create a Jupyter notebook for running our experiments::
 
@@ -274,8 +285,8 @@ facilitated by Data Workspaces:
 .. image:: _static/collaboration-workflow.png
 
 First, the data scientist creates an empty git repository
-on the remote origin (e.g. GitHub, GitLab, or BitBucket) and then runs the ``push`` command to update
-the origin with the full history of the workspace.
+on the remote ``origin`` (e.g. GitHub, GitLab, or BitBucket) and then runs the ``push`` command to update
+the ``origin`` with the full history of the workspace.
 
 A new collaborator can use the ``clone`` command to copy the workspace down to
 their local machine. They can then run experiments and take snapshots, just

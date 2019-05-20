@@ -264,13 +264,9 @@ Now, take a snapshot::
 We have tagged this snapshot with the tag ``SVC-3``. We want to push the
 entire workspace to GitHub. This can be done as follows::
 
-  dws push --skip sklearn-digits-dataset
+  dws push
 
-We include ``--skip sklearn-digits-dataset`` on the command line, as we
-do not have write access to that resource and want to exclude it from our
-push.
-
-After the push, the *origin* respository on GitHub has been updated with
+After the push, the ``origin`` respository on GitHub has been updated with
 the latest snapshot and results. We can now go back to the origin machine
 where we created the workspace, and download the changes. To do so, start
 up a command line window, go into the workspace's directory on the first machine,
