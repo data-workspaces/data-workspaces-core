@@ -77,7 +77,9 @@ class InitializeGitFat(actions.Action):
         self.dataworkspace_dir =  join(workspace_dir, '.dataworkspace')
         if (RSYNC_RE.match(git_fat_remote) is None) and \
            (FPATH_RE.match(git_fat_remote) is None):
-            raise ConfigurationError("'%s' is not a valid remote address for rsync (used by git-fat)" % git_fat_remote)
+            raise ConfigurationError(("'%s' is not a valid remote address for rsync (used by git-fat). "+
+                                      "Please use the format HOSTNAME:/PATH")
+                                     % git_fat_remote)
         if git_fat_user is not None and USERNAME_RE.match(git_fat_user) is None:
             raise ConfigurationError("'%s' is not a valid remote username for git-fat"%
                                      git_fat_user)
