@@ -39,18 +39,16 @@ code into a notebook cell::
   import numpy as np
   from os.path import join
   from sklearn.linear_model import LogisticRegression
-  from dataworkspaces.kits.scikit_learn import train_and_predict_with_cv
+  from dataworkspaces.kits.scikit_learn import load_dataset_from_resource,\
+                                               train_and_predict_with_cv
   
-  DATA_DIR='../sklearn-digits-dataset'
   RESULTS_DIR='../results'
-  
-  data = np.loadtxt(join(DATA_DIR, 'data.csv'), delimiter=',')
-  target = np.loadtxt(join(DATA_DIR, 'target.csv'), delimiter=',')
+
+  dataset = load_dataset_from_resource('sklearn-digits-dataset')
   train_and_predict_with_cv(LogisticRegression,
                             {'C':[1e-3, 1e-2, 1e-1, 1, 1e2], 'solver':['lbfgs'],
                              'multi_class':['multinomial']},
-                            data, target,
-                            DATA_DIR, RESULTS_DIR, random_state=42)
+                            dataset, RESULTS_DIR, random_state=42)
 
 Note the only differences in our call to ``train_and_predict_with_cv`` are that
 we pass a different classifier (``LogisticRegression``) and a ``param_grid``
@@ -99,8 +97,8 @@ a model with the full data set and save it to our results directory.
 ``model_name`` parameter. Start the ``digits-svc`` notebook and add
 ``model_name='svc-best'`` to the call as follows::
 
-  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, data, target,
-                            DATA_DIR, RESULTS_DIR, random_state=42,
+  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, dataset,
+                            RESULTS_DIR, random_state=42,
                             model_name='svc-best')
 
 Now, run the cell. It should print the metrics as before and then the message:

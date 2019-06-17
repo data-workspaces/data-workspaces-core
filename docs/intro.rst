@@ -60,15 +60,14 @@ Now, type the following Python code in the first cell::
   import numpy as np
   from os.path import join
   from sklearn.svm import SVC
-  from dataworkspaces.kits.scikit_learn import train_and_predict_with_cv
+  from dataworkspaces.kits.scikit_learn import load_dataset_from_resource,\
+                                               train_and_predict_with_cv
   
-  DATA_DIR='../sklearn-digits-dataset'
   RESULTS_DIR='../results'
-  
-  data = np.loadtxt(join(DATA_DIR, 'data.csv'), delimiter=',')
-  target = np.loadtxt(join(DATA_DIR, 'target.csv'), delimiter=',')
-  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, data, target,
-                            DATA_DIR, RESULTS_DIR, random_state=42)
+
+  dataset = load_dataset_from_resource('sklearn-digits-dataset')
+  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, dataset,
+                            RESULTS_DIR, random_state=42)
 
 Now, run the cell. It will take a few seconds to train and test the
 model. You should then see::

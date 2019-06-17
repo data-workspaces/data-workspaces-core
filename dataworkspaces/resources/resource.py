@@ -103,9 +103,9 @@ class Resource:
         lp = self.get_local_path_if_any()
         if lp is not None:
             path = join(lp, subpath)
-            if not isdir(path):
-                raise ConfigurationError("Subpath %s does not exist for resource %s"%
-                                         (subpath, self.name))
+            if not exists(path): # use exists() instead of isdir() as subpath could be a file
+                raise ConfigurationError("Subpath %s does not exist for resource %s, expecting it at '%s'"%
+                                         (subpath, self.name, path))
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
