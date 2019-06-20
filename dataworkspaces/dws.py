@@ -18,6 +18,7 @@ from .commands.add import add_command
 from .commands.snapshot import snapshot_command
 from .commands.restore import restore_command
 from .commands.status import status_command
+from .commands.publish import publish_command
 from .commands.push import push_command
 from .commands.pull import pull_command
 from .commands.clone import clone_command
@@ -334,6 +335,31 @@ def restore(ctx, workspace_dir, only, leave, tag_or_hash):
                     only=only, leave=leave)
 
 cli.add_command(restore)
+
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--skip', type=str, default=None,
+              metavar="RESOURCE1[,RESOURCE2,...]",
+              help="Comma-separated list of resource names that you wish to skip when pushing. The rest will be pushed to their remote origins, if applicable.")
+@click.argument('remote-repository', type=str, default=None, required=True)
+@click.pass_context
+def publish(ctx, workspace_dir, skip, remote_repository):
+    """Add a remote Git repository as the origin for the workspace and
+    do the initial push of the workspace and any other resources.
+    """
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    publish_command(workspace_dir, remote_repository, ns.batch, ns.verbose)
+    push_command(workspace_dir, ns.batch, ns.verbose, only=None, skip=skip,
+                 only_workspace=None)
+
+cli.add_command(publish)
 
 
 @click.command()

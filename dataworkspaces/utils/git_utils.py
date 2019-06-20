@@ -357,3 +357,7 @@ def get_json_file_from_remote(relpath, repo_dir, verbose):
         if (tdir is not None) and isdir(tdir):
             shutil.rmtree(tdir)
         raise ConfigurationError("Problem retrieving file %s from remote"%relpath) from e
+
+def set_remote_origin(repo_dir, remote_url, verbose):
+    call_subprocess([GIT_EXE_PATH, 'remote', 'add', 'origin', remote_url],
+                    cwd=repo_dir, verbose=verbose)
