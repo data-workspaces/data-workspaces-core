@@ -839,11 +839,7 @@ class LineageStoreCurrent:
     """
     def __init__(self,
                  lineage_by_resource:Optional[Dict[str, ResourceLineages]]=None):
-        if lineage_by_resource:
-            self.lineage_by_resource = lineage_by_resource # type: Dict[str, ResourceLineages]
-        else:
-            self.lineage_by_resource = {} # type: Dict[str, ResourceLineages]
-
+        self.lineage_by_resource = lineage_by_resource if lineage_by_resource else {} # type: Dict[str, ResourceLineages]
 
     def add_step(self, lineage:StepLineage):
         """Given a completed step, update the lineage store
