@@ -2,7 +2,7 @@
 Main definition of the workspace abstraction
 """
 
-from typing import Dict, Any, Iterable, Optional, List, Tuple
+from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
 from abc import ABCMeta, abstractmethod
 
@@ -147,6 +147,19 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
 #               Mixins for Snapshot functionality                  #
 ####################################################################
 
+class SnapshotMetadata:
+    def __init__(self, hashval:str, tags:List[str],
+                 message:str, hostname:str,
+                 timestamp:str,
+                 restore_hashes:Dict[str,str]):
+        self.hashval = hashval
+        self.tags = tags
+        self.message = message
+        self.hostname = hostname
+        self.timestamp = timestamp
+        self.restore_hashes = restore_hashes
+
+
 class SnapshotWorkspaceMixin(metaclass=ABCMeta):
     """Mixin class for workspaces that support snapshots and restores.
     """
@@ -185,18 +198,12 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_snapshot_metadsata(self, tag_or_hash:str) -> 'SnapshotMetadata': pass
+    def get_snapshot_metadata(self, tag_or_hash:str) -> SnapshotMetadata: pass
 
-
-class SnapshotMetadata:
-    def __init__(self, hashval, tags, message, hostname,
-                 timestamp, restore_hashes):
-        self.hashval = hashval
-        self.tags = tags
-        self.message = message
-        self.hostname = hostname
-        self.timestamp = timestamp
-        self.restore_hashes = restore_hashes
+    @abstractmethod
+    def list_snapshots(self, max_count:Optional[int]=None) \
+        -> Iterable[SnapshotMetadata]:
+        pass
 
 
 class SnapshotResourceMixin(metaclass=ABCMeta):
@@ -233,3 +240,53 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
     def restore(self, restore_hashval:str) -> None:
         pass
 
+
+####################################################################
+#                Mixins for Lineage functionality                  #
+####################################################################
+
+class ResourceRef(NamedTuple):
+    """A namedtuple that is to indentify a resource or path within
+    a resource for lineage purposes (e.g. the input or output of a
+    workflow step).
+    The ``name`` parameter is the name of a resource. The optional
+    ``subpath`` parameter is a relative path within that resource.
+    The subpath lets you store inputs/outputs from multiple steps
+    within the same resource and track them independently.
+    """
+    name: str
+    subpath: Optional[str] = None
+
+
+class LineageBase(metaclass=ABCMeta):
+    """Abstract base class for lineage
+    """
+    pass
+
+class LineageWorkspaceMixin(SnapshotResourceMixin):
+    """Mixin class for workspaces that support a lineage store.
+    This builds on the snapshots, so we extend fromt he Snapshot Workspace
+    API.
+
+    The lineage store should store resource ref to lineage mappings.
+    When a snapshot takes place, the linage for the affected resources
+    is saved. When a restore takes place, the lineage for the affected
+    resources is restored as well.
+
+    TODO: This needs some concept of either local state or an execution
+    id, particularly in the case where there is a single centralized store.
+    """
+    @abstractmethod
+    def add_lineage(self, ref:ResourceRef, lineage:LineageBase) -> None:pass
+
+    @abstractmethod
+    def get_lineage_for_ref(self, ref:ResourceRef) -> Optional[LineageBase]:
+        """Returns the current lineage associated with the resource ref
+        or None if there is no lineage data presensent.
+        """
+        pass
+
+    @abstractmethod
+    def get_lineages_for_resource(self, resource_name:str) -> List[LineageBase]:
+        """Return a list of lineage objects associated with the resource.
+        """
