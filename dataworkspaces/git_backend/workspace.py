@@ -2,7 +2,7 @@
 Subclasses of workspace abstract classes for workspace APIs.
 """
 
-from os.path import exists
+from os.path import exists, join
 import json
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
@@ -15,7 +15,7 @@ from dataworkspaces.utils.git_utils import commit_changes_in_repo
 CONFIG_FILE_PATH='.dataworkspace/config.json'
 LOCAL_PARAMS_PATH='.dataworkspace/local_params.json'
 RESOURCES_FILE_PATH='.dataworkspace/resources.json'
-RESOURCE_LOCAL_PARAMS_PATH='.dataworkspaces/resource_local_params.json'
+RESOURCE_LOCAL_PARAMS_PATH='.dataworkspace/resource_local_params.json'
 SNAPSHOT_DIR_PATH='.dataworkspace/snapshots'
 SNAPSHOT_METADATA_DIR_PATH='.dataworkspace/snapshot_metadata'
 

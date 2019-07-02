@@ -8,7 +8,7 @@ from abc import ABCMeta, abstractmethod
 import importlib
 
 from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.resource import RESOURCE_TYPES
+from dataworkspaces.resources import RESOURCE_TYPES
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.

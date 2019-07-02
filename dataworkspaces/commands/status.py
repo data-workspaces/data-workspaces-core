@@ -86,65 +86,53 @@ class ReadSnapshotHistory(actions.Action):
     def __str__(self):
         return ("Read snapshot metadata from %s" % self.snapshot_history_file)
 
-class ReadResources(actions.Action):
-    def __init__(self, ns, verbose, resource_file):
-        super().__init__(ns, verbose)
-        self.resource_file = resource_file
-
-    def pretty(self, rsrc, indent=2):
-        if rsrc['resource_type'] == 'git':
-            click.echo(' '*indent, nl=False)
-            click.echo('git repo %s' % rsrc['name'])
-            if self.verbose:
-                click.echo(' '*(indent+2)+ ('Remote: %s' % rsrc['remote_origin_url']))
-            return
-        elif rsrc['resource_type'] == 'git-subdirectory':
-            click.echo(' '*indent, nl=False)
-            click.echo('git subdirectory %s' % rsrc['name'])
-            if self.verbose:
-                click.echo(' '*(indent+2)+ ('Relative path: %s' % rsrc['relative_path']))
-            return
-        elif rsrc['resource_type'] == 'file':
-            click.echo(' '*indent, nl=False)
-            click.echo('local files %s' % rsrc['name'])
-            if self.verbose:
+def pp_resource_params(params, indent=2, verbose=False):
+    if params['resource_type'] == 'git':
+        click.echo(' '*indent, nl=False)
+        click.echo('git repo %s' % params['name'])
+        if verbose:
+            click.echo(' '*(indent+2)+ ('Remote: %s' % params['remote_origin_url']))
+        return
+    elif params['resource_type'] == 'git-subdirectory':
+        click.echo(' '*indent, nl=False)
+        click.echo('git subdirectory %s' % params['name'])
+        if verbose:
+            click.echo(' '*(indent+2)+ ('Relative path: %s' % params['relative_path']))
+        return
+    elif params['resource_type'] == 'file':
+        click.echo(' '*indent, nl=False)
+        click.echo('local files %s' % params['name'])
+        if verbose:
+            click.echo(' '*(indent+2), nl=False)
+            click.echo('LocalPath: %s' % params['local_path'])
+        return
+    else:
+        click.echo(' '*indent, nl=False)
+        click.echo("%s %s" % (params['resource_type'], params['name']))
+        if verbose:
+            for p in params.keys():
+                if p in ['resource_type', 'name']:
+                    continue
                 click.echo(' '*(indent+2), nl=False)
-                click.echo('LocalPath: %s' % rsrc['local_path'])
-            return
-        else:
-            click.echo(' '*indent, nl=False)
-            click.echo("%s %s" % (rsrc['resource_type'], rsrc['name']))
-            if self.verbose:
-                for p in rsrc.keys():
-                    if p in ['resource_type', 'name']:
-                        continue
-                    click.echo(' '*(indent+2), nl=False)
-                    click.echo("%s: %s" % (p, rsrc[p]))
+                click.echo("%s: %s" % (p, params[p]))
 
-    def run(self):
-        with open(self.resource_file, 'r') as f:
-            state = json.load(f)
+def print_resource_status(workspace):
         items = { }
-        for r in RESOURCE_ROLE_CHOICES:
-            items[r] = []
-        for v in state: 
-            assert 'role' in v, "'role' not found for resource %s" % v
-            assert v['role'] in RESOURCE_ROLE_CHOICES, '%s not a valid role' % v['role']
-            items[v['role']].append(v) 
+        for c in RESOURCE_ROLE_CHOICES:
+            items[c] = []
+        for rname in workspace.get_resource_names():
+            params = workspace._get_resource_params(rname)
+            items[params['role']].append(params)
         for r in RESOURCE_ROLE_CHOICES:
             if items[r] != []:
                 click.echo('Role %s' % r)
                 click.echo('-' *(5+len(r)))
-                for e in items[r]:
-                    self.pretty(e, indent=2) 
+                for rp in items[r]:
+                    pp_resource_params(rp, indent=2, verbose=workspace.verbose) 
             else:
                 click.echo('Role %s' % r)
                 click.echo('-' *(5+len(r)))
                 click.echo('  No items with role %s' % r)
-
-
-    def __str__(self):
-        return ("Read resources from %s" % self.resource_file)
 
 
 def show_snapshot_history(ns, workspace_dir, limit, batch, verbose):
@@ -157,21 +145,11 @@ def show_snapshot_history(ns, workspace_dir, limit, batch, verbose):
                                          limit=limit)
     return output_history
 
-def show_current_status(ns, workspace_dir, batch, verbose):
-    rsrc_file = get_resource_file_path(workspace_dir)
-    if not os.path.exists(rsrc_file):
-        if verbose:
-            click.echo('No resource file')
-        return
 
-    output_status = ReadResources(ns, verbose, rsrc_file)
-    return output_status
-    
-def status_command(workspace_dir, history, limit, batch, verbose):
-    ns = actions.Namespace()
-    plan = [ ]
-    plan.append(show_current_status(ns, workspace_dir, batch, verbose))
-    if history:
-        plan.append(show_snapshot_history(ns, workspace_dir, limit, batch, verbose))
-    actions.run_plan(plan, "Show status", "shown the current status", batch=batch, verbose=verbose) 
+def status_command(workspace, history, limit):
+    print("Status for workspace: %s" % workspace.name)
+    print_resource_status(workspace)
+    # if history:
+    #     plan.append(show_snapshot_history(ns, workspace_dir, limit, batch, verbose))
+
 

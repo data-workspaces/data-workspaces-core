@@ -13,6 +13,7 @@ from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
 from argparse import Namespace
 from collections.abc import Sequence
 
+import dataworkspaces.workspace as ws
 from .commands.init import init_command
 from .commands.add import add_command
 from .commands.snapshot import snapshot_command
@@ -54,6 +55,11 @@ def _find_containing_workspace():
     return None
 
 DWS_PATHDIR=_find_containing_workspace()
+
+def _load_workspace(workspace_dir, batch, verbose):
+    return ws.load_workspace('dataworkspaces.git_backend', workspace_dir,
+                             batch, verbose)
+
 
 class WorkspaceDirParamType(click.ParamType):
     name = 'workspace-directory'
@@ -458,7 +464,8 @@ def status(ctx, workspace_dir, history, limit):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    status_command(workspace_dir, history, limit, ns.batch, ns.verbose)
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    status_command(workspace, history, limit)
 
 cli.add_command(status)
 
