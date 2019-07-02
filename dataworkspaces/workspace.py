@@ -1,10 +1,14 @@
-"""
-Main definition of the workspace abstraction
+<"""
+Main definitions of the workspace abstractions
 """
 
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
 from abc import ABCMeta, abstractmethod
+
+# Standin for a JSON object/dict. The value type is overly
+# permissive, as mypy does not yet support recursive types.
+JSONDict=Dict[str,Any]
 
 class Workspace(metaclass=ABCMeta):
     def __init__(self, name:str, dws_version:str):
@@ -12,14 +16,14 @@ class Workspace(metaclass=ABCMeta):
         self.dws_version = dws_version
 
     @abstractmethod
-    def get_global_params(self) -> Dict[str,Any]:
+    def get_global_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this workspace,
         which apply across all instances.
         """
         pass
 
     @abstractmethod
-    def get_local_params(self) -> Dict[str,Any]:
+    def get_local_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this particular
         install of the workspace (e.g. local filesystem paths, hostname).
         """
@@ -51,7 +55,8 @@ class Workspace(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def clone_resource(self, name:str, local_params:Dict[str,Any]) -> 'Resource':
+    def clone_resource(self, name:str, local_params:JSONDict) \
+        -> 'LocalStateResourceMixin':
         """Instantiate the resource locally with the specified local parameters.
         This is used in cases where the resource has local state.
         """
@@ -110,7 +115,7 @@ class Resource(metaclass=ABCMeta):
         return self.role==ResourceRoles.RESULTS
 
     @abstractmethod
-    def get_params(self) -> Dict[str,Any]:
+    def get_params(self) -> JSONDict:
         """Get the parameters that define the configuration
         of the resource globally.
         """
@@ -128,7 +133,7 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
     that need to be "cloned"
     """
     @abstractmethod
-    def get_local_params(self) -> Dict[str,Any]:
+    def get_local_params(self) -> JSONDict:
         """Get the parameters that define any local configuration of
         the resource (e.g. local filepaths)
         """
@@ -141,6 +146,107 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def pull_prechecks(self):
+        """Perform any prechecks before updating this resource from the
+        remote origin.
+        """
+        pass
+
+    @abstractmethod
+    def pull(self):
+        """Update this resource with the latest changes from the remote
+        origin.
+        """
+        pass
+
+    @abstractmethod
+    def push_prechecks(self):
+        """Perform any prechecks before uploading this resource's changes to the
+        remote origin.
+        """
+        pass
+
+    @abstractmethod
+    def push(self):
+        """Upload this resource's changes to the remote origin.
+        """
+        pass
+
+
+
+####################################################################
+#      Mixins for Synchronized and Centralized workspaces          #
+####################################################################
+class SyncedWorkspaceMixin(metaclass=ABCMeta):
+    """This mixin is for workspaces that support synchronizing with a master
+    copy via push/pull operations.
+    """
+    @abstractmethod
+    def pull_prechecks(self, only:Optional[List[str]]=None,
+                       skip:Optional[List[str]]=None,
+                       only_workspace:bool=False) -> None:
+        pass
+
+    @abstractmethod
+    def pull(self, only:Optional[List[str]]=None,
+             skip:Optional[List[str]]=None,
+             only_workspace:bool=False) -> None:
+        """Download latest updates from remote origin. By default,
+        includes any resources that support syncing via the
+        LocalStateResourceMixin.
+        """
+        pass
+
+
+    @abstractmethod
+    def push_prechecks(self, only:Optional[List[str]]=None,
+                       skip:Optional[List[str]]=None,
+                       only_workspace:bool=False) -> None:
+        pass
+
+    @abstractmethod
+    def push(self, only:Optional[List[str]]=None,
+             skip:Optional[List[str]]=None,
+             only_workspace:bool=False) -> None:
+        """Upload updates to remote origin. By default,
+        includes any resources that support syncing via the
+        LocalStateResourceMixin.
+        """
+        pass
+
+class CentralWorkspaceMixin(metaclass=ABCMeta):
+    """This mixin is for workspaces that have a central store
+    and do not need synchronization of the workspace itself.
+    They still may need to sychronize individual resources.
+    """
+    @abstractmethod
+    def pull_resources_prechecks(self, only:Optional[List[str]]=None,
+                                 skip:Optional[List[str]]=None) -> None:
+        pass
+
+    @abstractmethod
+    def pull_resources(self, only:Optional[List[str]]=None,
+                       skip:Optional[List[str]]=None) -> None:
+        """Download latest resource updates from remote origin
+        for resources that support syncing via the
+        LocalStateResourceMixin.
+        """
+        pass
+
+
+    @abstractmethod
+    def push_resources_prechecks(self, only:Optional[List[str]]=None,
+                                 skip:Optional[List[str]]=None) -> None:
+        pass
+
+    @abstractmethod
+    def push_resources(self, only:Optional[List[str]]=None,
+                       skip:Optional[List[str]]=None) -> None:
+        """Upload updates for any resources that
+        support syncing via the LocalStateResourceMixin.
+        """
+        pass
 
 
 ####################################################################
@@ -148,15 +254,23 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
 ####################################################################
 
 class SnapshotMetadata:
-    def __init__(self, hashval:str, tags:List[str],
-                 message:str, hostname:str,
+    """The metadata we store for each snapshot (in addition to the manifest).
+    relative_path refers to the path used in resources that copy their current
+    state to a subdirectory for each snapshot.
+    """
+    def __init__(self, hashval:str,
+                 tags:List[str],
+                 message:str,
+                 hostname:str,
                  timestamp:str,
+                 relative_path:str,
                  restore_hashes:Dict[str,str]):
         self.hashval = hashval
         self.tags = tags
         self.message = message
         self.hostname = hostname
         self.timestamp = timestamp
+        self.relative_path = relative_path
         self.restore_hashes = restore_hashes
 
 
@@ -180,18 +294,18 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def restore_prechecks(self, restore_tag_or_hash:str,
+    def restore_prechecks(self, restore_hash:str,
                           only:Optional[List[str]]=None,
                           leave:Optional[List[str]]=None) \
          -> None:
-        """Run any prechecks before restoring to the specified tag or hash value
+        """Run any prechecks before restoring to the specified hash value
         (aka certificate). This should throw a ConfigurationError if the
         restore would fail for some reason.
         """
         pass
 
     @abstractmethod
-    def restore(self, restore_tag_or_hash:str,
+    def restore(self, restore_hash:str,
                 only:Optional[List[str]]=None,
                 leave:Optional[List[str]]=None) \
          -> None:
@@ -201,8 +315,23 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
     def get_snapshot_metadata(self, tag_or_hash:str) -> SnapshotMetadata: pass
 
     @abstractmethod
+    def lookup_snapshot_hash(self, tag_or_hash:str) -> str:
+        """Given a string that is either a tag or a hash corresponding to a snapshot,
+        return the associated hash. Throws a ConfigurationError if no entry is found.
+        """
+        pass
+
+    @abstractmethod
     def list_snapshots(self, max_count:Optional[int]=None) \
         -> Iterable[SnapshotMetadata]:
+        pass
+
+    @abstractmethod
+    def delete_snapshot(self, hash_val:str, include_resources=False)-> None:
+        """Given a snapshot hash, delete the entry from the workspace's metadata.
+        If include_resources is True, then delete any data from the associated resources
+        (e.g. snapshot subdirectories).
+        """
         pass
 
 
@@ -240,6 +369,13 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
     def restore(self, restore_hashval:str) -> None:
         pass
 
+    @abstractmethod
+    def delete_snapshot(self, hash_val:str, relative_path:str) -> None:
+        """Delete any state associated with the snapshot, including any
+        files under relative_path
+        """
+        pass
+
 
 ####################################################################
 #                Mixins for Lineage functionality                  #
@@ -258,14 +394,9 @@ class ResourceRef(NamedTuple):
     subpath: Optional[str] = None
 
 
-class LineageBase(metaclass=ABCMeta):
-    """Abstract base class for lineage
-    """
-    pass
-
 class LineageWorkspaceMixin(SnapshotResourceMixin):
     """Mixin class for workspaces that support a lineage store.
-    This builds on the snapshots, so we extend fromt he Snapshot Workspace
+    This builds on the snapshots, so we extend from the Snapshot Workspace
     API.
 
     The lineage store should store resource ref to lineage mappings.
@@ -277,16 +408,18 @@ class LineageWorkspaceMixin(SnapshotResourceMixin):
     id, particularly in the case where there is a single centralized store.
     """
     @abstractmethod
-    def add_lineage(self, ref:ResourceRef, lineage:LineageBase) -> None:pass
+    def add_lineage(self, ref:ResourceRef, lineage_data:JSONDict) -> None:pass
 
     @abstractmethod
-    def get_lineage_for_ref(self, ref:ResourceRef) -> Optional[LineageBase]:
+    def get_lineage_for_ref(self, ref:ResourceRef) -> Optional[JSONDict]:
         """Returns the current lineage associated with the resource ref
         or None if there is no lineage data presensent.
         """
         pass
 
     @abstractmethod
-    def get_lineages_for_resource(self, resource_name:str) -> List[LineageBase]:
+    def get_lineages_for_resource(self, resource_name:str) -> List[JSONDict]:
         """Return a list of lineage objects associated with the resource.
         """
+        pass
+
