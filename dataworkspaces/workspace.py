@@ -1,19 +1,30 @@
-<"""
+"""
 Main definitions of the workspace abstractions
 """
 
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
 from abc import ABCMeta, abstractmethod
+import importlib
+
+from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.resource import RESOURCE_TYPES
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
 JSONDict=Dict[str,Any]
 
 class Workspace(metaclass=ABCMeta):
-    def __init__(self, name:str, dws_version:str):
+    def __init__(self, name:str, dws_version:str,
+                 batch:bool=False, verbose:bool=False):
+        """Required properties are the workspace name
+        and the version of dws that created it.
+        batch and verbose are for the command line interface.
+        """
         self.name = name
         self.dws_version = dws_version
+        self.batch = batch
+        self.verbose = verbose
 
     @abstractmethod
     def get_global_params(self) -> JSONDict:
@@ -43,38 +54,134 @@ class Workspace(metaclass=ABCMeta):
     def get_resource_names(self) -> Iterable[str]: pass
 
     @abstractmethod
+    def _get_resource_params(self, resource_name) -> JSONDict:
+        """Get the parameters for this resource from the workspace's
+        metadata store - used when instantitating resources. Show
+        throw a ConfigurationError if resource does not exist.
+        """
+        pass
+
+    @abstractmethod
+    def _get_resource_local_params(self, resource_name:str) -> Optional[JSONDict]:
+        """If a resource has local parameters defined for it, return them.
+        Otherwise, return None.
+        """
+        pass
+
+    @abstractmethod
+    def _add_params_for_resource(self, resource_name:str, params:JSONDict)->None:
+        """
+        Add the params for a new resource in this workspace
+        """
+        pass
+
+    @abstractmethod
+    def _add_local_params_for_resource(self, resource_name:str,
+                                       local_params:JSONDict) -> None:
+        """
+        Add the local params either coming from a cloned or a new resource.
+        """
+        pass
+
     def get_resource(self, name:str) -> 'Resource':
         """Get the associated resource from the workspace metadata.
         """
-        pass
+        params = self._get_resource_params(name)
+        resource_type = params['resource_type']
+        f = _get_resource_factory_by_resource_type(resource_type)
+        local_params = self._get_resource_local_params(name)
+        if f.has_local_state() and local_params is None:
+            raise InternalError("Resource '%s' has local state and needs to be cloned"%
+                                name)
+        return f.from_json(params, local_params if local_params is not None else {},
+                           self)
 
-    @abstractmethod
-    def add_resource(self, r:Resource) -> None:
+    def add_resource(self, name:str, resource_type:str, role:str, *args) -> 'Resource':
         """Add a resource to the repository for tracking.
         """
-        pass
+        if name in self.get_resource_names():
+            raise ConfigurationError("Attempting to add a resource '%s', but there is already one with that name in the workspace"%
+                                     name)
+        if role not in RESOURCE_ROLE_CHOICES:
+            raise ConfigurationError("Invalid resource role '%s'" % role)
+        f = _get_resource_factory_by_resource_type(resource_type)
+        r = f.from_command_line(role, name, self, *args)
+        self._add_params_for_resource(r.name, r.get_params())
+        self._add_local_params_for_resource(r.name, r.get_local_params())
+        return r
 
-    @abstractmethod
-    def clone_resource(self, name:str, local_params:JSONDict) \
-        -> 'LocalStateResourceMixin':
-        """Instantiate the resource locally with the specified local parameters.
+    def clone_resource(self, name:str) -> 'LocalStateResourceMixin':
+        """Instantiate the resource locally.
         This is used in cases where the resource has local state.
         """
-        pass
+        if name not in self.get_resource_names():
+            raise ConfigurationError("A resource by the name '%s' does not exist in this workspace"%
+                                     name)
+        params = self._get_resource_params(name)
+        resource_type = params['resource_type']
+        f = _get_resource_factory_by_resource_type(resource_type)
+        assert f.has_local_state() # should only be calling if local state
+        r = f.clone(params, self)
+        self._add_local_params_for_resource(r.name, r.get_local_params())
+        return r
 
-    @abstractmethod
     def validate_resource_name(self, resource_name:str, subpath:Optional[str]=None,
-                               expected_type:Optional[str]=None) -> None:
+                               expected_role:Optional[str]=None) -> None:
         """Validate that the given resource name and optional subpath
         are valid in the current state of the workspace. Otherwise throws
         a ConfigurationError.
         """
-        pass
+        if resource_name not in self.get_resource_names():
+            raise ConfigurationError("No resource named '%s'" % resource_name)
+        r = self.get_resource(resource_name)
+        if subpath is not None:
+            r.validate_subpath_exists(subpath)
+        if expected_role and r.role!=expected_role:
+            raise ConfigurationError("Expected resource '%s' to be in role '%s', but role was '%s'"%
+            (resource_name, expected_role, r.role))
+
+    def suggest_resource_name(self, resource_type:str,
+                              role:str, *args):
+        """Given the arguments passed in for creating a resource, suggest
+        a (unique) name for the resource.
+        """
+        name = _get_resource_factory_by_resource_type(resource_type).suggest_name(*args)
+        existing_resource_names = frozenset(self.get_resource_names())
+        if name not in existing_resource_names:
+            return name
+        longer_name = name + '-' + role
+        if longer_name not in existing_resource_names:
+            return longer_name
+        i = 2
+        while True:
+            numbered_name = longer_name + '-' + str(i)
+            if numbered_name not in existing_resource_names:
+                return numbered_name
+            i += 1
 
     @abstractmethod
     def save(self) -> None:
         """Save the current state of the workspace"""
         pass
+
+def load_workspace(backend_name:str, *args, **kwargs) -> Workspace:
+    """Given a requested workspace backend, and backend-specific
+    parameters, instantiate and return a workspace.
+
+    A backend name is a module name. The module should have a sub-module
+    workspace with a load_workspace() function defined.
+    """
+    try:
+        mname = backend_name + '.workspace'
+        m = importlib.import_module(mname)
+    except ImportError as e:
+        raise ConfigurationError("Unable to load workspace backend '%s'"%
+                                 backend_name) from e
+    if not hasattr(m, 'load_workspace'):
+        raise InternalError("Workspace backend %s does not implement load_workspace()")
+    return m.load_workspace(*args, **kwargs) # type: ignore
+
+
 
 class ResourceRoles:
     SOURCE_DATA_SET='source-data'
@@ -97,18 +204,13 @@ RESOURCE_ROLE_PURPOSES = {
     ResourceRoles.RESULTS:"experimental results"
 }
 
-class ResourceStates:
-    NEW='new'
-    ADDED='added'
-    CLONED='cloned'
 
 class Resource(metaclass=ABCMeta):
     """Base class for all resources"""
-    def __init__(self, scheme:str, name:str, role:str, state:str, workspace:Workspace):
-        self.scheme = scheme
+    def __init__(self, resource_type:str, name:str, role:str, workspace:Workspace):
+        self.resource_type = resource_type
         self.name = name
         self.role = role
-        self.state = state
         self.workspace = workspace
 
     def has_results_role(self):
@@ -173,6 +275,57 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+class ResourceFactory(metaclass=ABCMeta):
+    """Abstract factory class to be implemented for each
+    resource type.
+    """
+    @abstractmethod
+    def from_command_line(self, role:str, name:str, workspace:Workspace,
+                          *args) -> Resource:
+        """Instantiate a resource object from the add command's
+        arguments"""
+        pass
+
+    @abstractmethod
+    def from_json(self, params:JSONDict, local_params:JSONDict,
+                  workspace:Workspace) -> Resource:
+        """Instantiate a resource object from saved params and local params"""
+        pass
+
+    @abstractmethod
+    def has_local_state(self) -> bool:
+        """Return true if this resource has local state and needs
+        a clone step the first time it is used.
+        """
+        pass
+
+    @abstractmethod
+    def clone(self, params:JSONDict, workspace:Workspace) -> LocalStateResourceMixin:
+        """Instantiate a local copy of the resource 
+        that came from the remote origin. We don't yet have local params,
+        since this resource is not yet on the local machine. If not in batch
+        mode, this method can ask the user for any additional information needed
+        (e.g. a local path). In batch mode, should either come up with a reasonable
+        default or error out if not enough information is available."""
+        pass
+
+    @abstractmethod
+    def suggest_name(self, workspace:Workspace, *args) -> str:
+        """Given the arguments passed in to create a resource,
+        suggest a name for the case where the user did not provide one
+        via --name. This will be used by suggest_resource_name() to
+        find a short, but unique name for the resource.
+        """
+        pass
+
+
+def _get_resource_factory_by_resource_type(resource_type):
+    if resource_type not in RESOURCE_TYPES:
+        raise InternalError("'%s' not a valid resource type. Valid types are: %s."
+                            % (resource_type, ', '.join(sorted(RESOURCE_TYPES.keys()))))
+    f = RESOURCE_TYPES[resource_type]
+    assert isinstance(f, ResourceFactory)
+    return f
 
 
 ####################################################################
