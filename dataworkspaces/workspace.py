@@ -2,13 +2,14 @@
 Main definitions of the workspace abstractions
 """
 
-from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
+from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, cast
 
 from abc import ABCMeta, abstractmethod
 import importlib
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.resources import RESOURCE_TYPES
+from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
@@ -95,6 +96,12 @@ class Workspace(metaclass=ABCMeta):
                                 name)
         return f.from_json(params, local_params if local_params is not None else {},
                            self)
+
+    def get_resources(self) -> Iterable['Resource']:
+        """Iterate through all the resources
+        """
+        for rname in self.get_resource_names():
+            yield self.get_resource(rname)
 
     def add_resource(self, name:str, resource_type:str, role:str, *args) -> 'Resource':
         """Add a resource to the repository for tracking.
@@ -408,7 +415,7 @@ class CentralWorkspaceMixin(metaclass=ABCMeta):
 
 class SnapshotMetadata:
     """The metadata we store for each snapshot (in addition to the manifest).
-    relative_path refers to the path used in resources that copy their current
+    relative_destination_path refers to the path used in resources that copy their current
     state to a subdirectory for each snapshot.
     """
     def __init__(self, hashval:str,
@@ -416,37 +423,74 @@ class SnapshotMetadata:
                  message:str,
                  hostname:str,
                  timestamp:str,
-                 relative_path:str,
-                 restore_hashes:Dict[str,str]):
-        self.hashval = hashval
+                 relative_destination_path:str,
+                 restore_hashes:Dict[str,str],
+                 metric_name:Optional[str]=None,
+                 metric_value:Optional[Any]=None):
+        self.hashval = hashval.lower() # always normalize to lower case
         self.tags = tags
         self.message = message
         self.hostname = hostname
         self.timestamp = timestamp
-        self.relative_path = relative_path
+        self.relative_destination_path = relative_destination_path
         self.restore_hashes = restore_hashes
+        self.metric_name = metric_name
+        self.metric_value = metric_value
+
+    def has_tag(self, tag):
+        return True if tag in self.tags else False
+
+    def matches_partial_hash(self, partial_hash):
+        """A partial hash matches if the full hash starts with it,
+        normalizing to lower case.
+        """
+        return True if self.hashval.startwith(partial_hash.lower()) else False
+
+    def to_json(self) -> JSONDict:
+        return {
+            'hash':self.hashval,
+            'tags':self.tags,
+            'message':self.message,
+            'hostname':self.hostname,
+            'timestamp':self.timestamp,
+            'relative_destination_path':self.relative_destination_path,
+            'restore_hashes':self.restore_hashes,
+            'metric_name':self.metric_name,
+            'metric_value':self.metric_value
+        }
+
+    @staticmethod
+    def from_json(data:JSONDict) -> 'SnapshotMetadata':
+        return SnapshotMetadata(data['hash'],
+                                data['tags'],
+                                data['message'],
+                                data['hostname'],
+                                data['timestamp'],
+                                data['relative_destination_path'],
+                                data['restore_hashes'],
+                                data.get('metric_name'),
+                                data.get('metric_value'))
 
 
 class SnapshotWorkspaceMixin(metaclass=ABCMeta):
     """Mixin class for workspaces that support snapshots and restores.
     """
-    @abstractmethod
     def snapshot_precheck(self) -> None:
         """Run any prechecks before taking a snapshot. This should throw
         a ConfigurationError if the snapshot would fail for some reason.
         It generally just calls snapshot_precheck() on each of the resources.
         """
-        pass
+        for r in cast(Workspace, self).get_resources():
+            if isinstance(r, SnapshotResourceMixin):
+                r.snapshot_precheck()
 
-    @abstractmethod
     def snapshot(self, tag:Optional[str]=None, message:str='') -> str:
         """Take snapshot of the resources in the workspace, and metadata
         for the snapshot and a manifest in the workspace. Returns a hash
         of the manifest.
         """
-        pass
+        raise NotImplementedError("snapshot")
 
-    @abstractmethod
     def restore_prechecks(self, restore_hash:str,
                           only:Optional[List[str]]=None,
                           leave:Optional[List[str]]=None) \
@@ -455,37 +499,82 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         (aka certificate). This should throw a ConfigurationError if the
         restore would fail for some reason.
         """
-        pass
+        raise NotImplementedError("restore_prechecks")
 
-    @abstractmethod
+
     def restore(self, restore_hash:str,
                 only:Optional[List[str]]=None,
                 leave:Optional[List[str]]=None) \
          -> None:
-        pass
+        raise NotImplementedError("restore")
 
     @abstractmethod
-    def get_snapshot_metadata(self, tag_or_hash:str) -> SnapshotMetadata: pass
-
-    @abstractmethod
-    def lookup_snapshot_hash(self, tag_or_hash:str) -> str:
-        """Given a string that is either a tag or a hash corresponding to a snapshot,
-        return the associated hash. Throws a ConfigurationError if no entry is found.
+    def get_snapshot_metadata(self, hash_val:str) -> SnapshotMetadata:
+        """Given the full hash of a snapshot, return the metadata. This
+        lookup should be quick.
         """
         pass
 
     @abstractmethod
-    def list_snapshots(self, max_count:Optional[int]=None) \
-        -> Iterable[SnapshotMetadata]:
+    def get_snapshot_by_tag(self, tag:str) -> SnapshotMetadata:
+        """Given a tag, return the asssociated snapshot metadata.
+        This lookup could be slower ,if a reverse index is not kept."""
         pass
 
     @abstractmethod
+    def get_snapshot_by_partial_hash(self, partial_hash:str) -> SnapshotMetadata:
+        """Given a partial hash for the snapshot, find the snapshot whose hash
+        starts with this prefix and return the metadata
+        asssociated with the snapshot.
+        """
+        pass
+
+    def get_snapshot_by_tag_or_hash(self, tag_or_hash:str) -> SnapshotMetadata:
+        """Given a string that is either a tag or a (partial)hash corresponding to a
+        snapshot, return the associated resrouce metadata. Throws a ConfigurationError
+        if no entry is found.
+        """
+        if is_a_git_hash(tag_or_hash):
+            return self.get_snapshot_metadata(tag_or_hash)
+        elif is_a_shortened_git_hash(tag_or_hash):
+            return self.get_snapshot_by_partial_hash(tag_or_hash)
+        else:
+            return self.get_snapshot_by_tag(tag_or_hash)
+
+    @abstractmethod
+    def list_snapshots(self, reverse:bool=True, max_count:Optional[int]=None) \
+        -> Iterable[SnapshotMetadata]:
+        """Returns an iterable of snapshot metadata, sorted by timestamp ascending
+        (or descending if reverse is True). If max_count is specified, return at
+        most that many snaphsots.
+        """
+        pass
+
+    @abstractmethod
+    def _delete_snapshot_metadata_and_manifest(self, hash_val:str)-> None:
+        """Given a snapshot hash, delete the associated metadata.
+        """
+        pass
+
     def delete_snapshot(self, hash_val:str, include_resources=False)-> None:
         """Given a snapshot hash, delete the entry from the workspace's metadata.
         If include_resources is True, then delete any data from the associated resources
         (e.g. snapshot subdirectories).
         """
-        pass
+        try:
+            md = self.get_snapshot_metadata(hash_val)
+        except Exception as e:
+            raise ConfigurationError("Did not find metadata associated with snapshot %s"
+                                     % hash_val)
+        if include_resources:
+            current_resources = frozenset(cast(Workspace, self).get_resource_names())
+            to_delete = current_resources.intersection(frozenset(md.restore_hashes.keys()))
+            for rname in to_delete:
+                r = cast(Workspace, self).get_resource(rname)
+                if isinstance(r, SnapshotResourceMixin):
+                    r.delete_snapshot(md.hashval, md.restore_hashes[rname],
+                                      md.relative_destination_path)
+        self._delete_snapshot_metadata_and_manifest(hash_val)
 
 
 class SnapshotResourceMixin(metaclass=ABCMeta):
@@ -523,7 +612,8 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def delete_snapshot(self, hash_val:str, relative_path:str) -> None:
+    def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
+                        relative_path:str) -> None:
         """Delete any state associated with the snapshot, including any
         files under relative_path
         """

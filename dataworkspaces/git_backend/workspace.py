@@ -2,12 +2,15 @@
 Subclasses of workspace abstract classes for workspace APIs.
 """
 
+import os
 from os.path import exists, join
 import json
+import re
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
+
 import dataworkspaces.workspace as ws
-from dataworkspaces.workspace import JSONDict
+from dataworkspaces.workspace import JSONDict, SnapshotMetadata
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.git_utils import commit_changes_in_repo
 
@@ -20,7 +23,7 @@ SNAPSHOT_DIR_PATH='.dataworkspace/snapshots'
 SNAPSHOT_METADATA_DIR_PATH='.dataworkspace/snapshot_metadata'
 
 
-class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin):
+class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin):
     def __init__(self, workspace_dir:str, batch:bool=False,
                  verbose:bool=False):
         self.workspace_dir = workspace_dir
@@ -121,7 +124,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin):
     def pull_prechecks(self, only:Optional[List[str]]=None,
                        skip:Optional[List[str]]=None,
                        only_workspace:bool=False) -> None:
-        pass
+        raise NotImplementedError("pull_prechecks")
 
     def pull(self, only:Optional[List[str]]=None,
              skip:Optional[List[str]]=None,
@@ -130,12 +133,12 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin):
         includes any resources that support syncing via the
         LocalStateResourceMixin.
         """
-        pass
+        raise NotImplementedError("pull")
 
     def push_prechecks(self, only:Optional[List[str]]=None,
                        skip:Optional[List[str]]=None,
                        only_workspace:bool=False) -> None:
-        pass
+        raise NotImplementedError("push_prechecks")
 
     def push(self, only:Optional[List[str]]=None,
              skip:Optional[List[str]]=None,
@@ -144,7 +147,78 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin):
         includes any resources that support syncing via the
         LocalStateResourceMixin.
         """
-        pass
+        raise NotImplementedError("push")
+
+    def get_snapshot_metadata(self, hash_val:str) -> SnapshotMetadata:
+        hash_val = hash_val.lower()
+        md_filename = join(join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH),
+                           '%s_md.json'%hash_val)
+        if not exists(md_filename):
+            raise ConfigurationError("No metadata entry for snapshot %s"%hash_val)
+        with open(md_filename, 'r') as f:
+            data = json.load(f)
+        md = ws.SnapshotMetadata.from_json(data)
+        assert md.hashval==hash_val
+        return md
+
+
+    def get_snapshot_by_tag(self, tag:str) -> SnapshotMetadata:
+        """Given a tag, return the asssociated snapshot metadata.
+        This lookup could be slower ,if a reverse index is not kept."""
+        md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        regexp = re.compile(re.escape(tag))
+        for fname in os.listdir(md_dir):
+            if not fname.endswith('_md.json'):
+                continue
+            fpath = join(md_dir, fname)
+            with open(fpath, 'r') as f:
+                raw_data = f.read()
+            if regexp.search(raw_data) is not None:
+                md = SnapshotMetadata.from_json(json.loads(raw_data))
+                if md.has_tag(tag):
+                    return md
+        raise ConfigurationError("Snapshot for tag %s not found" % tag)
+
+    def get_snapshot_by_partial_hash(self, partial_hash:str) -> SnapshotMetadata:
+        """Given a partial hash for the snapshot, find the snapshot whose hash
+        starts with this prefix and return the metadata
+        asssociated with the snapshot.
+        """
+        partial_hash = partial_hash.lower()
+        md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        regexp = re.compile(re.escape(partial_hash))
+        for fname in os.listdir(md_dir):
+            if not fname.endswith('_md.json'):
+                continue
+            hashval = fname[0:-8].lower()
+            if not hashval.startswith(partial_hash):
+                continue
+            return self.get_snapshot_metadata(hashval)
+        raise ConfigurationError("Snapshot match for partial hash %s not found" %
+                                 partial_hash)
+
+
+    def list_snapshots(self, reverse:bool=True, max_count:Optional[int]=None) \
+        -> Iterable[SnapshotMetadata]:
+        """Returns an iterable of snapshot metadata, sorted by timestamp ascending
+        (or descending if reverse is True). If max_count is specified, return at
+        most that many snaphsots.
+        """
+        md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        snapshots = []
+        for fname in os.listdir(md_dir):
+            if not fname.endswith('_md.json'):
+                continue
+            with open(join(md_dir, fname), 'r') as f:
+                snapshots.append(SnapshotMetadata.from_json(json.load(f)))
+        snapshots.sort(key=lambda md:md.timestamp, reverse=reverse)
+        return snapshots if max_count is None else snapshots[0:max_count]
+
+    def _delete_snapshot_metadata_and_manifest(self, hash_val:str)-> None:
+        """Given a snapshot hash, delete the associated metadata.
+        """
+        raise NotImplementedError("delete snapshot")
+
 
 
 def load_workspace(workspace_dir:str, batch=False, verbose=False) -> ws.Workspace:

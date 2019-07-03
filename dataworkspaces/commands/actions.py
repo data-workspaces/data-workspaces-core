@@ -26,8 +26,8 @@ from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 from dataworkspaces.utils.subprocess_utils import \
     call_subprocess, call_subprocess_for_rc, find_exe
 
-from dataworkspaces.utils.git_utils import \
-    is_git_repo, GIT_EXE_PATH, HASH_RE
+from dataworkspaces.utils.hash_utils import HASH_RE
+from dataworkspaces.utils.git_utils import is_git_repo, GIT_EXE_PATH
 
 CURR_DIR = abspath(expanduser(os.curdir))
 

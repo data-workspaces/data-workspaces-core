@@ -4,8 +4,9 @@ import os
 from os.path import join, isdir
 import click
 
+from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
 from dataworkspaces.utils.git_utils import \
-    is_a_git_hash, is_a_shortened_git_hash, is_a_git_fat_repo, \
+    is_a_git_fat_repo, \
     validate_git_fat_in_path_if_needed
 import dataworkspaces.commands.actions as actions
 from dataworkspaces.errors import ConfigurationError, UserAbort, \

@@ -11,8 +11,9 @@ from copy import copy
 import click
 
 from dataworkspaces.utils.subprocess_utils import call_subprocess
+from dataworkspaces.utils.hash_utils import \
+    is_a_git_hash, is_a_shortened_git_hash
 from dataworkspaces.utils.git_utils import \
-    is_a_git_hash, is_a_shortened_git_hash, \
     validate_git_fat_in_path_if_needed, GIT_EXE_PATH
 from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.resources.snapshot_utils import \

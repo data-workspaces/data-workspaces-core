@@ -28,21 +28,6 @@ GIT_EXE_PATH=find_exe('git',
                       "Please make sure that you have git installed on your machine.")
 
 
-HASH_RE = re.compile(r'^[0-9a-fA-F]+$')
-
-def is_a_git_hash(s):
-    return len(s)==40 and (HASH_RE.match(s) is not None)
-
-MIN_SHORT_HASH_LEN=6
-# short hashes must be lowercase
-SHORT_HASH_RE = re.compile(r'^[0-9a-f]+$')
-
-def is_a_shortened_git_hash(s):
-    """We can refer to snapshots using the first 6+ characters
-    of the hash
-    """
-    return len(s)>=MIN_SHORT_HASH_LEN and (SHORT_HASH_RE.match(s) is not None)
-
 
 def is_git_dirty(cwd):
     """See if the git repo is dirty. We are looking for untracked
