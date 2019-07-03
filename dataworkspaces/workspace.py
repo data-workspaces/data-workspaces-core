@@ -10,6 +10,10 @@ import importlib
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.resources import RESOURCE_TYPES
 from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
+from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
+                                             get_global_param_defaults,\
+                                             get_local_param_defaults,\
+                                             ParamNotFoundError
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
@@ -28,28 +32,81 @@ class Workspace(metaclass=ABCMeta):
         self.verbose = verbose
 
     @abstractmethod
-    def get_global_params(self) -> JSONDict:
+    def _get_global_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this workspace,
-        which apply across all instances.
+        which apply across all instances. This contains only those
+        parameters which are set during initialization or excplicitly
+        set by the user. get_global_param() will combine these with
+        system-defined defaults.
         """
         pass
 
+    def get_global_param(self, param_name:str) -> Any:
+        """Returns the value of the global param if set, otherwise the
+        default. If the param is not set, returns the default value.
+        If the param is not defined throws ParamNotFoundError.
+        """
+        params = self._get_global_params()
+        if param_name in params:
+            return params[param_name]
+        elif param_name in PARAM_DEFS:
+            return PARAM_DEFS[param_name].default_value
+        else:
+            raise ParamNotFoundError("No global parameter with name '%s'"%
+                                     param_name)
+
     @abstractmethod
-    def get_local_params(self) -> JSONDict:
+    def _get_local_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this particular
         install of the workspace (e.g. local filesystem paths, hostname).
+        This contains only those parameters which are set during initialization
+        or explicitly set by the user. get_local_param will combine these
+        with system-defined defaults.
         """
         pass
 
+    def get_local_param(self, param_name:str) -> Any:
+        """Returns the value of the local param if set, otherwise the
+        default. If the param is not set, returns the default value.
+        If the param is not defined throws ParamNotFoundError.
+        """
+        params = self._get_local_params()
+        if param_name in params:
+            return params[param_name]
+        elif param_name in LOCAL_PARAM_DEFS:
+            return LOCAL_PARAM_DEFS[param_name].default_value
+        else:
+            raise ParamNotFoundError("No local parameter with name '%s'"%
+                                     param_name)
+
     @abstractmethod
+    def _set_global_param(self, name:str, value:Any) -> None:
+        """Implementation of low level saving by the backend.
+        Setting does not necessarily take effect until save() is called"""
+        pass
+
     def set_global_param(self, name:str, value:Any) -> None:
+        """Validate and set a global parameter.
+        Setting does not necessarily take effect until save() is called
+        """
+        if name not in PARAM_DEFS:
+            raise ParamNotFoundError("No global parameter named '%s'"%name)
+        PARAM_DEFS[name].validate(value)
+        self._set_global_param(name, value)
+
+    @abstractmethod
+    def _set_local_param(self, name:str, value:Any) -> None:
         """Setting does not necessarily take effect until save() is called"""
         pass
 
-    @abstractmethod
     def set_local_param(self, name:str, value:Any) -> None:
-        """Setting does not necessarily take effect until save() is called"""
-        pass
+        """Validate and set a local parameter.
+        Setting does not necessarily take effect until save() is called
+        """
+        if name not in LOCAL_PARAM_DEFS:
+            raise ParamNotFoundError("No local parameter named '%s'"%name)
+        LOCAL_PARAM_DEFS[name].validate(value)
+        self._set_local_param(name, value)
 
     @abstractmethod
     def get_resource_names(self) -> Iterable[str]: pass
@@ -171,23 +228,72 @@ class Workspace(metaclass=ABCMeta):
         """Save the current state of the workspace"""
         pass
 
-def load_workspace(backend_name:str, *args, **kwargs) -> Workspace:
-    """Given a requested workspace backend, and backend-specific
-    parameters, instantiate and return a workspace.
 
-    A backend name is a module name. The module should have a sub-module
-    workspace with a load_workspace() function defined.
+class WorkspaceFactory(metaclass=ABCMeta):
+    """This class collects the various ways of instantiating a workspace:
+    creating from an existing one, initing a new one, and cloning into a
+    new environment.
+
+    Each backend should implement a subclass and provide a singleton instance
+    as the FACTORY member of the module.
     """
+    @abstractmethod
+    def load_workspace(batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
+        """Instantiate and return a workspace.
+        """
+        pass
+
+    @abstractmethod
+    def init_workspace(workspace_name:str, dws_version:str,
+                       global_params:JSONDict, local_params:JSONDict,
+                       batch, verbose,
+                       *args, **kwargs) -> Workspace: pass
+
+
+def _get_factory(backend_name:str) -> WorkspaceFactory:
     try:
-        mname = backend_name + '.workspace'
-        m = importlib.import_module(mname)
+        m = importlib.import_module(backend_name)
     except ImportError as e:
         raise ConfigurationError("Unable to load workspace backend '%s'"%
                                  backend_name) from e
-    if not hasattr(m, 'load_workspace'):
-        raise InternalError("Workspace backend %s does not implement load_workspace()")
-    return m.load_workspace(*args, **kwargs) # type: ignore
+    if not hasattr(m, 'FACTORY'):
+        raise InternalError("Workspace backend %s does not provide a FACTORY attribute"%
+                            backend_name)
+    factory = m.FACTORY # type: ignore
+    if not isinstance(factory, WorkspaceFactory):
+        raise InternalError("Workspace backend factory has type '%s', "%backend_name +
+                            "not a subclass of WorkspaceFactory")
+    return factory
 
+
+def load_workspace(backend_name:str, batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
+    """Given a requested workspace backend, and backend-specific
+    parameters, instantiate and return a workspace.
+
+    A backend name is a module name. The module should have a
+    load_workspace() function defined.
+    """
+    return _get_factory(backend_name).load_workspace(batch, verbose, *args, **kwargs)
+
+
+def init_workspace(backend_name:str, workspace_name:str, hostname:str,
+                   batch:bool, verbose:bool,
+                   *args, **kwargs) -> Workspace:
+    """Given a requested workspace backend, and backend-specific parameters,
+    initialize a new workspace, then instantitate and return it.
+
+    A backend name is a module name. The module should have an init_workspace()
+    function defined.
+
+    TODO: the hostname should be generalized as an "instance name", but we
+    also need backward compatibility.
+    """
+    import dataworkspaces
+    return _get_factory(backend_name)\
+             .init_workspace(workspace_name, dataworkspaces.__version__,
+                             get_global_param_defaults(),
+                             get_local_param_defaults(hostname),
+                             batch, verbose, *args, **kwargs)
 
 
 class ResourceRoles:

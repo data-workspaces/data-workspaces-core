@@ -84,6 +84,16 @@ def is_git_staging_dirty(cwd, subdir=None):
     else:
         raise ConfigurationError("Problem invoking %s status on %s" % (GIT_EXE_PATH, cwd))
 
+def git_init(repo_dir, verbose=False):
+    call_subprocess([GIT_EXE_PATH, 'init'], cwd=repo_dir,
+                    verbose=verbose)
+
+
+def git_add(repo_dir, relative_paths, verbose=False):
+    call_subprocess([GIT_EXE_PATH, 'add']+relative_paths,
+                    cwd=repo_dir, verbose=verbose)
+
+
 def commit_changes_in_repo(local_path, message, remove_empty_dirs=False,
                            verbose=False):
     """Figure out what has changed in the working tree relative to

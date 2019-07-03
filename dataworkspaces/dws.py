@@ -57,8 +57,8 @@ def _find_containing_workspace():
 DWS_PATHDIR=_find_containing_workspace()
 
 def _load_workspace(workspace_dir, batch, verbose):
-    return ws.load_workspace('dataworkspaces.git_backend', workspace_dir,
-                             batch, verbose)
+    return ws.load_workspace('dataworkspaces.backends.git', batch, verbose,
+                             workspace_dir)
 
 
 class WorkspaceDirParamType(click.ParamType):

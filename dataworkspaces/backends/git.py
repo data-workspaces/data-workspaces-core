@@ -1,20 +1,24 @@
 """
-Subclasses of workspace abstract classes for workspace APIs.
+Git backend for storing a workspace
 """
 
 import os
-from os.path import exists, join
+from os.path import exists, join, isdir, basename
 import json
 import re
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
 
+import click
 
 import dataworkspaces.workspace as ws
 from dataworkspaces.workspace import JSONDict, SnapshotMetadata
 from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.utils.git_utils import commit_changes_in_repo
+from dataworkspaces.utils.git_utils import \
+    commit_changes_in_repo, git_init, git_add
 
 
+BASE_DIR='.dataworkspace'
+GIT_IGNORE_FILE_PATH='.dataworkspace/.gitignore'
 CONFIG_FILE_PATH='.dataworkspace/config.json'
 LOCAL_PARAMS_PATH='.dataworkspace/local_params.json'
 RESOURCES_FILE_PATH='.dataworkspace/resources.json'
@@ -51,29 +55,29 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         with open(f_path, 'r') as f:
             json.dump(obj, f_path, indent=2)
 
-    def get_global_params(self) -> JSONDict:
+    def _get_global_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this workspace,
         which apply across all instances.
         """
         return self.global_params
 
-    def get_local_params(self) -> JSONDict:
+    def _get_local_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this particular
         install of the workspace (e.g. local filesystem paths, hostname).
         """
         return self.local_params
 
-    def set_global_param(self, name:str, value:Any) -> None:
+    def _set_global_param(self, name:str, value:Any) -> None:
         """Setting does not necessarily take effect until save() is called"""
-        data = self.get_global_params()
+        data = self._get_global_params()
         data[name] = value
         self._save_json_to_file({'name':self.name,
                                  'dws-version':self.dws_version,
                                  'global_params':data},
                                 CONFIG_FILE_PATH)
 
-    def set_local_param(self, name:str, value:Any) -> None:
-        data = self.get_local_params()
+    def _set_local_param(self, name:str, value:Any) -> None:
+        data = self._get_local_params()
         data[name] = value
         self._save_json_to_file(data, LOCAL_PARAMS_PATH)
 
@@ -221,5 +225,53 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
 
 
 
-def load_workspace(workspace_dir:str, batch=False, verbose=False) -> ws.Workspace:
-    return Workspace(workspace_dir, batch, verbose)
+class WorkspaceFactory(ws.WorkspaceFactory):
+    @staticmethod
+    def load_workspace(batch:bool, verbose:bool, workspace_dir:str) -> ws.Workspace:
+        return Workspace(workspace_dir, batch, verbose)
+
+    @staticmethod
+    def init_workspace(workspace_name:str, dws_version:str,
+                       global_params:JSONDict, local_params:JSONDict,
+                       batch:bool, verbose:bool,
+                       workspace_dir:str) -> ws.Workspace:
+        if not exists(workspace_dir):
+            raise ConfigurationError("Directory for new workspace '%s' does not exist"%
+                                     workspace_dir)
+        md_dir = join(workspace_dir, BASE_DIR)
+        if isdir(md_dir):
+            raise ConfigurationError("Found %s directory under %s"
+                                     %(BASE_DIR, workspace_dir) +
+                                     " Has this workspace already been initialized?")
+        os.mkdir(md_dir)
+        snapshot_dir = join(workspace_dir, SNAPSHOT_DIR_PATH)
+        os.mkdir(snapshot_dir)
+        snapshot_md_dir = join(workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        os.mkdir(snapshot_md_dir)
+        with open(join(workspace_dir, CONFIG_FILE_PATH), 'w') as f:
+            json.dump({'name':workspace_name, 'dws-version':dws_version,
+                       'global_params':global_params},
+                      f, indent=2)
+        with open(join(workspace_dir, RESOURCES_FILE_PATH), 'w') as f:
+            json.dump([], f, indent=2)
+        with open(join(workspace_dir, LOCAL_PARAMS_PATH), 'w') as f:
+            json.dump(local_params, f, indent=2)
+        with open(join(workspace_dir, RESOURCE_LOCAL_PARAMS_PATH), 'w') as f:
+            json.dump({}, f, indent=2)
+
+        with open(join(workspace_dir, GIT_IGNORE_FILE_PATH), 'w') as f:
+                f.write("%s\n" % basename(LOCAL_PARAMS_PATH))
+                f.write("%s\n" % basename(RESOURCE_LOCAL_PARAMS_PATH))
+                f.write("current_lineage/\n")
+        if exists(join(workspace_dir, '.git')):
+            click.echo("%s is already a git repository, will just add to it"%
+                       workspace_dir)
+        else:
+            git_init(workspace_dir, verbose=verbose)
+        git_add(workspace_dir,
+                [CONFIG_FILE_PATH, RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
+                verbose=verbose)
+        commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
+        return Workspace(workspace_dir, batch, verbose)
+
+FACTORY=WorkspaceFactory()
