@@ -322,7 +322,10 @@ class LineageBuilder:
 
     Call :func:`~as_results_step` to indicate that this step is producing results.
     This will cause a ``results.json`` file and a ``lineage.json`` file to be created
-    in the specified directory.
+    in the specified directory. This directory should correspond to either the root
+    directory of a results resource or a subdirectory within the resource. If you have
+    multiple steps of your workflow that produce results, you can create separate
+    subdirectories for each results-producing step.
 
     **Example**
 
