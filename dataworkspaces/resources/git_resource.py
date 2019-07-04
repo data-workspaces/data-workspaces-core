@@ -20,8 +20,9 @@ from dataworkspaces.utils.git_utils import \
     checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
     validate_git_fat_in_path_if_needed, get_subdirectory_hash
-from .resource import Resource, ResourceFactory, LocalPathType, ResourceRoles,\
+from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES
+from .resource import LocalPathType
 from .snapshot_utils import move_current_files_local_fs
 
 
@@ -65,25 +66,29 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
                     cwd=git_root, verbose=verbose)
 
 
-class GitRepoResource(Resource):
-    def __init__(self, name, role, workspace_dir, remote_origin_url,
-                 local_path, branch, read_only, verbose=False):
-        super().__init__('git', name, role, workspace_dir)
+class GitRepoResource(Resource, LocalStateResourceMixin):
+    def __init__(self, name, role, workspace, remote_origin_url,
+                 local_path, branch, read_only):
+        super().__init__('git', name, role, workspace)
         self.local_path = local_path
         self.remote_origin_url = remote_origin_url
         self.branch = branch
         self.read_only = read_only
-        self.verbose = verbose
 
-    def to_json(self):
-        d = super().to_json()
-        d['remote_origin_url'] = self.remote_origin_url
-        d['branch'] = self.branch
-        d['read_only'] = self.read_only
-        return d
+    def get_params(self):
+        return {
+            'resource_type':self.resource_type,
+            'name':self.name,
+            'role':self.role,
+            'remote_origin_url':self.remote_origin_url,
+            'branch':self.branch,
+            'read_only':self.read_only
+        }
 
-    def local_params_to_json(self):
-        return {'local_path':self.local_path}
+    def get_local_params(self):
+        return {
+            'local_path':self.local_path
+        }
 
     def get_local_path_if_any(self):
         return self.local_path
