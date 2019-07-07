@@ -6,6 +6,7 @@ import hashlib
 
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH
+from dataworkspaces.utils.file_utils import safe_rename
 
 BUF_SIZE = 65536  # read stuff in 64kb chunks
 def compute_hash(tmpname):
@@ -111,7 +112,7 @@ class HashTree(object):
         # that is the name of the file
         objfile = os.path.join(self.path, self.hash)
         os.chmod(tmpname, int('755', 8)) 
-        os.rename(tmpname, objfile)
+        safe_rename(tmpname, objfile)
         if self.add_to_git:
             call_subprocess([GIT_EXE_PATH, 'add', self.hash],
                             cwd=self.path, verbose=False)
