@@ -16,6 +16,10 @@ Classes
    :members:
    :no-undoc-members:
 
+.. autoclass:: ResultsLineage()
+   :members:
+   :no-undoc-members:
+
 
 .. autoclass:: LineageBuilder
    :members:
