@@ -14,7 +14,7 @@ import click
 from .subprocess_utils import \
     find_exe, call_subprocess,\
     call_subprocess_for_rc
-from .misc import remove_dir_if_empty
+from .file_utils import remove_dir_if_empty
 from dataworkspaces.errors import ConfigurationError, InternalError
 
 def is_git_repo(dirpath):
