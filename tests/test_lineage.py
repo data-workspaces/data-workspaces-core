@@ -22,8 +22,11 @@ from dataworkspaces.utils.git_utils import GIT_EXE_PATH
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR, 'workspace')
 CODE_DIR=join(WS_DIR, 'code')
+RESULTS_DIR=join(WS_DIR, 'results')
 WS_ORIGIN=join(TEMPDIR, 'workspace_origin.git')
 
+# If set to True, by --keep-outputs option, leave the output data
+KEEP_OUTPUTS=False
 
 class TestLineage(unittest.TestCase):
     def setUp(self):
@@ -42,6 +45,8 @@ class TestLineage(unittest.TestCase):
                         join(CODE_DIR, 'lineage_step1.py'))
         shutil.copyfile(join(TEST_DIR, 'lineage_step2.py'),
                         join(CODE_DIR, 'lineage_step2.py'))
+        shutil.copyfile(join(TEST_DIR, 'lineage_params_step.py'),
+                        join(CODE_DIR, 'lineage_params_step.py'))
 
     def _run_dws(self, dws_args, cwd=WS_DIR, env=None, verbose=True):
         if verbose:
@@ -59,7 +64,7 @@ class TestLineage(unittest.TestCase):
         r.check_returncode()
 
     def tearDown(self):
-        if exists(TEMPDIR):
+        if exists(TEMPDIR) and not KEEP_OUTPUTS:
             shutil.rmtree(TEMPDIR)
 
     def _validate_test_case_file(self, expected_contents, resource_dir):
@@ -141,6 +146,26 @@ class TestLineage(unittest.TestCase):
         self._run_dws(['restore', 'S1'])
         self._check_lineage_files(['source-data', 'intermediate-data'], ['results'])
 
+    def test_params(self):
+        self._run_step('lineage_params_step.py', [])
+        results_file = join(RESULTS_DIR, 'preprocessing/results.json')
+        self.assertTrue(exists(results_file))
+        with open(results_file, 'r') as f:
+            results = json.load(f)
+        self.assertEqual('lineage_params_step', results['step'])
+        self.assertTrue(results['start_time'] is not None)
+        self.assertTrue(results['execution_time_seconds'] is not None)
+        self.assertEqual(1, results['parameters']['force'])
+        self.assertEqual(5, results['parameters']['min_count'])
+        self.assertEqual("this is a test", results['run_description'])
+        self.assertEqual(45, results['metrics']['size_filtered'])
+        self.assertEqual(334, results['metrics']['size_raw'])
+    
+
 
 if __name__ == '__main__':
+    if len(sys.argv)>1 and sys.argv[1]=='--keep-outputs':
+        KEEP_OUTPUTS=True
+        del sys.argv[1]
+        print("--keep-outputs specified, will skip cleanup steps")
     unittest.main()

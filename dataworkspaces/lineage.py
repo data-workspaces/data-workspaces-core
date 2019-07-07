@@ -211,6 +211,19 @@ class Lineage(contextlib.AbstractContextManager):
         self.store.invalidate_step_outputs(self.step.output_resources)
         self.store.save(self.lineage_dir)
 
+    def _set_execution_time(self):
+        """If the execution time has not already been set, and the start timestamp
+        was captured, compute and set the exeuction time. This may be called from
+        two places: :func:`ResultsResource.write_results` and from :func:`complete`,
+        which is called when exiting the lineage's context manager ("with") block.
+        Since the user could potentially call both, we only set it the first call.
+        Both calls should happen after the real work for the step, so that should
+        be ok.
+        """
+        if self.step.execution_time_seconds is None and self.step.start_time is not None:
+            self.step.execution_time_seconds = (datetime.datetime.now() -
+                                                self.step.start_time).total_seconds()
+
     def complete(self):
         """The step has completed. Save the outputs.
         If you create the lineage via a "with" statement, then this will be
@@ -221,8 +234,7 @@ class Lineage(contextlib.AbstractContextManager):
                   self.step.step_name, file=sys.stderr)
         else:
             self.in_progress = False
-        self.step.execution_time_seconds = (datetime.datetime.now() -
-                                            self.step.start_time).total_seconds()
+        self._set_execution_time()
         self.store.add_step(self.step)
         self.store.save(self.lineage_dir)
 
@@ -234,11 +246,15 @@ class Lineage(contextlib.AbstractContextManager):
         return False # don't suppress any exception
 
 class ResultsLineage(Lineage):
-    """Lineage for a results step. This marks the :class:`~Lineage`
-    object as generating results. At the end of the step execution,
-    a ``lineage.json`` file will be written to the results directory.
-    It also adds the :func:`~write_results` method for writing a
-    JSON summary of the final results.
+    """Lineage for a results step. This subclass is returned by the
+    :class:`~LineageBuilder` when :func:`~LineageBuilder.as_results_step` is called.
+    This marks the :class:`~Lineage` object as generating results.
+    It adds the :func:`~write_results`
+    method for writing a JSON summary of the final results.
+
+    Results resources will also have a ``lineage.json`` file added
+    when the next snapshot is taken. This file contains the full
+    lineage graph collected for the resource.
     """
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str,Any],
@@ -259,6 +275,14 @@ class ResultsLineage(Lineage):
         self.run_description = run_description
 
     def write_results(self, metrics:Dict[str, Any]):
+        """Write a ``results.json`` file to the results directory
+        specified when creating the lineage object (e.g. via
+        :func:`~LineageBuilder.as_results_step`).
+        This json file contains information
+        about the step execution (e.g. start time), parameters,
+        and the provided metrics.
+        """
+        self._set_execution_time()
         data = {
             'step':self.step.step_name,
             'start_time':self.step.start_time.isoformat(),
@@ -321,11 +345,12 @@ class LineageBuilder:
     to infer the workspace directory by looking at the path of the script.
 
     Call :func:`~as_results_step` to indicate that this step is producing results.
-    This will cause a ``results.json`` file and a ``lineage.json`` file to be created
-    in the specified directory. This directory should correspond to either the root
-    directory of a results resource or a subdirectory within the resource. If you have
-    multiple steps of your workflow that produce results, you can create separate
-    subdirectories for each results-producing step.
+    This will add a method :func:`~ResultsLineage.write_results` to the :class:`~Lineage` object
+    returned by :func:`~eval`. The method :func:`~as_results_step` takes two parameters:
+    `results_dir` and, optionally, `run_description`. The results directory should
+    correspond to either the root directory of a results resource or a subdirectory
+    within the resource. If you have multiple steps of your workflow that produce results,
+    you can create separate subdirectories for each results-producing step.
 
     **Example**
 
@@ -416,7 +441,7 @@ class LineageBuilder:
         assert self.results_dir is None, \
             "attempting to specify results directory twice"
         self.results_dir = results_dir
-        self.run_desciption = run_description
+        self.run_description = run_description
         return self
 
     def eval(self) -> Lineage:
@@ -435,8 +460,10 @@ class LineageBuilder:
             return ResultsLineage(self.step_name, datetime.datetime.now(),
                                   self.parameters, inputs, self.code,
                                   self.results_dir,
-                                  self.workspace_dir, self.run_description,
-                                  self.command_line, self.current_directory)
+                                  workspace_dir=self.workspace_dir,
+                                  run_description=self.run_description,
+                                  command_line=self.command_line,
+                                  current_directory=self.current_directory)
         else:
             return Lineage(self.step_name, datetime.datetime.now(),
                            self.parameters, inputs, self.code,
