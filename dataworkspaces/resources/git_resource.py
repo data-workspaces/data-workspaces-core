@@ -329,7 +329,7 @@ class GitLocalPathType(LocalPathType):
 
 
 class GitRepoFactory(ResourceFactory):
-    def from_command_line(self, role, name, workspace_dir, batch, verbose,
+    def from_command_line(self, role, name, workspace,
                           local_path, branch, read_only):
         """Instantiate a resource object from the add command's
         arguments"""

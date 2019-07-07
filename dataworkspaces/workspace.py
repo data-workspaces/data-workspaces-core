@@ -204,6 +204,24 @@ class Workspace(metaclass=ABCMeta):
             raise ConfigurationError("Expected resource '%s' to be in role '%s', but role was '%s'"%
             (resource_name, expected_role, r.role))
 
+    def validate_local_path_for_resource(self, proposed_resource_name:str,
+                                         proposed_local_path:str,
+                                         should_already_exist=False,
+                                         should_not_already_exist=False,
+                                         should_be_writable=False) -> None:
+        """When creating a resource, validate that the proposed
+        local path is usable for the resource. By default, this checks
+        existing resources with local state to see if they have conflicting
+        paths. If requested, it also checks whether the path exists and whether
+        the path is writable.
+
+        Subclasses may want to add more checks. For example, whether the
+        path conflicts with the actual workspace. For subclasses that
+        do not support *any* local state, including in resources, they
+        can override the base implementation and throw an exception.
+        """
+        pass # XXX: Implement!
+
     def suggest_resource_name(self, resource_type:str,
                               role:str, *args):
         """Given the arguments passed in for creating a resource, suggest
