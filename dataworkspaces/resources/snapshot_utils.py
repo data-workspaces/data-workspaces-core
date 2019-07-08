@@ -12,7 +12,7 @@ import stat
 import click
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.utils.misc import remove_dir_if_empty
+from dataworkspaces.utils.file_utils import remove_dir_if_empty
 
 # Timestamps have the form '2018-09-30T14:09:05'
 TEMPLATE_VAR_PATS = {
