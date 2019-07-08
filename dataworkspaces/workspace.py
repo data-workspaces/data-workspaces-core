@@ -6,6 +6,7 @@ from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, cast
 
 from abc import ABCMeta, abstractmethod
 import importlib
+import os.path
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.resources import RESOURCE_TYPES
@@ -205,22 +206,28 @@ class Workspace(metaclass=ABCMeta):
             (resource_name, expected_role, r.role))
 
     def validate_local_path_for_resource(self, proposed_resource_name:str,
-                                         proposed_local_path:str,
-                                         should_already_exist=False,
-                                         should_not_already_exist=False,
-                                         should_be_writable=False) -> None:
+                                         proposed_local_path:str) -> None:
         """When creating a resource, validate that the proposed
         local path is usable for the resource. By default, this checks
         existing resources with local state to see if they have conflicting
-        paths. If requested, it also checks whether the path exists and whether
-        the path is writable.
+        paths.
 
         Subclasses may want to add more checks. For example, whether the
         path conflicts with the actual workspace. For subclasses that
         do not support *any* local state, including in resources, they
         can override the base implementation and throw an exception.
         """
-        pass # XXX: Implement!
+        real_local_path = os.path.realpath(proposed_local_path)
+        for r in self.get_resources():
+            if not isinstance(r, LocalStateResourceMixin) or \
+               r.get_local_path_if_any() is None:
+                continue
+            other_real_path = os.path.realpath(r.get_local_path_if_any())
+            if other_real_path.startswith(real_local_path) or \
+               real_local_path.startswith(other_real_path):
+                raise ConfigurationError("Proposed path %s for resource %s, conflicts with local path %s for resource %s"%
+                                         (proposed_local_path, proposed_resource_name,
+                                          r.get_local_path_if_any(), r.name))
 
     def suggest_resource_name(self, resource_type:str,
                               role:str, *args):
@@ -256,12 +263,14 @@ class WorkspaceFactory(metaclass=ABCMeta):
     as the FACTORY member of the module.
     """
     @abstractmethod
+    @staticmethod
     def load_workspace(batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
         """Instantiate and return a workspace.
         """
         pass
 
     @abstractmethod
+    @staticmethod
     def init_workspace(workspace_name:str, dws_version:str,
                        global_params:JSONDict, local_params:JSONDict,
                        batch, verbose,
