@@ -7,6 +7,7 @@ import shutil
 import json
 
 from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
+from dataworkspaces.utils.file_utils import safe_rename
 from dataworkspaces.utils.git_utils import is_a_git_fat_repo, validate_git_fat_in_path
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path
@@ -60,7 +61,7 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
             new_name = join(parent_dir, workspace_name)
             if isdir(new_name):
                 raise ConfigurationError("Clone target directory %s already exists" % new_name)
-            os.rename(initial_path, new_name)
+            safe_rename(initial_path, new_name)
             directory = new_name
         snapshot_md_dir = get_snapshot_metadata_dir_path(directory)
         if not exists(snapshot_md_dir):
