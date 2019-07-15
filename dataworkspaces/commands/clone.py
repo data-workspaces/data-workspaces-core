@@ -14,7 +14,6 @@ from dataworkspaces.resources.resource import \
 import dataworkspaces.commands.actions as actions
 from .init import get_config_file_path, get_snapshot_metadata_dir_path,\
                   get_snapshot_dir_path
-from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .pull import AddRemoteResource
 from .params import get_local_defaults, get_local_params_file_path
 
@@ -102,12 +101,13 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
         for resource_json in resources_json:
             add_remote_action = AddRemoteResource(ns, verbose, batch, directory, resource_json)
             plan.append(add_remote_action)
-            plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, directory))
-            add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
-                                                             directory)
-            if add_to_gi:
-                plan.append(add_to_gi)
-                gitignore_path = add_to_gi.gitignore_path
+            # XXX Refactor
+            #plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, directory))
+            # add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
+            #                                                  directory)
+            # if add_to_gi:
+            #     plan.append(add_to_gi)
+            #     gitignore_path = add_to_gi.gitignore_path
         if gitignore_path:
             plan.append(actions.GitAdd(ns, verbose, directory, [gitignore_path]))
             plan.append(actions.GitCommit(ns, verbose, directory, "Added new resources to gitignore"))

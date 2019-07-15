@@ -3,7 +3,7 @@ Git backend for storing a workspace
 """
 
 import os
-from os.path import exists, join, isdir, basename
+from os.path import exists, join, isdir, basename, isabs
 import json
 import re
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
@@ -35,7 +35,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super().__init__(cf_data['name'], cf_data['dws-version'], batch, verbose)
         self.global_params = cf_data['global_params']
         self.local_params = self._load_json_file(LOCAL_PARAMS_PATH)
-        self.resource_params = self._load_json_file(RESOURCES_FILE_PATH)
+        self.resource_params = self._load_json_file(RESOURCES_FILE_PATH) # type: List[JSONDict]
         self.resource_params_by_name = {} # type: Dict[str, JSONDict]
         for r in self.resource_params:
             self.resource_params_by_name[r['name']] = r
@@ -52,8 +52,8 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
 
     def _save_json_to_file(self, obj, relative_path):
         f_path = join(self.workspace_dir, relative_path)
-        with open(f_path, 'r') as f:
-            json.dump(obj, f_path, indent=2)
+        with open(f_path, 'w') as f:
+            json.dump(obj, f, indent=2)
 
     def _get_global_params(self) -> JSONDict:
         """Get a dict of configuration parameters for this workspace,
@@ -108,7 +108,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         Add the necessary state for a new resource to the workspace.
         """
         assert params['name']==resource_name
-        self.resource_params.append[params]
+        self.resource_params.append(params)
         self.resource_params_by_name[resource_name] = params
         self._save_json_to_file(self.resource_params, RESOURCES_FILE_PATH)
 
@@ -121,9 +121,54 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         self._save_json_to_file(self.resource_local_params_by_name,
                                 RESOURCE_LOCAL_PARAMS_PATH)
 
-    def save(self) -> None:
+    def get_workspace_local_path_if_any(self) -> Optional[str]:
+        return self.workspace_dir
+
+    def _add_local_dir_to_gitignore_if_needed(self, resource):
+        """Figure out whether resource has a local path under the workspace's
+        git repo, which needs to be added to .gitignore. If so, do it.
+        """
+        if resource.resource_type=='git-subdirectory':
+            return  # this is always a part of the dataworkspace's repo
+        elif  not isinstance(resource, ws.LocalStateResourceMixin):
+            return # no local state, so not an iddue
+        local_path = resource.get_local_path_if_any()
+        if local_path is None:
+            return
+        assert isabs(local_path), "Resource local path should be absolute"
+        if not local_path.startswith(self.workspace_dir):
+            return None
+        local_relpath = local_path[len(self.workspace_dir)+1:]
+        if not local_relpath.endswith('/'):
+            local_relpath_noslash = local_relpath
+            local_relpath = local_relpath + '/'
+        else:
+            local_relpath_noslash = local_relpath[:-1]
+        # Add a / as the start to indicate that the path starts at the root of the repo.
+        # Otherwise, we'll hit cases where the path could match other directories (e.g. issue #11)
+        local_relpath = '/'+local_relpath if not local_relpath.startswith('/') else local_relpath
+        local_relpath_noslash = '/'+local_relpath_noslash \
+                                if not local_relpath_noslash.startswith('/') \
+                                else local_relpath_noslash
+        gitignore_path = join(self.workspace_dir, '.gitignore')
+        # read the gitignore file to see if relpath is already there
+        if exists(gitignore_path):
+            with open(gitignore_path, 'r') as f:
+                for line in f:
+                    line = line.rstrip()
+                    if line==local_relpath or line==local_relpath_noslash:
+                        return # no need to add
+        with open(gitignore_path, 'a') as f:
+            f.write(local_relpath+ '\n')
+
+    def add_resource(self, name:str, resource_type:str, role:str, *args, **kwargs)\
+        -> ws.Resource:
+        r = super().add_resource(name, resource_type, role, *args, **kwargs)
+        self._add_local_dir_to_gitignore_if_needed(r)
+        return r
+    def save(self, message) -> None:
         """Save the current state of the workspace"""
-        commit_changes_in_repo(self.workspace_dir, "", verbose=self.verbose)
+        commit_changes_in_repo(self.workspace_dir, message, verbose=self.verbose)
 
     def pull_prechecks(self, only:Optional[List[str]]=None,
                        skip:Optional[List[str]]=None,

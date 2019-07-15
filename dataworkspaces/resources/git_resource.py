@@ -21,7 +21,8 @@ from dataworkspaces.utils.git_utils import \
     has_git_fat_been_initialized, validate_git_fat_in_path,\
     validate_git_fat_in_path_if_needed, get_subdirectory_hash
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
-    RESOURCE_ROLE_PURPOSES
+    RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin
+import dataworkspaces.backends.git as git_backend
 from .resource import LocalPathType
 from .snapshot_utils import move_current_files_local_fs
 
@@ -36,7 +37,7 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
         return False
     #cmd = [GIT_EXE_PATH, 'show', '--oneline', hashval]
     cmd = [GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
-    rc = call_subprocess_for_rc(cmd, cwd, verbose=verbose)
+    rc = call_subprocess_for_rc(cmd, cwd, verbose=workspace.verbose)
     return rc!=0
 
 
@@ -54,7 +55,7 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
         call_subprocess([GIT_EXE_PATH, 'mv',
                          srcrelpath, destrelpath],
                         cwd=git_root,
-                        verbose=verbose)
+                        verbose=workspace.verbose)
     else:
         # file is not tracked by git yet, just move and then add to git
         os.rename(join(git_root, srcrelpath),
@@ -63,10 +64,32 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     mode = os.stat(destabspath)[stat.ST_MODE]
     os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
     call_subprocess([GIT_EXE_PATH, 'add', destrelpath],
-                    cwd=git_root, verbose=verbose)
+                    cwd=git_root, verbose=workspace.verbose)
 
+class GitResourceBase(Resource, LocalStateResourceMixin):
+    def get_local_path_if_any(self):
+        return self.local_path
 
-class GitRepoResource(Resource, LocalStateResourceMixin):
+    def get_local_params(self):
+        return {
+            'local_path':self.local_path
+        }
+
+    def validate_subpath_exists(self, subpath):
+        """Validate that the subpath is valid within this
+        resource. Default implementation checks the local
+        filesystem if any. If the resource is remote-only,
+        then the subclass should override this method to
+        check on the remote side.
+        """
+        lp = self.get_local_path_if_any()
+        if lp is not None:
+            path = join(lp, subpath)
+            if not exists(path): # use exists() instead of isdir() as subpath could be a file
+                raise ConfigurationError("Subpath %s does not exist for resource %s, expecting it at '%s'"%
+                                         (subpath, self.name, path))
+
+class GitRepoResource(GitResourceBase):
     def __init__(self, name, role, workspace, remote_origin_url,
                  local_path, branch, read_only):
         super().__init__('git', name, role, workspace)
@@ -84,46 +107,6 @@ class GitRepoResource(Resource, LocalStateResourceMixin):
             'branch':self.branch,
             'read_only':self.read_only
         }
-
-    def get_local_params(self):
-        return {
-            'local_path':self.local_path
-        }
-
-    def get_local_path_if_any(self):
-        return self.local_path
-
-    def add_prechecks(self):
-        if exists(self.local_path):
-            (current, other) = get_branch_info(self.local_path, self.verbose)
-            if self.branch!=current and self.branch not in other:
-                raise ConfigurationError("Requested branch '%s' is not available for git repository at %s"%
-                                         (self.branch, self.local_path))
-            if is_git_dirty(self.local_path) and self.branch!=current:
-                click.echo("WARNING: Git repo is currently on branch %s and branch %s was requested. However, the current branch has uncommitted changes. Will skip changing the branch after adding the repo to workspace." % (current, self.branch))
-
-    def add(self):
-        (current, others) = get_branch_info(self.local_path, self.verbose)
-        if self.branch!=current and not is_git_dirty(self.local_path):
-            switch_git_branch(self.local_path, self.branch, self.verbose)
-
-    def add_from_remote(self):
-        parent = dirname(self.local_path)
-        if not exists(self.local_path):
-            # cloning a fresh repository
-            cmd = [GIT_EXE_PATH, 'clone', self.remote_origin_url, basename(self.local_path)]
-            call_subprocess(cmd, parent, self.verbose)
-        else:
-            # the repo already exists locally, and we've alerady verified that then
-            # remote is correct
-            cmd = [GIT_EXE_PATH, 'pull', 'origin', 'master']
-            call_subprocess(cmd, self.local_path, self.verbose)
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose, ok_if_not_present=True)
-        if is_a_git_fat_repo(self.local_path) and not has_git_fat_been_initialized(self.local_path):
-            import dataworkspaces.third_party.git_fat as git_fat
-            python2_exe = git_fat.find_python2_exe()
-            git_fat.run_git_fat(python2_exe, ['init'], cwd=self.local_path, verbose=self.verbose)
-            git_fat.run_git_fat(python2_exe, ['pull'], cwd=self.local_path, verbose=self.verbose)
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
@@ -333,10 +316,12 @@ class GitRepoFactory(ResourceFactory):
                           local_path, branch, read_only):
         """Instantiate a resource object from the add command's
         arguments"""
+        workspace.validate_local_path_for_resource(name, local_path)
+        validate_git_fat_in_path_if_needed(local_path)
         lpr = realpath(local_path)
-        wdr = realpath(workspace_dir)
         if not is_git_repo(local_path):
-            if lpr.startswith(wdr):
+            if isinstance(workspace, git_backend.Workspace) and \
+               lpr.startswith(realpath(workspace.get_workspace_local_path_if_any())):
                 if branch!='master':
                     raise ConfigurationError("Only the branch 'master' is available for resources that are within the workspace's git repository")
                 elif read_only:
@@ -346,28 +331,38 @@ class GitRepoFactory(ResourceFactory):
                                                                 local_path)
             else:
                 raise ConfigurationError(local_path + ' is not a git repository')
-        if lpr==wdr:
-            raise ConfigurationError("Cannot add the entire workspace as a git resource")
-        remote_origin = get_remote_origin(local_path, verbose=verbose)
+        remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
+        (current, others) = get_branch_info(local_path, workspace.verbose)
+        if branch!=current and branch not in other:
+            raise ConfigurationError("Requested branch '%s' is not available for git repository at %s"%
+                                     (branch, local_path))
+        if is_git_dirty(local_path) and branch!=current:
+            click.echo("WARNING: Git repo is currently on branch %s and branch %s was requested. However, the current branch has uncommitted changes. Will skip changing the branch after adding the repo to workspace." % (current, branch))
+        else:
+            switch_git_branch(local_path, branch, workspace.verbose)
+        return GitRepoResource(name, role, workspace,
+                               remote_origin, local_path, branch, read_only)
 
-        return GitRepoResource(name, role, workspace_dir,
-                               remote_origin, local_path, branch, read_only, verbose)
-
-    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
+    def from_json(self, params, local_params, workspace):
         """Instantiate a resource object from the parsed resources.json file"""
-        assert json_data['resource_type']=='git'
-        return GitRepoResource(json_data['name'], json_data['role'],
-                               workspace_dir, json_data['remote_origin_url'],
-                               local_params['local_path'], json_data['branch'],
-                               json_data.get('read_only'), verbose)
+        assert params['resource_type']=='git'
+        return GitRepoResource(params['name'], params['role'],
+                               workspace, params['remote_origin_url'],
+                               local_params['local_path'], params['branch'],
+                               params.get('read_only'))
 
-    def from_json_remote(self, json_data, workspace_dir, batch, verbose):
-        assert json_data['resource_type']=='git'
-        rname = json_data['name']
-        remote_origin_url = json_data['remote_origin_url']
-        default_local_path = join(workspace_dir, rname)
-        branch = json_data['branch']
-        read_only = json_data.get('read_only')
+    def has_local_state(self):
+        return True
+
+    def clone(self, params, workspace):
+        assert params['resource_type']=='git'
+        rname = params['name']
+        remote_origin_url = params['remote_origin_url']
+        default_local_path = join(workspace.get_workspace_local_path_if_any(), rname) \
+                             if workspace.get_workspace_local_path_if_any() is not None \
+                             else abspath(expanduser('~'))
+        branch = params['branch']
+        read_only = params.get('read_only')
         if not batch:
             # ask the user for a local path
             local_path = \
@@ -384,45 +379,58 @@ class GitRepoFactory(ResourceFactory):
                     raise ConfigurationError("Unable to add resource '%s' as remote origin in local path '%s' is %s, but data workspace has '%s'"%
                                              (rname, default_local_path, remote, remote_origin_url))
             local_path = default_local_path
+        parent = dirname(local_path)
+        if not exists(self.local_path):
+            # cloning a fresh repository
+            cmd = [GIT_EXE_PATH, 'clone', remote_origin_url, basename(local_path)]
+            call_subprocess(cmd, parent, workspace.verbose)
+        else:
+            # the repo already exists locally, and we've alerady verified that then
+            # remote is correct
+            cmd = [GIT_EXE_PATH, 'pull', 'origin', 'master']
+            call_subprocess(cmd, local_path, workspace.verbose)
+        switch_git_branch_if_needed(local_path, branch, workspace.verbose, ok_if_not_present=True)
+        if is_a_git_fat_repo(local_path) and not has_git_fat_been_initialized(local_path):
+            import dataworkspaces.third_party.git_fat as git_fat
+            python2_exe = git_fat.find_python2_exe()
+            git_fat.run_git_fat(python2_exe, ['init'], cwd=local_path, verbose=workspace.verbose)
+            git_fat.run_git_fat(python2_exe, ['pull'], cwd=local_path, verbose=workspace.verbose)
+
         return GitRepoResource(rname, json_data['role'],
                                workspace_dir, remote_origin_url,
                                local_path, branch, read_only, verbose)
 
-    def suggest_name(self, local_path, branch, read_only):
+    def suggest_name(self, workspace, local_path, branch, read_only):
         return basename(local_path)
 
 
-class GitRepoResultsSubdirResource(Resource):
+def _get_workspace_dir_for_git_backend(workspace):
+    """This is used by the git-subdirectory resources, which only work with the
+    git backend for the workspace...
+    """
+    if not isinstance(workspace, git_backend.Workspace):
+        raise ConfigurationError("Git subdirectory resources are only supported with the Git workspace backend.")
+    workspace_dir = workspace.get_workspace_local_path_if_any()
+    assert workspace_dir is not None
+    return workspace_dir
+
+class GitRepoResultsSubdirResource(GitResourceBase):
     """Resource for a subdirectory of the workspace for when it is
     in the results role.
     """
-    def __init__(self, name, workspace_dir, relative_path,
-                 verbose=False):
-        super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace_dir)
+    def __init__(self, name, workspace, relative_path):
+        super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace)
         self.relative_path = relative_path
-        self.local_path = join(workspace_dir, relative_path)
-        self.verbose = verbose
+        self.local_path = join(_get_workspace_dir_for_git_backend(workspace),
+                               relative_path)
 
-    def to_json(self):
-        d = super().to_json()
-        d['relative_path'] = self.relative_path
-        return d
-
-    def get_local_path_if_any(self):
-        return self.local_path
-
-    def add_prechecks(self):
-        if not exists(self.local_path):
-            raise ConfigurationError("Directory '%s' must exist for a git subdirectory resource in order to add it"%
-                                     self.local_path)
-
-    def add(self):
-        pass
-
-    def add_from_remote(self):
-        if not exists(self.local_path):
-            raise InternalError("Git subdirectory resource is missing directory %s"%
-                                self.local_path)
+    def get_params(self):
+        return {
+            'resource_type':self.resource_type,
+            'name':self.name,
+            'role':self.role,
+            'relative_path':self.relative_path
+        }
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
@@ -512,38 +520,23 @@ class GitRepoResultsSubdirResource(Resource):
         return "Git repository subdirectory %s in role '%s'" % (self.relative_path, self.role)
 
 
-class GitRepoSubdirResource(Resource):
+class GitRepoSubdirResource(GitResourceBase):
     """Resource for a subdirectory of the workspace for when it is NOT
     in the results role.
     """
-    def __init__(self, name, role, workspace_dir, relative_path,
-                 verbose=False):
+    def __init__(self, name, role, workspace, relative_path):
         assert role != ResourceRoles.RESULTS
-        super().__init__('git-subdirectory', name, role, workspace_dir)
+        super().__init__('git-subdirectory', name, role, workspace)
         self.relative_path = relative_path
-        self.local_path = join(workspace_dir, relative_path)
-        self.verbose = verbose
+        self.local_path = join(_get_workspace_dir_for_git_backend(workspace), relative_path)
 
-    def to_json(self):
-        d = super().to_json()
-        d['relative_path'] = self.relative_path
-        return d
-
-    def get_local_path_if_any(self):
-        return self.local_path
-
-    def add_prechecks(self):
-        if not exists(self.local_path):
-            raise ConfigurationError("Directory '%s' must exist for a git subdirectory resource in order to add it"%
-                                     self.local_path)
-
-    def add(self):
-        pass
-
-    def add_from_remote(self):
-        if not exists(self.local_path):
-            raise InternalError("Git subdirectory resource is missing directory %s"%
-                                self.local_path)
+    def get_params(self):
+        return {
+            'resource_type':self.resource_type,
+            'name':self.name,
+            'role':self.role,
+            'relative_path':self.relative_path
+        }
 
     def results_move_current_files(self, rel_dest_root, exclude_files,
                                    exclude_dirs_re):
@@ -627,10 +620,10 @@ def create_results_subdir(workspace_dir, full_path, relative_path, role, verbose
         f.write("This directory is for %s.\n" % RESOURCE_ROLE_PURPOSES[role])
         f.write("This README file ensures the directory is added to the git repository, as git does not support empty directories.\n")
     call_subprocess([GIT_EXE_PATH, 'add', relative_path],
-                    cwd=workspace_dir, verbose=verbose)
+                    cwd=workspace_dir, verbose=workspace.verbose)
     call_subprocess([GIT_EXE_PATH, 'commit', '-m',
                      'Add %s to repo for storing results'%relative_path],
-                    cwd=workspace_dir, verbose=verbose)
+                    cwd=workspace_dir, verbose=workspace.verbose)
     click.echo("Added %s to git repository" % relative_path)
 
 
@@ -638,9 +631,9 @@ class GitRepoSubdirFactory(ResourceFactory):
     """This is a version of a git repo resource where we are just
     storing in a subdirectory of a repo rather than the full repo.
     This is currently only valid if we are storing as a subdir of the
-    main data workspace repo and the role is "results".
+    main data workspace repo.
     """
-    def from_command_line(self, role, name, workspace_dir, batch, verbose,
+    def from_command_line(self, role, name, workspace,
                           local_path, confirm_subdir_create=True):
         """Instantiate a resource object from the add command's
         arguments"""
@@ -648,48 +641,46 @@ class GitRepoSubdirFactory(ResourceFactory):
             raise InternalError("Local path '%s'is a git repo, should not be using GitRepoSubdirFactory"%
                                 local_path)
         lpr = realpath(local_path)
+        workspace_dir = _get_workspace_dir_for_git_backend(workspace)
         wdr = realpath(workspace_dir)
         if not lpr.startswith(wdr):
             raise ConfigurationError("Git subdirectories can only be used as resources when under the workspace repo.")
         relative_path = lpr[len(wdr)+1:]
-        # if role != ResourceRoles.RESULTS:
-        #     raise ConfigurationError("Probem creating resource '%s': Role %s is not premitted for a git subdirectory, only the results role"
-        #                              % (name, role))
         if not exists(local_path):
             if not confirm_subdir_create:
                 create_results_subdir(workspace_dir, local_path, relative_path,
-                                      role, verbose)
+                                      role, workspace.verbose)
             elif not batch:
                 click.confirm(CONFIRM_SUBDIR_MSG%relative_path, abort=True)
                 create_results_subdir(workspace_dir, local_path, relative_path,
-                                      role, verbose)
+                                      role, workspace.verbose)
             else:
                 raise ConfigurationError("Cannot create a resource from a git subdirectory if the directory does not already exist.")
         if role==ResourceRoles.RESULTS:
-            return GitRepoResultsSubdirResource(name, workspace_dir, relative_path,
-                                                verbose)
+            return GitRepoResultsSubdirResource(name, workspace, relative_path)
         else:
-            return GitRepoSubdirResource(name, role, workspace_dir, relative_path,
-                                         verbose)
+            return GitRepoSubdirResource(name, role, workspace, relative_path)
 
-    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
+    def from_json(self, params, local_params, workspace):
         """Instantiate a resource object from the parsed resources.json file"""
-        assert json_data['resource_type']=='git-subdirectory'
-        if json_data['role']==ResourceRoles.RESULTS:
-            return GitRepoResultsSubdirResource(json_data['name'],
-                                                workspace_dir,
-                                                json_data['relative_path'],
-                                                verbose)
+        assert params['resource_type']=='git-subdirectory'
+        if params['role']==ResourceRoles.RESULTS:
+            return GitRepoResultsSubdirResource(params['name'],
+                                                workspace,
+                                                params['relative_path'])
         else:
-            return GitRepoSubdirResource(json_data['name'], json_data['role'],
-                                         workspace_dir, json_data['relative_path'],
-                                         verbose)
+            return GitRepoSubdirResource(params['name'], params['role'],
+                                         workspace, params['relative_path'])
 
-    def from_json_remote(self, json_data, workspace_dir, batch, verbose):
-        assert json_data['resource_type']=='git-subdirectory'
-        rname = json_data['name']
-        role = json_data['role']
-        relative_path = json_data['relative_path']
+    def clone(self, params, workspace):
+        assert params['resource_type']=='git-subdirectory'
+        rname = params['name']
+        role = params['role']
+        relative_path = params['relative_path']
+        if not isinstance(workspace, git_backend.Workspace):
+            raise ConfigurationError("Git subdirectory resources are only supported with the Git workspace backend.")
+        workspace_dir = workspace.get_local_path_if_any()
+        assert workspace_dir is not None
         local_path = join(workspace_dir, relative_path)
         if not exists(local_path):
             # this subdirectory most have been created in the remote
@@ -697,11 +688,12 @@ class GitRepoSubdirFactory(ResourceFactory):
             # the contents, but will create a placeholder so our checks pass.
             os.mkdir(local_path)
         if role==ResourceRoles.RESULTS:
-            return GitRepoResultsSubdirResource(rname, workspace_dir, relative_path,
-                                                 verbose)
+            return GitRepoResultsSubdirResource(rname, workspace, relative_path)
         else:
-            return GitRepoSubdirResource(rname, role, workspace_dir, relative_path,
-                                         verbose)
+            return GitRepoSubdirResource(rname, role, workspace, relative_path)
+
+    def has_local_state(self) -> bool:
+        return True
 
     def suggest_name(self, local_path, *args):
         return basename(local_path)

@@ -292,7 +292,8 @@ def git(ctx, role, name, branch, read_only, path):
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     path = abspath(expanduser(path))
-    add_command('git', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, branch, read_only)
+    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    add_command('git', role, name, workspace, path, branch, read_only)
 
 add.add_command(git)
 

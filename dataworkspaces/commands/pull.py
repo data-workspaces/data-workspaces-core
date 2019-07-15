@@ -11,7 +11,6 @@ from dataworkspaces.utils.git_utils import is_a_git_fat_repo,\
     get_json_file_from_remote
 from dataworkspaces.resources.resource import \
     CurrentResources, get_resource_from_json_remote
-from .add import UpdateLocalParams, add_local_dir_to_gitignore_if_needed
 from .push import get_resources_to_process
 from dataworkspaces.utils.lineage_utils import get_current_lineage_dir,\
                                                LineageStoreCurrent
@@ -19,7 +18,8 @@ from dataworkspaces.resources.git_resource import is_git_dirty
 from dataworkspaces.errors import ConfigurationError
 
 
-
+class UpdateLocalParams:
+    pass # XXX placehoder
 class PullResource(actions.Action):
     def __init__(self, ns, verbose, r):
         super().__init__(ns, verbose)
@@ -119,11 +119,12 @@ def pull_command(workspace_dir, batch=False, verbose=False,
             add_remote_action = AddRemoteResource(ns, verbose, batch, workspace_dir, resource_json)
             plan.append(add_remote_action)
             plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, workspace_dir))
-            add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
-                                                             workspace_dir)
-            if add_to_gi:
-                plan.append(add_to_gi)
-                gitignore_path = add_to_gi.gitignore_path
+            # XXX refactor!
+            #add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
+            #                                                 workspace_dir)
+            # if add_to_gi:
+            #     plan.append(add_to_gi)
+            #     gitignore_path = add_to_gi.gitignore_path
         if gitignore_path:
             plan.append(actions.GitAdd(ns, verbose, workspace_dir, [gitignore_path]))
             plan.append(actions.GitCommit(ns, verbose, workspace_dir, "Added new resources to gitignore"))

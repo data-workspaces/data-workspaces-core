@@ -9,7 +9,6 @@ import importlib
 import os.path
 
 from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.resources import RESOURCE_TYPES
 from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
 from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
                                              get_global_param_defaults,\
@@ -161,7 +160,8 @@ class Workspace(metaclass=ABCMeta):
         for rname in self.get_resource_names():
             yield self.get_resource(rname)
 
-    def add_resource(self, name:str, resource_type:str, role:str, *args) -> 'Resource':
+    def add_resource(self, name:str, resource_type:str, role:str, *args, **kwargs)\
+        -> 'Resource':
         """Add a resource to the repository for tracking.
         """
         if name in self.get_resource_names():
@@ -170,7 +170,7 @@ class Workspace(metaclass=ABCMeta):
         if role not in RESOURCE_ROLE_CHOICES:
             raise ConfigurationError("Invalid resource role '%s'" % role)
         f = _get_resource_factory_by_resource_type(resource_type)
-        r = f.from_command_line(role, name, self, *args)
+        r = f.from_command_line(role, name, self, *args, **kwargs)
         self._add_params_for_resource(r.name, r.get_params())
         self._add_local_params_for_resource(r.name, r.get_local_params())
         return r
@@ -210,14 +210,19 @@ class Workspace(metaclass=ABCMeta):
         """When creating a resource, validate that the proposed
         local path is usable for the resource. By default, this checks
         existing resources with local state to see if they have conflicting
-        paths.
+        paths and, if a local path exists for the workspace, whether there
+        is a conflict (the entire workspace cannot be used as a resource
+        path).
 
-        Subclasses may want to add more checks. For example, whether the
-        path conflicts with the actual workspace. For subclasses that
+        Subclasses may want to add more checks. For subclasses that
         do not support *any* local state, including in resources, they
         can override the base implementation and throw an exception.
         """
         real_local_path = os.path.realpath(proposed_local_path)
+        if self.get_workspace_local_path_if_any()is not None:
+            if os.path.realpath(cast(str, self.get_workspace_local_path_if_any())) \
+                                ==real_local_path:
+                raise ConfigurationError("Cannot use the entire workspace as a resource local path")
         for r in self.get_resources():
             if not isinstance(r, LocalStateResourceMixin) or \
                r.get_local_path_if_any() is None:
@@ -234,7 +239,8 @@ class Workspace(metaclass=ABCMeta):
         """Given the arguments passed in for creating a resource, suggest
         a (unique) name for the resource.
         """
-        name = _get_resource_factory_by_resource_type(resource_type).suggest_name(*args)
+        name = _get_resource_factory_by_resource_type(resource_type).suggest_name(self,
+                                                                                  *args)
         existing_resource_names = frozenset(self.get_resource_names())
         if name not in existing_resource_names:
             return name
@@ -249,7 +255,18 @@ class Workspace(metaclass=ABCMeta):
             i += 1
 
     @abstractmethod
-    def save(self) -> None:
+    def get_workspace_local_path_if_any(self) -> Optional[str]:
+        """If the workspace maintains local state and has a "home"
+        directory, return it. Otherwise, return None.
+
+        This is useful for things like providing defaults for resource
+        local paths or providing special handling for resources enclosed
+        in the workspace (e.g. GitRepoResource vs. GitSubdirResource)
+        """
+        pass
+
+    @abstractmethod
+    def save(self, message:str) -> None:
         """Save the current state of the workspace"""
         pass
 
@@ -262,15 +279,15 @@ class WorkspaceFactory(metaclass=ABCMeta):
     Each backend should implement a subclass and provide a singleton instance
     as the FACTORY member of the module.
     """
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def load_workspace(batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
         """Instantiate and return a workspace.
         """
         pass
 
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def init_workspace(workspace_name:str, dws_version:str,
                        global_params:JSONDict, local_params:JSONDict,
                        batch, verbose,
@@ -421,7 +438,7 @@ class ResourceFactory(metaclass=ABCMeta):
     """
     @abstractmethod
     def from_command_line(self, role:str, name:str, workspace:Workspace,
-                          *args) -> Resource:
+                          *args, **kwargs) -> Resource:
         """Instantiate a resource object from the add command's
         arguments"""
         pass
@@ -460,11 +477,14 @@ class ResourceFactory(metaclass=ABCMeta):
 
 
 def _get_resource_factory_by_resource_type(resource_type):
-    if resource_type not in RESOURCE_TYPES:
+    import dataworkspaces.resources.resource_types
+    RT = dataworkspaces.resources.resource_types.RESOURCE_TYPES
+    if resource_type not in RT:
         raise InternalError("'%s' not a valid resource type. Valid types are: %s."
-                            % (resource_type, ', '.join(sorted(RESOURCE_TYPES.keys()))))
-    f = RESOURCE_TYPES[resource_type]
-    assert isinstance(f, ResourceFactory)
+                            % (resource_type, ', '.join(sorted(RT.keys()))))
+    f = RT[resource_type]()
+    assert isinstance(f, ResourceFactory), \
+        "Expecting ResourceFactory, class was %s" % type(f)
     return f
 
 

@@ -107,5 +107,6 @@ def init_command(name, hostname, create_resources,
         for role in create_resources:
             click.echo("  %s: ./%s" %(role, role))
 
+    workspace.save("workspace initialization")
     click.echo("Workspace %s initialized successfully."%name)
 
