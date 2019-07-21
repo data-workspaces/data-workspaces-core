@@ -127,13 +127,15 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
 
     try:
         old_md = mixin.get_snapshot_metadata(md.hashval)
+        print("Old_md: %s" % old_md) # XXX
+        print("New_md: %s" % md) # XXX
     except:
         old_md = None
     if old_md is not None:
         md = merge_snapshot_metadata(old_md, md, workspace.batch)
 
     mixin.save_snapshot_metadata_and_manifest(md, manifest)
-    workspace.save()
+    workspace.save("Completed snapshot %s" % md.hashval)
 
     # XXX add back in lineage
     # # see if we need to add lineage files

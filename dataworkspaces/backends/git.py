@@ -16,7 +16,8 @@ from dataworkspaces.workspace import JSONDict, SnapshotMetadata
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, git_init, git_add,\
-    validate_git_fat_in_path_if_needed
+    validate_git_fat_in_path_if_needed, \
+    run_git_fat_pull_if_needed
 
 
 BASE_DIR='.dataworkspace'
@@ -168,7 +169,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         r = super().add_resource(name, resource_type, role, *args, **kwargs)
         self._add_local_dir_to_gitignore_if_needed(r)
         return r
-    def save(self, message) -> None:
+    def save(self, message:str) -> None:
         """Save the current state of the workspace"""
         commit_changes_in_repo(self.workspace_dir, message, verbose=self.verbose)
 
@@ -299,6 +300,23 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         # call prechecks on the individual resources
         super()._snapshot_precheck(current_resources)
         validate_git_fat_in_path_if_needed(self.workspace_dir)
+
+    def _restore_precheck(self, restore_hashes:Dict[str,str],
+                          restore_resources:List[ws.SnapshotResourceMixin]) -> None:
+        """Run any prechecks before restoring. This should throw
+        a ConfigurationError if the restore would fail for some reason.
+        """
+        # call prechecks on the individual resources
+        super()._restore_precheck(restore_hashes, restore_resources)
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
+
+    def restore(self, restore_hashes:Dict[str,str],
+                restore_resources:List[ws.SnapshotResourceMixin]) -> None:
+        """We override restore to perform a git-fat pull at the end,
+        if needed.
+        """
+        super().restore(restore_hashes, restore_resources)
+        run_git_fat_pull_if_needed(self.workspace_dir, self.verbose)
 
     def remove_tag_from_snapshot(self, hash_val:str, tag:str) -> None:
         """Remove the specified tag from the specified snapshot. Throw an

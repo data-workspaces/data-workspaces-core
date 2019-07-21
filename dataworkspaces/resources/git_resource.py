@@ -9,6 +9,7 @@ from os.path import realpath, basename, isdir, join, dirname, exists,\
 import stat
 import click
 import shutil
+import json
 from typing import Set, Pattern
 
 from dataworkspaces.errors import ConfigurationError, InternalError
@@ -23,7 +24,8 @@ from dataworkspaces.utils.git_utils import \
     has_git_fat_been_initialized, validate_git_fat_in_path,\
     validate_git_fat_in_path_if_needed, get_subdirectory_hash
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
-    RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin
+    RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
+    SnapshotResourceMixin, JSONDict
 import dataworkspaces.backends.git as git_backend
 from dataworkspaces.resources.resource import LocalPathType
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
@@ -68,7 +70,7 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     call_subprocess([GIT_EXE_PATH, 'add', destrelpath],
                     cwd=git_root, verbose=verbose)
 
-class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin):
+class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
     def get_local_path_if_any(self):
         return self.local_path
 
@@ -90,6 +92,10 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin):
             if not exists(path): # use exists() instead of isdir() as subpath could be a file
                 raise ConfigurationError("Subpath %s does not exist for resource %s, expecting it at '%s'"%
                                          (subpath, self.name, path))
+
+    def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
+                        relative_path:str) -> None:
+        pass # nothing to do unless we actually tag the resources
 
 class GitRepoResource(GitResourceBase):
     def __init__(self, name, role, workspace, remote_origin_url,
@@ -128,43 +134,40 @@ class GitRepoResource(GitResourceBase):
                              '-m', "Move current results to %s" % rel_dest_root],
                             cwd=self.local_path, verbose=self.workspace.verbose)
 
-    def add_results_file(self, temp_path, rel_dest_path):
-        """Copy a results file from the temporary location to
-        the specified path in the resource. Caller responsible for
-        cleanup of temp_path.
+    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+        """Save JSON results data to the specified path in the resource.
         """
-        assert exists(temp_path)
         assert self.role==ResourceRoles.RESULTS
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch,
+                                    self.workspace.verbose)
         abs_dest_path = join(self.local_path, rel_dest_path)
         parent_dir = dirname(abs_dest_path)
         if not exists(parent_dir):
             os.makedirs(parent_dir)
-        # Need to use copy instead of move, because /tmp might be in a separate
-        # filesystem (see issue #21). Caller will do cleanup of temp file.
-        shutil.copyfile(temp_path, abs_dest_path)
+        with open(abs_dest_path, 'w') as f:
+            json.dump(data, f, indent=2)
         call_subprocess([GIT_EXE_PATH, 'add', rel_dest_path],
-                        cwd=self.local_path, verbose=self.verbose)
+                        cwd=self.local_path, verbose=self.workspace.verbose)
         call_subprocess([GIT_EXE_PATH, 'commit',
                          '-m', "Added %s" % rel_dest_path],
-                        cwd=self.local_path, verbose=self.verbose)
+                        cwd=self.local_path, verbose=self.workspace.verbose)
 
-    def snapshot_prechecks(self):
+    def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.local_path)
 
     def snapshot(self):
         # Todo: handle tags
         commit_changes_in_repo(self.local_path, 'autocommit ahead of snapshot',
-                               verbose=self.verbose)
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        hashval = get_local_head_hash(self.local_path, self.verbose)
+                               verbose=self.workspace.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
+        hashval = get_local_head_hash(self.local_path, self.workspace.verbose)
         return (hashval, hashval)
 
-    def restore_prechecks(self, hashval):
+    def restore_precheck(self, hashval):
         rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
                                      hashval+"^{commit}"],
                                     cwd=self.local_path,
-                                    verbose=self.verbose)
+                                    verbose=self.workspace.verbose)
         if rc!=0:
             raise ConfigurationError("No commit found with hash '%s' in %s" %
                                      (hashval, str(self)))
@@ -178,15 +181,15 @@ class GitRepoResource(GitResourceBase):
 
     def restore(self, hashval):
         commit_changes_in_repo(self.local_path, 'auto-commit ahead of restore',
-                               verbose=self.verbose)
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
-        checkout_and_apply_commit(self.local_path, hashval, verbose=self.verbose)
+                               verbose=self.workspace.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
+        checkout_and_apply_commit(self.local_path, hashval, verbose=self.workspace.verbose)
         if self.uses_git_fat:
             # since the restored repo might have different git-fat managed files, we run
             # a pull to get them.
             import dataworkspaces.third_party.git_fat as git_fat
             git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.local_path,
-                                verbose=self.verbose)
+                                verbose=self.workspace.verbose)
 
 
 
@@ -475,18 +478,18 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                          '-m', "Added %s" % rel_path_in_repo],
                         cwd=self.workspace_dir, verbose=self.verbose)
 
-    def snapshot_prechecks(self):
+    def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
     def snapshot(self):
         # The subdirectory hash is used for comparison and the head
         # hash used for restoring
         return (get_subdirectory_hash(self.workspace_dir, self.relative_path,
-                                      verbose=self.verbose),
-                get_local_head_hash(self.workspace_dir, verbose=self.verbose))
+                                      verbose=self.workspace.verbose),
+                get_local_head_hash(self.workspace_dir, verbose=self.workspace.verbose))
 
 
-    def restore_prechecks(self, hashval):
+    def restore_precheck(self, hashval):
         raise ConfigurationError("Git subdirectory resource '%s' should not be included in restore set"%
                                  self.name)
 
@@ -533,7 +536,8 @@ class GitRepoSubdirResource(GitResourceBase):
         assert role != ResourceRoles.RESULTS
         super().__init__('git-subdirectory', name, role, workspace)
         self.relative_path = relative_path
-        self.local_path = join(_get_workspace_dir_for_git_backend(workspace), relative_path)
+        self.workspace_dir = _get_workspace_dir_for_git_backend(workspace)
+        self.local_path = join(self.workspace_dir, relative_path)
 
     def get_params(self):
         return {
@@ -554,23 +558,23 @@ class GitRepoSubdirResource(GitResourceBase):
         raise InternalError("add_results_file should not be called for %s" %
                             self.__class__.__name__)
 
-    def snapshot_prechecks(self):
+    def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
     def snapshot(self):
         # Todo: handle tags
         commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path, 'autocommit ahead of snapshot',
-                                      verbose=self.verbose)
+                                      verbose=self.workspace.verbose)
         return (get_subdirectory_hash(self.workspace_dir, self.relative_path,
-                                      verbose=self.verbose),
-                get_local_head_hash(self.workspace_dir, verbose=self.verbose))
+                                      verbose=self.workspace.verbose),
+                get_local_head_hash(self.workspace_dir, verbose=self.workspace.verbose))
 
-    def restore_prechecks(self, hashval):
+    def restore_precheck(self, hashval):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
         rc = call_subprocess_for_rc([GIT_EXE_PATH, 'cat-file', '-e',
                                      hashval+"^{commit}"],
                                     cwd=self.workspace_dir,
-                                    verbose=self.verbose)
+                                    verbose=self.workspace.verbose)
         if rc!=0:
             raise ConfigurationError("No commit found with hash '%s' in %s" %
                                      (hashval, str(self)))
@@ -578,8 +582,8 @@ class GitRepoSubdirResource(GitResourceBase):
     def restore(self, hashval):
         commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path,
                                       'auto-commit ahead of restore',
-                                      verbose=self.verbose)
-        checkout_subdir_and_apply_commit(self.workspace_dir, self.relative_path, hashval, verbose=self.verbose)
+                                      verbose=self.workspace.verbose)
+        checkout_subdir_and_apply_commit(self.workspace_dir, self.relative_path, hashval, verbose=self.workspace.verbose)
 
 
     def push_prechecks(self):
@@ -590,7 +594,7 @@ class GitRepoSubdirResource(GitResourceBase):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.local_path)
-        if is_pull_needed_from_remote(self.local_path, 'master', self.verbose):
+        if is_pull_needed_from_remote(self.local_path, 'master', self.workspace.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
 

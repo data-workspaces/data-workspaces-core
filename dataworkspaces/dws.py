@@ -327,9 +327,12 @@ cli.add_command(snapshot)
 @click.option('--leave', type=str, default=None,
               metavar="RESOURCE1[,RESOURCE2,...]",
               help="Comma-separated list of resource names that you wish to leave in their current state. The rest will be restored to the specified snapshot.")
+@click.option('--strict', is_flag=True, default=False,
+              help="If specified, error out if unable to restore any of the requested resources "+
+                   "(due to lack of a restore hash or removing the resource from workspace).")
 @click.argument('tag_or_hash', type=str, default=None, required=True)
 @click.pass_context
-def restore(ctx, workspace_dir, only, leave, tag_or_hash):
+def restore(ctx, workspace_dir, only, leave, strict, tag_or_hash):
     """Restore the workspace to a prior state"""
     ns = ctx.obj
     if (only is not None) and (leave is not None):
@@ -340,8 +343,8 @@ def restore(ctx, workspace_dir, only, leave, tag_or_hash):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    restore_command(workspace_dir, ns.batch, ns.verbose, tag_or_hash,
-                    only=only, leave=leave)
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    restore_command(workspace, tag_or_hash, only=only, leave=leave, strict=strict)
 
 cli.add_command(restore)
 

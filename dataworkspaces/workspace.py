@@ -141,6 +141,12 @@ class Workspace(metaclass=ABCMeta):
         """
         pass
 
+    def get_resource_role(self, resource_name) -> str:
+        """Get the role of a resource without having to instantiate it.
+        """
+        params = self._get_resource_params(resource_name)
+        return params['role']
+
     @abstractmethod
     def _get_resource_local_params(self, resource_name:str) -> Optional[JSONDict]:
         """If a resource has local parameters defined for it, return them.
@@ -427,6 +433,12 @@ class FileResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+        """Save JSON results data to the specified path in the resource.
+        """
+        pass
+
 class LocalStateResourceMixin(metaclass=ABCMeta):
     """Mixin for the resource api for resources with local state
     that need to be "cloned"
@@ -670,6 +682,9 @@ class SnapshotMetadata:
                                 data.get('metric_value'),
                                 data.get('updated_timestamp'))
 
+    def __str__(self):
+        return json.dumps(self.to_json())
+
 
 class SnapshotWorkspaceMixin(metaclass=ABCMeta):
     """Mixin class for workspaces that support snapshots and restores.
@@ -687,6 +702,8 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """Run any prechecks before taking a snapshot. This should throw
         a ConfigurationError if the snapshot would fail for some reason.
         It generally just calls snapshot_precheck() on each of the resources.
+
+        This method is called by snapshot()
         """
         for r in current_resources:
             if isinstance(r, SnapshotResourceMixin):
@@ -760,23 +777,29 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                                     metric_name, metric_value)
         return metadata, manifest_bytes
         
-
-    def restore_prechecks(self, restore_hash:str,
-                          only:Optional[List[str]]=None,
-                          leave:Optional[List[str]]=None) \
-         -> None:
+    def _restore_precheck(self, restore_hashes:Dict[str,str],
+                          restore_resources:List['SnapshotResourceMixin']) -> None:
         """Run any prechecks before restoring to the specified hash value
         (aka certificate). This should throw a ConfigurationError if the
-        restore would fail for some reason.
+        restore would fail for some reason. The default calls the
+        restore_precheck() for each resource in the list. Subclasses can
+        override to add more checks.
+
+        This method is called by restore()
         """
-        raise NotImplementedError("restore_prechecks")
+        for r in restore_resources:
+            r.restore_precheck(restore_hashes[cast(Resource, r).name])
 
+    def restore(self, restore_hashes:Dict[str,str],
+                restore_resources:List['SnapshotResourceMixin']) -> None:
+        """Restore the specified resources to the specified hashes.
+        The list should have been previously filtered to include only
+        those with valid (not None) restore hashes.
+        """
+        self._restore_precheck(restore_hashes, restore_resources)
 
-    def restore(self, restore_hash:str,
-                only:Optional[List[str]]=None,
-                leave:Optional[List[str]]=None) \
-         -> None:
-        raise NotImplementedError("restore")
+        for r in restore_resources:
+            r.restore(restore_hashes[cast(Resource, r).name])
 
     @abstractmethod
     def get_snapshot_metadata(self, hash_val:str) -> SnapshotMetadata:
@@ -877,7 +900,7 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def restore_prechecks(self, restore_hashval:str) -> None:
+    def restore_precheck(self, restore_hashval:str) -> None:
         """Run any prechecks before restoring to the specified hash value
         (aka certificate). This should throw a ConfigurationError if the
         restore would fail for some reason.

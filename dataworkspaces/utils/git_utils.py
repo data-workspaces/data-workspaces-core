@@ -8,6 +8,7 @@ import shutil
 import re
 import tempfile
 import json
+from typing import Any
 
 import click
 
@@ -305,7 +306,7 @@ def has_git_fat_been_initialized(repo_dir):
 GIT_FAT_ERRMSG=\
 "Ensure that the dataworkspaces package is installed and that you have activated your virtual environment (if any)."
 
-def validate_git_fat_in_path():
+def validate_git_fat_in_path() -> None:
     """Validate that git-fat is in the path, asssuming we already know that this
     is a git-fat repo.
     If the executable is not found, throw a configuration error. We need to do this, as git itself
@@ -314,7 +315,7 @@ def validate_git_fat_in_path():
     find_exe('git-fat', GIT_FAT_ERRMSG,
              additional_search_locations=[])
 
-def validate_git_fat_in_path_if_needed(repo_dir):
+def validate_git_fat_in_path_if_needed(repo_dir:str) -> None:
     """Validate that git-fat is in the path, if this repo is git-fat enabled.
     Otherwise, throw a configuration error. We need to do this, as git itself
     will not return an error return code if a filter (e.g. git-fat) is not found.
@@ -324,8 +325,20 @@ def validate_git_fat_in_path_if_needed(repo_dir):
     find_exe('git-fat', GIT_FAT_ERRMSG,
              additional_search_locations=[])
 
+def run_git_fat_pull_if_needed(repo_dir:str, verbose:bool) -> None:
+    """When restoring resources from snapshots or running a pull, we need to
+    also run git-fat pull, if the repo is a git-fat repo
+    """
+    if not is_a_git_fat_repo(repo_dir):
+        return
+    else:
+        import dataworkspaces.third_party.git_fat as git_fat
+        python2_exe = git_fat.find_python2_exe()
+        git_fat.run_git_fat(python2_exe, ['pull'],
+                            cwd=repo_dir, verbose=verbose)
 
-def get_remote_origin_url(repo_dir, verbose):
+
+def get_remote_origin_url(repo_dir:str, verbose:bool) -> str:
     try:
         url = call_subprocess([GIT_EXE_PATH, 'config', '--get', 'remote.origin.url'],
                               cwd=repo_dir, verbose=verbose)
@@ -334,7 +347,7 @@ def get_remote_origin_url(repo_dir, verbose):
         raise ConfigurationError("Problem getting remote origin from repository at %s. Do you have a remote origin configured?"%
                                  repo_dir) from e
 
-def get_json_file_from_remote(relpath, repo_dir, verbose):
+def get_json_file_from_remote(relpath:str, repo_dir:str, verbose:bool) -> Any:
     """Download a JSON file from the remote master, parse it,
     and return it.
     """
