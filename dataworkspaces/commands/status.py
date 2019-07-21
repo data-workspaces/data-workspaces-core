@@ -1,14 +1,17 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 import click
+from typing import Optional, cast, Dict, List, Any
+assert Dict and List and Any # for pyflakes
 
-from dataworkspaces.resources.resource import RESOURCE_ROLE_CHOICES
+from dataworkspaces.workspace import RESOURCE_ROLE_CHOICES, Workspace, \
+    SnapshotWorkspaceMixin, JSONDict
 
 
 
 METRIC_NAME_WIDTH=18
 METRIC_VAL_WIDTH=12
 
-def print_snapshot_history(workspace, reverse=True, max_count=None):
+def print_snapshot_history(workspace:SnapshotWorkspaceMixin, reverse:bool=True, max_count:Optional[int]=None):
     history = workspace.list_snapshots(reverse, max_count)
     click.echo("\nHistory of snapshots")
     click.echo("%s %s %s %s %s %s" %
@@ -25,6 +28,7 @@ def print_snapshot_history(workspace, reverse=True, max_count=None):
             return ('%.3f'%val).ljust(METRIC_VAL_WIDTH)
         else:
             return ('%.1f'%val).ljust(METRIC_VAL_WIDTH)
+    returned = 0
     for md in history:
         click.echo('%s %s %s %s %s %s' %
                    (md.hashval[0:7]+' ',
@@ -34,13 +38,14 @@ def print_snapshot_history(workspace, reverse=True, max_count=None):
                     format_metric_val(md.metric_value),
                     md.message if md.message is not None and
                                     md.message!='' else 'N/A'))
-    if max_count is not None and len(history)==max_count:
+        returned += 1
+    if max_count is not None and returned==max_count:
         click.echo('Showing first %d snapshots' % max_count)
     else:
-        click.echo("%d snapshots total" % len(history))
+        click.echo("%d snapshots total" % returned)
 
 
-def pp_resource_params(params, indent=2, verbose=False):
+def pp_resource_params(params:JSONDict, indent:int=2, verbose:bool=False):
     if params['resource_type'] == 'git':
         click.echo(' '*indent, nl=False)
         click.echo('git repo %s' % params['name'])
@@ -70,8 +75,8 @@ def pp_resource_params(params, indent=2, verbose=False):
                 click.echo(' '*(indent+2), nl=False)
                 click.echo("%s: %s" % (p, params[p]))
 
-def print_resource_status(workspace):
-        items = { }
+def print_resource_status(workspace:Workspace):
+        items = { } # type: Dict[str,List[Dict[str,Any]]]
         for c in RESOURCE_ROLE_CHOICES:
             items[c] = []
         for rname in workspace.get_resource_names():
@@ -89,10 +94,14 @@ def print_resource_status(workspace):
                 click.echo('  No items with role %s' % r)
 
 
-def status_command(workspace, history, limit):
+def status_command(workspace:Workspace, history:bool, limit:Optional[int]=None):
     print("Status for workspace: %s" % workspace.name)
     print_resource_status(workspace)
     if history:
-        print_snapshot_history(workspace, reverse=True, max_count=limit)
+        if not isinstance(workspace, SnapshotWorkspaceMixin):
+            click.echo("Workspace %s cannot perform snapshots, ignoring --history option"%
+                       workspace.name, err=True)
+        else:
+            print_snapshot_history(cast(SnapshotWorkspaceMixin, workspace), reverse=True, max_count=limit)
 
 
