@@ -8,6 +8,8 @@ import os
 from os.path import join, exists
 import re
 import stat
+from tempfile import NamedTemporaryFile
+import shutil
 
 import click
 

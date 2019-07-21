@@ -1,13 +1,13 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 
-from typing import Optional
+from typing import Optional, cast
 
 import click
 
 from dataworkspaces.utils.hash_utils import \
     is_a_git_hash, is_a_shortened_git_hash
 from dataworkspaces.errors import ConfigurationError, UserAbort
-from dataworkspaces.workspace import Workspace, SnapshotMetadata
+from dataworkspaces.workspace import Workspace, SnapshotMetadata, SnapshotWorkspaceMixin
 
 
 
@@ -102,10 +102,14 @@ def merge_snapshot_metadata(old, new, batch):
 def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''):
     if (tag is not None) and (is_a_git_hash(tag) or is_a_shortened_git_hash(tag)):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
+
+    if not isinstance(workspace, SnapshotWorkspaceMixin):
+        raise ConfigurationError("Workspace %s does not support snapshots." % workspace.name)
+    mixin = cast(SnapshotWorkspaceMixin, workspace)
     # Remove existing tag if present
     if tag is not None:
         try:
-            existing_tag_md = workspace.get_snapshot_by_tag(tag)
+            existing_tag_md = mixin.get_snapshot_by_tag(tag)
         except ConfigurationError:
             existing_tag_md = None
         if existing_tag_md is not None:
@@ -117,18 +121,19 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
             elif not click.confirm(msg + ". Remove this tag so we can add it to the new snapshot?"):
                 raise UserAbort()
             else:
-                workspace.remove_tag_from_snapshot(existing_tag_md.hashval, tag)
+                mixin.remove_tag_from_snapshot(existing_tag_md.hashval, tag)
 
-    (md, manifest) = workspace.snapshot(tag, message)
+    (md, manifest) = mixin.snapshot(tag, message)
 
     try:
-        old_md = workspace.get_snapshot_metadata(md.hashval)
+        old_md = mixin.get_snapshot_metadata(md.hashval)
     except:
         old_md = None
     if old_md is not None:
         md = merge_snapshot_metadata(old_md, md, workspace.batch)
 
-    workspace.save_snapshot_metadata_and_manifest(md, manifest)
+    mixin.save_snapshot_metadata_and_manifest(md, manifest)
+    workspace.save()
 
     # XXX add back in lineage
     # # see if we need to add lineage files

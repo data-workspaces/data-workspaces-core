@@ -84,7 +84,7 @@ def init_command(name:str, hostname:str, create_resources:List[str],
         for role in create_resources:
             assert role in RESOURCE_ROLE_CHOICES, "bad role name %s" % role
             workspace.add_resource(role, 'git-subdirectory', role,
-                                   join(workspace.workspace_dir, role),
+                                   join(workspace_dir, role),
                                    confirm_subdir_create=False)
         click.echo("Finished initializing resources:")
         for role in create_resources:

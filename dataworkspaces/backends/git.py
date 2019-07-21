@@ -339,11 +339,11 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
 
 class WorkspaceFactory(ws.WorkspaceFactory):
     @staticmethod
-    def load_workspace(batch:bool, verbose:bool, workspace_dir:str) -> ws.Workspace:
+    def load_workspace(batch:bool, verbose:bool, workspace_dir:str) -> ws.Workspace: # type: ignore
         return Workspace(workspace_dir, batch, verbose)
 
     @staticmethod
-    def init_workspace(workspace_name:str, dws_version:str,
+    def init_workspace(workspace_name:str, dws_version:str, # type: ignore
                        global_params:JSONDict, local_params:JSONDict,
                        batch:bool, verbose:bool,
                        workspace_dir:str) -> ws.Workspace:

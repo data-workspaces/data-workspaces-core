@@ -25,7 +25,7 @@ from dataworkspaces.utils.git_utils import \
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin
 import dataworkspaces.backends.git as git_backend
-from .resource import LocalPathType
+from dataworkspaces.resources.resource import LocalPathType
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
@@ -112,21 +112,21 @@ class GitRepoResource(GitResourceBase):
 
     def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
                                    exclude_dirs_re:Pattern):
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
         validate_git_fat_in_path_if_needed(self.local_path)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
             exclude_dirs_re,
             move_fn=lambda src, dest: git_move_and_add(src, dest, self.local_path,
-                                                       self.verbose),
-            verbose=self.verbose)
+                                                       self.workspace.verbose),
+            verbose=self.workspace.verbose)
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
         if len(moved_files)>0:
             call_subprocess([GIT_EXE_PATH, 'commit',
                              '-m', "Move current results to %s" % rel_dest_root],
-                            cwd=self.local_path, verbose=self.verbose)
+                            cwd=self.local_path, verbose=self.workspace.verbose)
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Copy a results file from the temporary location to

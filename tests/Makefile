@@ -1,4 +1,5 @@
-
+shell=/bin/bash
+MYPYPATH:=$(shell cd ..; pwd)
 DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 
 help:
@@ -6,8 +7,6 @@ help:
 
 UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
 
-MYPY_UTILS=workspace_utils.py lineage_utils.py git_utils.py
-MYPY_BACKENDS=git.py
 MYPY_RESOURCES=git_resource.py
 MYPY_COMMANDS=init.py add.py snapshot.py
 MYPY_APIS=lineage.py
@@ -18,18 +17,18 @@ test: clean mypy pyflakes
 #	python -m unittest $(UNIT_TESTS)
 
 mypy:
-	cd $(DATAWORKSPACES); mypy --ignore-missing-imports workspace.py
-	cd $(DATAWORKSPACES)/utils; mypy --ignore-missing-imports $(MYPY_UTILS)
-	cd $(DATAWORKSPACES)/backends; mypy --ignore-missing-imports $(MYPY_BACKENDS)
-	cd $(DATAWORKSPACES)/resources; mypy --ignore-missing-imports $(MYPY_RESOURCES)
-	cd $(DATAWORKSPACES)/commands; mypy --ignore-missing-imports $(MYPY_COMMANDS)
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy utils/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
+	cd $(DATAWORKSPACES)/resources; export MYPYPATH=$(MYPYPATH); mypy $(MYPY_RESOURCES)
+	cd $(DATAWORKSPACES)/commands; export MYPYPATH=$(MYPYPATH); mypy $(MYPY_COMMANDS)
 	#cd $(DATAWORKSPACES); mypy --ignore-missing-imports $(MYPY_APIS)
 	#cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py
-	cd $(DATAWORKSPACES)/utils; pyflakes $(MYPY_UTILS)
-	cd $(DATAWORKSPACES)/backends; pyflakes $(MYPY_BACKENDS)
+	cd $(DATAWORKSPACES)/utils; pyflakes *.py
+	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes $(MYPY_RESOURCES)
 	cd $(DATAWORKSPACES)/commands; pyflakes $(MYPY_COMMANDS)
 	#cd $(DATAWORKSPACES); pyflakes $(MYPY_APIS)

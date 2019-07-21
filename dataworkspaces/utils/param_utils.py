@@ -2,16 +2,14 @@
 """
 Definition of configuration parameters
 """
-import json
 import socket
-from os.path import join
+from typing import Dict, Callable, Any, Optional
+
 from dataworkspaces.utils.snapshot_utils import \
     validate_template
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
-PARAM_DEFS = {}
-LOCAL_PARAM_DEFS = {}
 
 class ParamNotFoundError(ConfigurationError):
     pass
@@ -19,15 +17,17 @@ class ParamNotFoundError(ConfigurationError):
 class ParamValidationError(ConfigurationError):
     pass
 
+ValidationFnType = Callable[[Any], None]
 class ParamDef:
-    def __init__(self, name, default_value, help, validation_fn=None):
+    def __init__(self, name:str, default_value:Any, help:str,
+                 validation_fn:Optional[ValidationFnType]=None):
         self.name = name
         self.default_value = default_value
         self.validation_fn = validation_fn
         if validation_fn:
             validation_fn(default_value)
 
-    def validate(self, value):
+    def validate(self, value:Any)->None:
         if self.validation_fn:
             try:
                 self.validation_fn(value)
@@ -35,7 +35,13 @@ class ParamDef:
                 raise ParamValidationError("Error in validation of configuration parameter '%s'"%
                                            self.name) from e
 
-def define_param(name, default_value, help, validation_fn=None):
+
+PARAM_DEFS = {} # type: Dict[str, ParamDef]
+LOCAL_PARAM_DEFS = {} # type: Dict[str, ParamDef]
+
+
+def define_param(name:str, default_value:Any, help:str,
+                 validation_fn:Optional[ValidationFnType]=None) -> str:
     global PARAM_DEFS
     assert name not in PARAM_DEFS
     assert name not in LOCAL_PARAM_DEFS # don't want duplicates across local and global
