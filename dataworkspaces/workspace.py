@@ -2,18 +2,29 @@
 Main definitions of the workspace abstractions
 """
 
-from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, cast
+from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, Set, cast, Pattern
 
 from abc import ABCMeta, abstractmethod
 import importlib
 import os.path
+import datetime
+import getpass
+import json
+import re
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
 from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
                                              get_global_param_defaults,\
                                              get_local_param_defaults,\
-                                             ParamNotFoundError
+                                             ParamNotFoundError,\
+                                             RESULTS_DIR_TEMPLATE,\
+                                             RESULTS_MOVE_EXCLUDE_FILES,\
+                                             HOSTNAME
+from dataworkspaces.utils.snapshot_utils import validate_template,\
+                                                expand_dir_template,\
+                                                make_re_pattern_for_dir_template
+from dataworkspaces.utils.hash_utils import hash_bytes
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
@@ -109,13 +120,24 @@ class Workspace(metaclass=ABCMeta):
         self._set_local_param(name, value)
 
     @abstractmethod
-    def get_resource_names(self) -> Iterable[str]: pass
+    def get_resource_names(self) -> Iterable[str]:
+        """Return an iterable of resource names. The names should be
+        returned in a consistent order, specifically the order in which
+        they were added to the workspace. This supports backwards compatilbity
+        for operations like snapshots.
+        """
+        pass
 
     @abstractmethod
     def _get_resource_params(self, resource_name) -> JSONDict:
         """Get the parameters for this resource from the workspace's
         metadata store - used when instantitating resources. Show
         throw a ConfigurationError if resource does not exist.
+
+        The parameters should be placed in the ordered dict in a
+        consistent order, to support backwards compatible hashing.
+        Specifically the parameters should be ordered as follows:
+        resource_type, name, role, relative_path, [resource-specific params]
         """
         pass
 
@@ -387,6 +409,24 @@ class Resource(metaclass=ABCMeta):
         pass
 
 
+class FileResourceMixin(metaclass=ABCMeta):
+    """This is a mixin to be implemented by resources
+    which provide a hierarchy of files. Examples include
+    a git repo, local filesystem, or S3 bucket. A
+    database would be a resource that does NOT implement this
+    API.
+    """
+    @abstractmethod
+    def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
+                                   exclude_dirs_re:Pattern) -> None:
+        """A snapshot is being taken, and we want to move the
+        files in the resource to the relative subdirectory rel_dest_root.
+        We should exclude the files in the set exclude_files and exclude
+        any directories matching exclude_dirs_re (e.g. the directory to
+        which the files are being moved).
+        """
+        pass
+
 class LocalStateResourceMixin(metaclass=ABCMeta):
     """Mixin for the resource api for resources with local state
     that need to be "cloned"
@@ -577,9 +617,10 @@ class SnapshotMetadata:
                  hostname:str,
                  timestamp:str,
                  relative_destination_path:str,
-                 restore_hashes:Dict[str,str],
+                 restore_hashes:Dict[str,Optional[str]],
                  metric_name:Optional[str]=None,
-                 metric_value:Optional[Any]=None):
+                 metric_value:Optional[Any]=None,
+                 updated_timestamp:Optional[str]=None):
         self.hashval = hashval.lower() # always normalize to lower case
         self.tags = tags
         self.message = message
@@ -589,6 +630,7 @@ class SnapshotMetadata:
         self.restore_hashes = restore_hashes
         self.metric_name = metric_name
         self.metric_value = metric_value
+        self.updated_timestamp=updated_timestamp
 
     def has_tag(self, tag):
         return True if tag in self.tags else False
@@ -600,7 +642,7 @@ class SnapshotMetadata:
         return True if self.hashval.startwith(partial_hash.lower()) else False
 
     def to_json(self) -> JSONDict:
-        return {
+        v = {
             'hash':self.hashval,
             'tags':self.tags,
             'message':self.message,
@@ -611,6 +653,9 @@ class SnapshotMetadata:
             'metric_name':self.metric_name,
             'metric_value':self.metric_value
         }
+        if self.updated_timestamp is not None:
+            v['updated_timestamp'] = self.updated_timestamp
+        return v
 
     @staticmethod
     def from_json(data:JSONDict) -> 'SnapshotMetadata':
@@ -622,27 +667,99 @@ class SnapshotMetadata:
                                 data['relative_destination_path'],
                                 data['restore_hashes'],
                                 data.get('metric_name'),
-                                data.get('metric_value'))
+                                data.get('metric_value'),
+                                data.get('updated_timestamp'))
 
 
 class SnapshotWorkspaceMixin(metaclass=ABCMeta):
     """Mixin class for workspaces that support snapshots and restores.
     """
-    def snapshot_precheck(self) -> None:
+    @abstractmethod
+    def get_next_snapshot_number(self) -> int:
+        """Return a number that can be used for this snapshot. For a given
+        local copy of thw workspace, it is guaranteed to be unique and increasing.
+        It is not guarenteed to be globally unique (need to combine with hostname
+        to get that).
+        """
+        pass
+
+    def _snapshot_precheck(self, current_resources:Iterable[Resource]) -> None:
         """Run any prechecks before taking a snapshot. This should throw
         a ConfigurationError if the snapshot would fail for some reason.
         It generally just calls snapshot_precheck() on each of the resources.
         """
-        for r in cast(Workspace, self).get_resources():
+        for r in current_resources:
             if isinstance(r, SnapshotResourceMixin):
                 r.snapshot_precheck()
 
-    def snapshot(self, tag:Optional[str]=None, message:str='') -> str:
-        """Take snapshot of the resources in the workspace, and metadata
-        for the snapshot and a manifest in the workspace. Returns a hash
-        of the manifest.
+    @abstractmethod
+    def save_snapshot_metadata_and_manifest(self, metadata:SnapshotMetadata,
+                                            manifest:bytes) -> None:
         """
-        raise NotImplementedError("snapshot")
+        Save the snapshot metadata and manifest using the hash in metadata.hashval.
+        """
+        pass
+
+    def snapshot(self, tag:Optional[str]=None, message:str='', metric_name:Optional[str]=None,
+                 metric_value:Optional[Any]=None) -> Tuple[SnapshotMetadata, bytes]:
+        """Take snapshot of the resources in the workspace, and metadata
+        for the snapshot and a manifest in the workspace.
+        We assume that the tag does not already exist
+        (checks can be made in the command before calling this method).
+
+        Returns the snapshot metadata and the (binary) snapshot hash. These
+        should be saved into the workspace by the caller (i.e. the snapshot command).
+        We don't do that here, as futher interactions with the user may be needed. In
+        particular, if the hash is identical to a previous hash, we ask the user
+        if they want to overwrite.
+        """
+        # First, we figure out the snapshot subdirectory in results
+        # resources.
+        snapshot_number = self.get_next_snapshot_number()
+        snapshot_timestamp = datetime.datetime.now()
+        workspace = cast(Workspace,self)
+        exclude_files = set(workspace.get_global_param(RESULTS_MOVE_EXCLUDE_FILES))
+        results_dir_template = workspace.get_global_param(RESULTS_DIR_TEMPLATE)
+        username = getpass.getuser()
+        hostname = workspace.get_local_param(HOSTNAME)
+        validate_template(results_dir_template)
+        # relative path to which we will move results files
+        rel_dest_root = expand_dir_template(results_dir_template, username, hostname,
+                                            snapshot_timestamp, snapshot_number,
+                                            tag)
+        exclude_dirs_re = re.compile(make_re_pattern_for_dir_template(results_dir_template))
+        # Load the resource representation and run the prechecks
+        current_resources = [r for r in cast(Workspace, self).get_resources()]
+
+        self._snapshot_precheck(current_resources)
+
+        # now, move the files for result resources
+        for r in current_resources:
+            if r.has_results_role() and isinstance(r, FileResourceMixin):
+                cast(FileResourceMixin, r).results_move_current_files(rel_dest_root, exclude_files,
+                                                                      exclude_dirs_re)
+
+        manifest = {}
+        map_of_restore_hashes = {} # type: Dict[str,Optional[str]]
+        # now take the actual snapshots
+        for r in current_resources:
+            if isinstance(r, SnapshotResourceMixin):
+                (compare_hash, restore_hash) = r.snapshot()
+            else:
+                (compare_hash, restore_hash) = (None, None)
+            map_of_restore_hashes[r.name] = restore_hash
+            manifest[r.name] = cast(Workspace, self)._get_resource_params(r.name)
+            manifest[r.name]['hash'] = compare_hash
+        manifest_bytes = json.dumps(manifest, indent=2).encode('utf-8')
+        manifest_hash = hash_bytes(manifest_bytes)
+
+        metadata = SnapshotMetadata(manifest_hash, [tag] if tag else [], message,
+                                    hostname, snapshot_timestamp.isoformat(),
+                                    rel_dest_root,
+                                    map_of_restore_hashes,
+                                    metric_name, metric_value)
+        return metadata, manifest_bytes
+        
 
     def restore_prechecks(self, restore_hash:str,
                           only:Optional[List[str]]=None,
@@ -704,6 +821,13 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def remove_tag_from_snapshot(self, hash_val:str, tag:str) -> None:
+        """Remove the specified tag from the specified snapshot. Throw an
+        InternalError if either the snapshot or the tag do not exist.
+        """
+        pass
+
+    @abstractmethod
     def _delete_snapshot_metadata_and_manifest(self, hash_val:str)-> None:
         """Given a snapshot hash, delete the associated metadata.
         """
@@ -716,7 +840,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """
         try:
             md = self.get_snapshot_metadata(hash_val)
-        except Exception as e:
+        except Exception:
             raise ConfigurationError("Did not find metadata associated with snapshot %s"
                                      % hash_val)
         if include_resources:

@@ -13,8 +13,6 @@ from dataworkspaces.errors import ConfigurationError, UserAbort, \
     InternalError
 from dataworkspaces.resources.resource import \
     CurrentResources, SnapshotResources
-from .init import get_snapshot_metadata_dir_path
-from .snapshot import get_snapshot_lineage_dir
 from dataworkspaces.utils.lineage_utils import \
     get_current_lineage_dir, LineageStoreCurrent
 
@@ -171,49 +169,49 @@ def process_names(current_names, snapshot_names, only=None, leave=None):
     return (sorted(names_to_restore), sorted(names_to_add), sorted(names_to_leave))
 
 
-def find_snapshot(tag_or_hash, workspace_dir):
-    """Return a (hash, tags, result_hashes) tuple for the tag or hash. Throws
-    a configuration error if not found.
-    """
-    if is_a_git_hash(tag_or_hash):
-        is_hash = True
-        is_short_hash = False
-        # we'll be case-insensitive for full hashes
-        tag_or_hash = tag_or_hash.lower()
-    elif is_a_shortened_git_hash(tag_or_hash):
-        is_short_hash = True
-        is_hash = False
-    else:
-        is_hash = is_short_hash = False
-    md_dir=get_snapshot_metadata_dir_path(workspace_dir)
-    def process_dir(dirpath):
-        for f in os.listdir(dirpath):
-            p = join(dirpath, f)
-            if isdir(p):
-                result = process_dir(p)
-                if result is not None:
-                    return result
-            elif f.endswith('_md.json'):
-                with open(p, 'r') as fobj:
-                    data = json.load(fobj)
-                if (is_hash and data['hash']==tag_or_hash) or \
-                   (is_short_hash and data['hash'].startswith(tag_or_hash)) or\
-                   ((not (is_hash or is_short_hash)) and
-                    tag_or_hash in data['tags']):
-                    return (data['hash'], data['tags'], data['restore_hashes'])
-    result = process_dir(md_dir)
-    if result is not None:
-        return result
-    elif is_hash or is_short_hash:
-        raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
-    else:
-        raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
+# def find_snapshot(tag_or_hash, workspace_dir):
+#     """Return a (hash, tags, result_hashes) tuple for the tag or hash. Throws
+#     a configuration error if not found.
+#     """
+#     if is_a_git_hash(tag_or_hash):
+#         is_hash = True
+#         is_short_hash = False
+#         # we'll be case-insensitive for full hashes
+#         tag_or_hash = tag_or_hash.lower()
+#     elif is_a_shortened_git_hash(tag_or_hash):
+#         is_short_hash = True
+#         is_hash = False
+#     else:
+#         is_hash = is_short_hash = False
+#     md_dir=get_snapshot_metadata_dir_path(workspace_dir)
+#     def process_dir(dirpath):
+#         for f in os.listdir(dirpath):
+#             p = join(dirpath, f)
+#             if isdir(p):
+#                 result = process_dir(p)
+#                 if result is not None:
+#                     return result
+#             elif f.endswith('_md.json'):
+#                 with open(p, 'r') as fobj:
+#                     data = json.load(fobj)
+#                 if (is_hash and data['hash']==tag_or_hash) or \
+#                    (is_short_hash and data['hash'].startswith(tag_or_hash)) or\
+#                    ((not (is_hash or is_short_hash)) and
+#                     tag_or_hash in data['tags']):
+#                     return (data['hash'], data['tags'], data['restore_hashes'])
+#     result = process_dir(md_dir)
+#     if result is not None:
+#         return result
+#     elif is_hash or is_short_hash:
+#         raise ConfigurationError("Did not find a snapshot corresponding to '%s' in history" % tag_or_hash)
+#     else:
+#         raise ConfigurationError("Did not find a snapshot corresponding to tag '%s' in history" % tag_or_hash)
 
 
 def restore_command(workspace_dir, batch, verbose, tag_or_hash, only=None, leave=None):
     validate_git_fat_in_path_if_needed(workspace_dir)
     # First, find the history entry
-    (snapshot_hash, snapshot_tags, restore_hashes) = find_snapshot(tag_or_hash, workspace_dir)
+    (snapshot_hash, snapshot_tags, restore_hashes) = (None, None, None) # XXX find_snapshot(tag_or_hash, workspace_dir)
     snapshot_resources = SnapshotResources.read_shapshot_manifest(snapshot_hash, workspace_dir, batch, verbose)
     current_resources = CurrentResources.read_current_resources(workspace_dir, batch, verbose)
     original_current_resource_names = current_resources.get_names()

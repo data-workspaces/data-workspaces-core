@@ -5,7 +5,7 @@ Definition of configuration parameters
 import json
 import socket
 from os.path import join
-from dataworkspaces.resources.snapshot_utils import \
+from dataworkspaces.utils.snapshot_utils import \
     validate_template
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE

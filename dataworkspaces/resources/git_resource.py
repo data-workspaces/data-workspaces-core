@@ -4,10 +4,12 @@ Resource for git repositories
 """
 import subprocess
 import os
-from os.path import realpath, basename, isdir, join, dirname, exists
+from os.path import realpath, basename, isdir, join, dirname, exists,\
+                    abspath, expanduser
 import stat
 import click
 import shutil
+from typing import Set, Pattern
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -21,10 +23,10 @@ from dataworkspaces.utils.git_utils import \
     has_git_fat_been_initialized, validate_git_fat_in_path,\
     validate_git_fat_in_path_if_needed, get_subdirectory_hash
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
-    RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin
+    RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin
 import dataworkspaces.backends.git as git_backend
 from .resource import LocalPathType
-from .snapshot_utils import move_current_files_local_fs
+from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
 
@@ -37,7 +39,7 @@ def is_pull_needed_from_remote(cwd, branch, verbose):
         return False
     #cmd = [GIT_EXE_PATH, 'show', '--oneline', hashval]
     cmd = [GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
-    rc = call_subprocess_for_rc(cmd, cwd, verbose=workspace.verbose)
+    rc = call_subprocess_for_rc(cmd, cwd, verbose=verbose)
     return rc!=0
 
 
@@ -55,7 +57,7 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
         call_subprocess([GIT_EXE_PATH, 'mv',
                          srcrelpath, destrelpath],
                         cwd=git_root,
-                        verbose=workspace.verbose)
+                        verbose=verbose)
     else:
         # file is not tracked by git yet, just move and then add to git
         os.rename(join(git_root, srcrelpath),
@@ -64,9 +66,9 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     mode = os.stat(destabspath)[stat.ST_MODE]
     os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
     call_subprocess([GIT_EXE_PATH, 'add', destrelpath],
-                    cwd=git_root, verbose=workspace.verbose)
+                    cwd=git_root, verbose=verbose)
 
-class GitResourceBase(Resource, LocalStateResourceMixin):
+class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin):
     def get_local_path_if_any(self):
         return self.local_path
 
@@ -108,8 +110,8 @@ class GitRepoResource(GitResourceBase):
             'read_only':self.read_only
         }
 
-    def results_move_current_files(self, rel_dest_root, exclude_files,
-                                   exclude_dirs_re):
+    def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
+                                   exclude_dirs_re:Pattern):
         switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
         validate_git_fat_in_path_if_needed(self.local_path)
         moved_files = move_current_files_local_fs(
@@ -327,13 +329,13 @@ class GitRepoFactory(ResourceFactory):
                 elif read_only:
                     raise ConfigurationError("The --read-only parameter is only valid for separate git repositories, not subdirectories.")
                 return GitRepoSubdirFactory().from_command_line(role, name,
-                                                                workspace_dir, batch, verbose,
+                                                                workspace, workspace.batch, workspace.verbose,
                                                                 local_path)
             else:
                 raise ConfigurationError(local_path + ' is not a git repository')
         remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
         (current, others) = get_branch_info(local_path, workspace.verbose)
-        if branch!=current and branch not in other:
+        if branch!=current and branch not in others:
             raise ConfigurationError("Requested branch '%s' is not available for git repository at %s"%
                                      (branch, local_path))
         if is_git_dirty(local_path) and branch!=current:
@@ -363,18 +365,19 @@ class GitRepoFactory(ResourceFactory):
                              else abspath(expanduser('~'))
         branch = params['branch']
         read_only = params.get('read_only')
-        if not batch:
+        if not workspace.batch:
             # ask the user for a local path
             local_path = \
                 click.prompt("Git resource '%s' is being added to your workspace. Where do you want to clone it?"%
                              rname,
-                             default=default_local_path, type=GitLocalPathType(remote_origin_url, verbose))
+                             default=default_local_path, type=GitLocalPathType(remote_origin_url,
+                                                                               workspace.verbose))
         else:
             if isdir(default_local_path):
                 if not isdir(join(default_local_path, '.git')):
                     raise ConfigurationError("Unable to add resource '%s' as default local path '%s' exists but is not a git repository."%
                                              (rname, default_local_path))
-                remote = get_remote_origin(default_local_path, verbose)
+                remote = get_remote_origin(default_local_path, workspace.verbose)
                 if remote!=remote_origin_url:
                     raise ConfigurationError("Unable to add resource '%s' as remote origin in local path '%s' is %s, but data workspace has '%s'"%
                                              (rname, default_local_path, remote, remote_origin_url))
@@ -396,9 +399,9 @@ class GitRepoFactory(ResourceFactory):
             git_fat.run_git_fat(python2_exe, ['init'], cwd=local_path, verbose=workspace.verbose)
             git_fat.run_git_fat(python2_exe, ['pull'], cwd=local_path, verbose=workspace.verbose)
 
-        return GitRepoResource(rname, json_data['role'],
-                               workspace_dir, remote_origin_url,
-                               local_path, branch, read_only, verbose)
+        return GitRepoResource(rname, params['role'],
+                               workspace, remote_origin_url,
+                               local_path, branch, read_only)
 
     def suggest_name(self, workspace, local_path, branch, read_only):
         return basename(local_path)
@@ -421,7 +424,9 @@ class GitRepoResultsSubdirResource(GitResourceBase):
     def __init__(self, name, workspace, relative_path):
         super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace)
         self.relative_path = relative_path
-        self.local_path = join(_get_workspace_dir_for_git_backend(workspace),
+        # only valid when workspace has git backend
+        self.workspace_dir = _get_workspace_dir_for_git_backend(workspace)
+        self.local_path = join(self.workspace_dir,
                                relative_path)
 
     def get_params(self):
@@ -432,23 +437,23 @@ class GitRepoResultsSubdirResource(GitResourceBase):
             'relative_path':self.relative_path
         }
 
-    def results_move_current_files(self, rel_dest_root, exclude_files,
-                                   exclude_dirs_re):
+    def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
+                                   exclude_dirs_re:Pattern):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
         moved_files = move_current_files_local_fs(
             self.name, self.local_path, rel_dest_root,
             exclude_files,
             exclude_dirs_re,
             move_fn=lambda src, dest: git_move_and_add(src, dest, self.local_path,
-                                                       self.verbose),
-            verbose=self.verbose)
+                                                       self.workspace.verbose),
+            verbose=self.workspace.verbose)
         # If there were no files in the results dir, then we do not
         # create a subdirectory for this snapshot
         if len(moved_files)>0:
             call_subprocess([GIT_EXE_PATH, 'commit', '--only', self.relative_path,
                              '-m', "Move current results to %s" % rel_dest_root],
                             cwd=self.workspace_dir,
-                            verbose=self.verbose)
+                            verbose=self.workspace.verbose)
 
     def add_results_file(self, temp_path, rel_dest_path):
         """Move a results file from the temporary location to
@@ -538,8 +543,8 @@ class GitRepoSubdirResource(GitResourceBase):
             'relative_path':self.relative_path
         }
 
-    def results_move_current_files(self, rel_dest_root, exclude_files,
-                                   exclude_dirs_re):
+    def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
+                                   exclude_dirs_re:Pattern):
         raise InternalError("results_move_current_files should not be called for %s" % self.__class__.__name__)
 
     def add_results_file(self, temp_path, rel_dest_path):
@@ -620,10 +625,10 @@ def create_results_subdir(workspace_dir, full_path, relative_path, role, verbose
         f.write("This directory is for %s.\n" % RESOURCE_ROLE_PURPOSES[role])
         f.write("This README file ensures the directory is added to the git repository, as git does not support empty directories.\n")
     call_subprocess([GIT_EXE_PATH, 'add', relative_path],
-                    cwd=workspace_dir, verbose=workspace.verbose)
+                    cwd=workspace_dir, verbose=verbose)
     call_subprocess([GIT_EXE_PATH, 'commit', '-m',
                      'Add %s to repo for storing results'%relative_path],
-                    cwd=workspace_dir, verbose=workspace.verbose)
+                    cwd=workspace_dir, verbose=verbose)
     click.echo("Added %s to git repository" % relative_path)
 
 
@@ -650,7 +655,7 @@ class GitRepoSubdirFactory(ResourceFactory):
             if not confirm_subdir_create:
                 create_results_subdir(workspace_dir, local_path, relative_path,
                                       role, workspace.verbose)
-            elif not batch:
+            elif not workspace.batch:
                 click.confirm(CONFIRM_SUBDIR_MSG%relative_path, abort=True)
                 create_results_subdir(workspace_dir, local_path, relative_path,
                                       role, workspace.verbose)

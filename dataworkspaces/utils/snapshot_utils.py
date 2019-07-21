@@ -13,6 +13,7 @@ import click
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.file_utils import remove_dir_if_empty
+from dataworkspaces.utils.hash_utils import hash_file
 
 # Timestamps have the form '2018-09-30T14:09:05'
 TEMPLATE_VAR_PATS = {
@@ -194,4 +195,30 @@ def move_current_files_local_fs(resource_name,
     for dirpath in dirs_to_remove_if_empty:
         remove_dir_if_empty(dirpath, base_dir, verbose=verbose)
     return moved_files
+
+def write_and_hash_file(write_fn, filename_template, verbose):
+    """Write a file to a temporary location, take its hash
+    and rename to filename_template, replacing <HASHVAL> with
+    the hash. Returns hashval, the snapshot filename, and
+    a boolean indicating whether this is a new snapshot
+    (may end up with a snapshot matching a previous one).
+    """
+    with NamedTemporaryFile(delete=False) as f:
+        tfilename = f.name
+    try:
+        write_fn(tfilename)
+        hashval = hash_file(tfilename)
+        target_name = filename_template.replace("<HASHVAL>", hashval)
+        assert target_name!=filename_template
+        if exists(target_name):
+            return (hashval, target_name, False)
+        else:
+            # issue #21 - need to use a copy instead of a rename,
+            # in case /tmp is on a different filesystem.
+            shutil.copyfile(tfilename, target_name)
+            return (hashval, target_name, True)
+    finally:
+        if exists(tfilename):
+            os.remove(tfilename)
+
 

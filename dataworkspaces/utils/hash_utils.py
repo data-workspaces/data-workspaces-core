@@ -36,6 +36,20 @@ def hash_file(fpath):
     m.update(blob)
     return m.hexdigest()
 
+def hash_bytes(data:bytes):
+    """Compute the same hash on bytes as git would (e.g. via git hash-object).
+    The hash is the sha1 digest, but with a header added to the bytes first:
+    the word "blob", followed by a space, followed by the content length,
+    followed by a zero byte.
+    """
+    assert isinstance(data, bytes)
+    size = len(data)
+    header = ('blob %d'%size).encode('ascii')+b'\0'
+    blob = header+data
+    m = hashlib.sha1()
+    m.update(blob)
+    return m.hexdigest()
+
 
 def _test(fname):
     hv = hash_file(__file__)

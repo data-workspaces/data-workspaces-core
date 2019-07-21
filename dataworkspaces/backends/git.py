@@ -6,7 +6,8 @@ import os
 from os.path import exists, join, isdir, basename, isabs
 import json
 import re
-from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple
+from typing import Any, Iterable, Optional, List, Dict
+assert Dict # make pyflakes happy
 
 import click
 
@@ -14,7 +15,8 @@ import dataworkspaces.workspace as ws
 from dataworkspaces.workspace import JSONDict, SnapshotMetadata
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.git_utils import \
-    commit_changes_in_repo, git_init, git_add
+    commit_changes_in_repo, git_init, git_add,\
+    validate_git_fat_in_path_if_needed
 
 
 BASE_DIR='.dataworkspace'
@@ -198,6 +200,29 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         """
         raise NotImplementedError("push")
 
+    def get_next_snapshot_number(self) -> int:
+        """Snapshot numbers are assigned based on how many snapshots have
+        already been taken. Counting starts at 1. Note that snaphsot
+        numbers are not necessarily unique, as people could simultaneously
+        take snapshots in different copies of the workspace. Thus, we
+        usually combine the snapshot with the hostname.
+        """
+        md_dirpath = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        if not isdir(md_dirpath):
+            return 1 # first snapshot
+        # we recursively walk the tree to be future-proof in case we
+        # find that we need to start putting metadata into subdirectories.
+        def process_dir(dirpath):
+            cnt=0
+            for f in os.listdir(dirpath):
+                p = join(dirpath, f)
+                if isdir(p):
+                    cnt += process_dir(p)
+                elif f.endswith('_md.json'):
+                    cnt += 1
+            return cnt
+        return 1 + process_dir(md_dirpath)
+
     def get_snapshot_metadata(self, hash_val:str) -> SnapshotMetadata:
         hash_val = hash_val.lower()
         md_filename = join(join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH),
@@ -235,7 +260,6 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         """
         partial_hash = partial_hash.lower()
         md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
-        regexp = re.compile(re.escape(partial_hash))
         for fname in os.listdir(md_dir):
             if not fname.endswith('_md.json'):
                 continue
@@ -267,6 +291,49 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         """Given a snapshot hash, delete the associated metadata.
         """
         raise NotImplementedError("delete snapshot")
+
+    def _snapshot_precheck(self, current_resources:Iterable[ws.Resource]) -> None:
+        """Run any prechecks before taking a snapshot. This should throw
+        a ConfigurationError if the snapshot would fail for some reason.
+        """
+        # call prechecks on the individual resources
+        super()._snapshot_precheck(current_resources)
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
+
+    def remove_tag_from_snapshot(self, hash_val:str, tag:str) -> None:
+        """Remove the specified tag from the specified snapshot. Throw an
+        InternalError if either the snapshot or the tag do not exist.
+        """
+        md_filename = join(join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH),
+                           '%s_md.json'%hash_val.lower())
+        if not exists(md_filename):
+            raise InternalError("No metadata entry for snapshot %s"%hash_val)
+        with open(md_filename, 'r') as f:
+            data = json.load(f)
+        md = ws.SnapshotMetadata.from_json(data)
+        assert md.hashval==hash_val
+        if tag not in md.tags:
+            raise InternalError("Tag %s not found in snapshot %s" % (tag, hash_val))
+        md.tags = [tag for tag in md.tags if tag!=tag]
+        with open(md_filename, 'w') as f:
+            json.dump(md.to_json(), f, indent=2)
+
+    def save_snapshot_metadata_and_manifest(self, metadata:SnapshotMetadata,
+                                            manifest:bytes) -> None:
+        snapshot_dir_path = join(self.workspace_dir, SNAPSHOT_DIR_PATH)
+        if not exists(snapshot_dir_path):
+            os.makedirs(snapshot_dir_path)
+        snapshot_manifest_path = join(snapshot_dir_path,
+                                      'snapshot-%s.json'%metadata.hashval)
+        with open(snapshot_manifest_path, 'wb') as f:
+            f.write(manifest)
+        snapshot_md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        if not exists(snapshot_md_dir):
+            os.makedirs(snapshot_md_dir)
+        snapshot_metadata_path = join(snapshot_md_dir,
+                                      '%s_md.json'%metadata.hashval)
+        with open(snapshot_metadata_path, 'w') as mdf:
+            json.dump(metadata.to_json(), mdf, indent=2)
 
 
 

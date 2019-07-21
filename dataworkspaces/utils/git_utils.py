@@ -2,7 +2,7 @@
 """
 Utility functions related to interacting with git
 """
-from os.path import isdir, join, dirname, exists, isdir
+from os.path import isdir, join, dirname, exists
 from subprocess import run, PIPE
 import shutil
 import re

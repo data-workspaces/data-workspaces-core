@@ -12,10 +12,7 @@ from dataworkspaces.utils.git_utils import is_a_git_fat_repo, validate_git_fat_i
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path
 import dataworkspaces.commands.actions as actions
-from .init import get_config_file_path, get_snapshot_metadata_dir_path,\
-                  get_snapshot_dir_path
 from .pull import AddRemoteResource
-from .params import get_local_defaults, get_local_params_file_path
 
 
 def clone_command(repository, hostname, directory=None, batch=False, verbose=False):
@@ -48,7 +45,7 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
     try:
         cmd = [actions.GIT_EXE_PATH, 'clone', repository, initial_path]
         actions.call_subprocess(cmd, parent_dir, verbose)
-        config_file = get_config_file_path(initial_path)
+        config_file = None # XXX get_config_file_path(initial_path)
         if not exists(config_file):
             raise ConfigurationError("Did not find configuration file in remote repo")
         with open(config_file, 'r') as f:
@@ -62,7 +59,7 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
                 raise ConfigurationError("Clone target directory %s already exists" % new_name)
             safe_rename(initial_path, new_name)
             directory = new_name
-        snapshot_md_dir = get_snapshot_metadata_dir_path(directory)
+        snapshot_md_dir = None # XXX get_snapshot_metadata_dir_path(directory)
         if not exists(snapshot_md_dir):
             # It is possible that we are cloning a repo with no snapshots
             os.mkdir(snapshot_md_dir)
@@ -86,12 +83,13 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
             shutil.rmtree(directory)
         raise
 
+    # XXX refactor
     # ok, now we have the main repo, so we can clone all the resources
-    with open(get_local_params_file_path(directory), 'w') as f:
-        json.dump(get_local_defaults(hostname), f, indent=2)
-    with open(get_resource_local_params_file_path(directory), 'w') as f:
-        json.dump({}, f, indent=2)
-    resources_file = get_resource_file_path(directory)
+    # with open(get_local_params_file_path(directory), 'w') as f:
+    #     json.dump(get_local_defaults(hostname), f, indent=2)
+    # with open(get_resource_local_params_file_path(directory), 'w') as f:
+    #     json.dump({}, f, indent=2)
+    # resources_file = get_resource_file_path(directory)
     with open(resources_file, 'r') as f:
         resources_json = json.load(f)
 

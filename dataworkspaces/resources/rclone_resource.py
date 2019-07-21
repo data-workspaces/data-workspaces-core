@@ -13,7 +13,7 @@ from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
 from .resource import Resource, ResourceFactory
 from . import hashtree
-from .snapshot_utils import move_current_files_local_fs
+from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 from . import rclone
 

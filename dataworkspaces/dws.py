@@ -27,7 +27,7 @@ from .commands.run import run_command
 from .commands.diff import diff_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
-from .commands.params import DEFAULT_HOSTNAME
+from .utils.param_utils import DEFAULT_HOSTNAME
 from .utils.regexp_utils import HOSTNAME_RE
 
 CURR_DIR = abspath(expanduser(curdir))
@@ -199,7 +199,8 @@ def init(ctx, hostname, name, create_resources, git_fat_remote,
                                    "you also need to specify --git-fat-remote",
                                    option_name='--git-fat-remote')
     init_command(name, hostname, create_resources, git_fat_remote,
-                 git_fat_user, git_fat_port, git_fat_attributes, **vars(ctx.obj))
+                 git_fat_user, git_fat_port, git_fat_attributes,
+                 batch=ctx.obj.batch, verbose=ctx.obj.verbose)
 
 
 cli.add_command(init)
@@ -313,7 +314,8 @@ def snapshot(ctx, workspace_dir, message, tag):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    snapshot_command(workspace_dir, ns.batch, ns.verbose, tag, message)
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    snapshot_command(workspace, tag, message)
 
 cli.add_command(snapshot)
 

@@ -6,11 +6,9 @@ import json
 import click
 
 from dataworkspaces.resources.resource import SnapshotResources
-from .snapshot import get_snapshot_lineage_dir
-from .restore import find_snapshot
 
 def lineage_files_for_snapshot(workspace_dir, snapshot):
-    lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot)
+    lineage_dir = None # XXX refactor get_snapshot_lineage_dir(workspace_dir, snapshot)
     if isdir(lineage_dir):
         return {n:join(lineage_dir, n)
                 for n in os.listdir(lineage_dir) if n.endswith('.json')}
