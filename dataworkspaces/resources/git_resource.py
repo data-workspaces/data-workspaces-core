@@ -17,12 +17,13 @@ from dataworkspaces.utils.subprocess_utils import \
     call_subprocess, call_subprocess_for_rc
 from dataworkspaces.utils.git_utils import \
     is_git_dirty, is_file_tracked_by_git,\
-    get_local_head_hash, get_remote_head_hash,\
-    commit_changes_in_repo, checkout_and_apply_commit, GIT_EXE_PATH,\
+    get_local_head_hash, commit_changes_in_repo,\
+    checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
-    validate_git_fat_in_path_if_needed, get_subdirectory_hash
+    validate_git_fat_in_path_if_needed, get_subdirectory_hash,\
+    is_pull_needed_from_remote
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
     SnapshotResourceMixin, JSONDict
@@ -31,18 +32,6 @@ from dataworkspaces.resources.resource import LocalPathType
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
-
-def is_pull_needed_from_remote(cwd, branch, verbose):
-    """Do check whether we need a pull, we get the hash of the HEAD
-    of the remote's master branch. Then, we see if we have this object locally.
-    """
-    hashval = get_remote_head_hash(cwd, branch, verbose)
-    if hashval is None:
-        return False
-    #cmd = [GIT_EXE_PATH, 'show', '--oneline', hashval]
-    cmd = [GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
-    rc = call_subprocess_for_rc(cmd, cwd, verbose=verbose)
-    return rc!=0
 
 
 def git_move_and_add(srcabspath, destabspath, git_root, verbose):
@@ -193,7 +182,7 @@ class GitRepoResource(GitResourceBase):
 
 
 
-    def push_prechecks(self):
+    def push_precheck(self):
         if self.read_only:
             return
         if is_git_dirty(self.local_path):
@@ -223,7 +212,7 @@ class GitRepoResource(GitResourceBase):
             git_fat.run_git_fat(self.python2_exe, ['push'], cwd=self.local_path,
                                 verbose=self.verbose)
 
-    def pull_prechecks(self):
+    def pull_precheck(self):
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %
@@ -237,13 +226,14 @@ class GitRepoResource(GitResourceBase):
 
     def pull(self):
         """Pull from remote origin, if any"""
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch,
+                                    self.workspace.verbose)
         call_subprocess([GIT_EXE_PATH, 'pull', 'origin', 'master'],
-                        cwd=self.local_path, verbose=self.verbose)
+                        cwd=self.local_path, verbose=self.workspace.verbose)
         if self.uses_git_fat:
             import dataworkspaces.third_party.git_fat as git_fat
             git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.local_path,
-                                verbose=self.verbose)
+                                verbose=self.workspace.verbose)
 
     def __str__(self):
         return "Git repository %s in role '%s'" % (self.local_path, self.role)
@@ -498,7 +488,7 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                             self.name)
 
 
-    def push_prechecks(self):
+    def push_precheck(self):
         if not exists(self.local_path):
             raise ConfigurationError("Missing directory %s for resource %s"%
                                      (self.local_path, self.name))
@@ -506,7 +496,8 @@ class GitRepoResultsSubdirResource(GitResourceBase):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.workspace_dir)
-        if is_pull_needed_from_remote(self.workspace_dir, 'master', self.verbose):
+        if is_pull_needed_from_remote(self.workspace_dir, 'master',
+                                      self.workspace.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
 
@@ -514,7 +505,7 @@ class GitRepoResultsSubdirResource(GitResourceBase):
         """Push to remote origin, if any"""
         pass # push will happen at workspace level
 
-    def pull_prechecks(self):
+    def pull_precheck(self):
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %
@@ -586,7 +577,7 @@ class GitRepoSubdirResource(GitResourceBase):
         checkout_subdir_and_apply_commit(self.workspace_dir, self.relative_path, hashval, verbose=self.workspace.verbose)
 
 
-    def push_prechecks(self):
+    def push_precheck(self):
         if not exists(self.local_path):
             raise ConfigurationError("Missing directory %s for resource %s"%
                                      (self.local_path, self.name))
@@ -604,7 +595,7 @@ class GitRepoSubdirResource(GitResourceBase):
         # actions.call_subprocess([GIT_EXE_PATH, 'push', 'origin', 'master'],
         #                         cwd=self.local_path, verbose=self.verbose)
 
-    def pull_prechecks(self):
+    def pull_precheck(self):
         if is_git_dirty(self.local_path):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pulling." %

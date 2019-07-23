@@ -8,7 +8,7 @@ help:
 UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
 
 MYPY_RESOURCES=git_resource.py
-MYPY_COMMANDS=init.py add.py snapshot.py restore.py status.py
+MYPY_COMMANDS=init.py add.py snapshot.py restore.py status.py push.py pull.py publish.py
 MYPY_APIS=lineage.py
 MYPY_KITS=scikit_learn.py
 
@@ -26,7 +26,7 @@ mypy:
 	#cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
-	cd $(DATAWORKSPACES); pyflakes workspace.py
+	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py
 	cd $(DATAWORKSPACES)/utils; pyflakes *.py
 	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes $(MYPY_RESOURCES)

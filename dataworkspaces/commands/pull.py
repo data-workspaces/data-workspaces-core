@@ -1,142 +1,75 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
-import tempfile
-from os.path import join, isdir
-import tarfile
-import json
-
+from typing import Optional, List, cast
 import click
 
-import dataworkspaces.commands.actions as actions
-from dataworkspaces.utils.git_utils import is_a_git_fat_repo,\
-    get_json_file_from_remote
-from dataworkspaces.resources.resource import \
-    CurrentResources, get_resource_from_json_remote
-from .push import get_resources_to_process
-from dataworkspaces.utils.lineage_utils import get_current_lineage_dir,\
-                                               LineageStoreCurrent
-from dataworkspaces.resources.git_resource import is_git_dirty
-from dataworkspaces.errors import ConfigurationError
+
+from dataworkspaces.commands.push import build_resource_list
+from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.workspace import Workspace,\
+    SyncedWorkspaceMixin, CentralWorkspaceMixin
+
+# XXX need to port lineage
+# class InvalidateLineage(actions.Action):
+#     def __init__(self, ns, verbose, current_lineage_dir, pulled_resource_names):
+#         super().__init__(ns, verbose)
+#         self.current_lineage_dir = current_lineage_dir
+#         self.pulled_resource_names = pulled_resource_names
+
+#     def run(self):
+#         LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
+#                                                        self.pulled_resource_names)
+
+#     def __str__(self):
+#         return 'Invalidate lineage for resources: %s' % \
+#             ', '.join(self.pulled_resource_names)
 
 
-class UpdateLocalParams:
-    pass # XXX placehoder
-class PullResource(actions.Action):
-    def __init__(self, ns, verbose, r):
-        super().__init__(ns, verbose)
-        self.r = r
-        r.pull_prechecks()
 
-    def run(self):
-        click.echo("Pulling resource %s..." % self.r.name)
-        self.r.pull()
+def pull_command(workspace:Workspace, only:Optional[List[str]]=None,
+                 skip:Optional[List[str]]=None, only_workspace:bool=False) -> int:
 
-    def __str__(self):
-        return "Pull state of resource '%s' to origin" % self.r.name
-
-class AddRemoteResource(actions.Action):
-    def __init__(self, ns, verbose, batch, workspace_dir, resource_json):
-        super().__init__(ns, verbose)
-        self.r = get_resource_from_json_remote(resource_json, workspace_dir,  batch, verbose)
-        self.r.add_prechecks() # XXX should there be different prechecks for adding a remote?
-
-    def run(self):
-        self.r.add_from_remote()
-
-    def __str__(self):
-        return "Add remote resource %s to local dataworkspace" % self.r.name
-
-
-class PullWorkspace(actions.Action):
-    def __init__(self, ns, verbose, workspace_dir):
-        super().__init__(ns, verbose)
-        self.workspace_dir = workspace_dir
-        if is_git_dirty(workspace_dir):
-            raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pulling." %
-                                     workspace_dir)
-        if is_a_git_fat_repo(workspace_dir):
-            import dataworkspaces.third_party.git_fat as git_fat
-            self.python2_exe = git_fat.find_python2_exe()
-            self.use_git_fat = True
+    rcount = 0
+    if isinstance(workspace, SyncedWorkspaceMixin):
+        # first, sync the workspace
+        original_resource_set = frozenset(workspace.get_resource_names()) # capture before syncing
+        click.echo("Syncing workspace")
+        mixin = workspace.pull_workspace()
+        workspace = cast(Workspace, mixin)
+        if not only_workspace:
+            resource_list = build_resource_list(workspace, only, skip)
+            if len(resource_list)>0:
+                click.echo("Updating resources: %s" % ', '.join([r.name for r in resource_list]))
+                mixin.pull_resources(resource_list)
+            else:
+                click.echo("No resources to update.")
+            local_state_resources = frozenset(workspace.get_names_of_resources_with_local_state())
+            new_resource_names = (frozenset(workspace.get_resource_names()).difference(original_resource_set)).intersection(local_state_resources)
+            if len(new_resource_names)>0:
+                rcount += len(new_resource_names)
+                click.echo("Cloning new resources: %s" % ', '.join(sorted(new_resource_names)))
+                for rn in new_resource_names:
+                    workspace.clone_resource(rn)
+    elif isinstance(workspace, CentralWorkspaceMixin):
+        if only_workspace:
+            raise ConfigurationError("--only-workspace not valid for central workspace %s"%
+                                     workspace.name)
+        resource_list = build_resource_list(workspace, only, skip)
+        if len(resource_list)>0:
+            click.echo("Updating resources: %s" % ', '.join([r.name for r in resource_list]))
+            workspace.pull_resources()
+            rcount = len(resource_list)
         else:
-            self.use_git_fat = False
-            self.python2_exe = None
-
-    def run(self):
-        click.echo("Pulling workspace...")
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'pull', 'origin', 'master'],
-                                cwd=self.workspace_dir, verbose=self.verbose)
-        if self.use_git_fat:
-            import dataworkspaces.third_party.git_fat as git_fat
-            git_fat.run_git_fat(self.python2_exe, ['pull'], cwd=self.workspace_dir,
-                                verbose=self.verbose)
-
-    def __str__(self):
-        return "Pull state of data workspace metadata to origin"
-
-class InvalidateLineage(actions.Action):
-    def __init__(self, ns, verbose, current_lineage_dir, pulled_resource_names):
-        super().__init__(ns, verbose)
-        self.current_lineage_dir = current_lineage_dir
-        self.pulled_resource_names = pulled_resource_names
-
-    def run(self):
-        LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
-                                                       self.pulled_resource_names)
-
-    def __str__(self):
-        return 'Invalidate lineage for resources: %s' % \
-            ', '.join(self.pulled_resource_names)
-
-
-def get_resources_file_from_git_origin(workspace_dir, verbose):
-    """We want to read the resources.json file from the remote without pulling or fetching.
-    We can do that by creating an archive with just the resources.json file.
-    """
-    return get_json_file_from_remote('.dataworkspace/resources.json', workspace_dir, verbose)
-
-
-def pull_command(workspace_dir, batch=False, verbose=False,
-                 only=None, skip=None, only_workspace=False):
-    plan = []
-    ns = actions.Namespace()
-    ns.local_params_json = {}
-    if not only_workspace:
-        current_resources = CurrentResources.read_current_resources(workspace_dir,
-                                                                    batch, verbose)
-        remote_resources_json = get_resources_file_from_git_origin(workspace_dir,
-                                                                   verbose)
-        pulled_resource_names = []
-        for name in get_resources_to_process(current_resources, only, skip):
-            r = current_resources.by_name[name]
-            plan.append(PullResource(ns, verbose, r))
-            pulled_resource_names.append(name)
-        plan.append(PullWorkspace(ns, verbose, workspace_dir))
-        gitignore_path = None
-        for resource_json in remote_resources_json:
-            if current_resources.is_a_current_name(resource_json['name']):
-                continue
-            # resouce not local, was added to the remote workspace
-            add_remote_action = AddRemoteResource(ns, verbose, batch, workspace_dir, resource_json)
-            plan.append(add_remote_action)
-            plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, workspace_dir))
-            # XXX refactor!
-            #add_to_gi = add_local_dir_to_gitignore_if_needed(ns, verbose, add_remote_action.r,
-            #                                                 workspace_dir)
-            # if add_to_gi:
-            #     plan.append(add_to_gi)
-            #     gitignore_path = add_to_gi.gitignore_path
-        if gitignore_path:
-            plan.append(actions.GitAdd(ns, verbose, workspace_dir, [gitignore_path]))
-            plan.append(actions.GitCommit(ns, verbose, workspace_dir, "Added new resources to gitignore"))
-        current_lineage_dir = get_current_lineage_dir(workspace_dir)
-        if isdir(current_lineage_dir):
-            plan.append(InvalidateLineage(ns, verbose, current_lineage_dir,
-                                          pulled_resource_names))
+            click.echo("No resources to update.")
+        resources_to_be_cloned = frozenset(workspace.get_resources_that_need_to_be_cloned())\
+                                    .intersection(
+                                        frozenset(workspace.get_names_of_resources_with_local_state()))
+        if len(resources_to_be_cloned)>0:
+            click.echo("Cloning new resources: %s" % ', '.join(sorted(resources_to_be_cloned)))
+            rcount += len(resources_to_be_cloned)
+            for rname in resources_to_be_cloned:
+                workspace.clone_resource(rname)
     else:
-        plan.append(PullWorkspace(ns, verbose, workspace_dir))
-    actions.run_plan(plan, "pull state from origins",
-                     "pulled state from origins", batch=batch, verbose=verbose)
-
-
-
-
+        raise InternalError("Workspace %s is neither a SyncedWorkspaceMixin nor a CentralWorkspaceMixin"%
+                            workspace.name)
+    workspace.save("Pull command")
+    return rcount

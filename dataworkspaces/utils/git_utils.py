@@ -85,6 +85,19 @@ def is_git_staging_dirty(cwd, subdir=None):
     else:
         raise ConfigurationError("Problem invoking %s status on %s" % (GIT_EXE_PATH, cwd))
 
+
+def is_pull_needed_from_remote(cwd:str, branch:str, verbose:bool)->bool:
+    """Do check whether we need a pull, we get the hash of the HEAD
+    of the remote's master branch. Then, we see if we have this object locally.
+    """
+    hashval = get_remote_head_hash(cwd, branch, verbose)
+    if hashval is None:
+        return False
+    #cmd = [GIT_EXE_PATH, 'show', '--oneline', hashval]
+    cmd = [GIT_EXE_PATH, 'cat-file', '-e', hashval+'^{commit}']
+    rc = call_subprocess_for_rc(cmd, cwd, verbose=verbose)
+    return rc!=0
+
 def git_init(repo_dir, verbose=False):
     call_subprocess([GIT_EXE_PATH, 'init'], cwd=repo_dir,
                     verbose=verbose)
@@ -335,6 +348,17 @@ def run_git_fat_pull_if_needed(repo_dir:str, verbose:bool) -> None:
         import dataworkspaces.third_party.git_fat as git_fat
         python2_exe = git_fat.find_python2_exe()
         git_fat.run_git_fat(python2_exe, ['pull'],
+                            cwd=repo_dir, verbose=verbose)
+
+def run_git_fat_push_if_needed(repo_dir:str, verbose:bool) -> None:
+    """Push the git-fat updates for the repo, if it is git fat-enabled
+    """
+    if not is_a_git_fat_repo(repo_dir):
+        return
+    else:
+        import dataworkspaces.third_party.git_fat as git_fat
+        python2_exe = git_fat.find_python2_exe()
+        git_fat.run_git_fat(python2_exe, ['push'],
                             cwd=repo_dir, verbose=verbose)
 
 

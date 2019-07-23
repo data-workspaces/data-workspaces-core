@@ -14,10 +14,14 @@ import click
 import dataworkspaces.workspace as ws
 from dataworkspaces.workspace import JSONDict, SnapshotMetadata
 from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, git_init, git_add,\
     validate_git_fat_in_path_if_needed, \
-    run_git_fat_pull_if_needed
+    run_git_fat_pull_if_needed, is_git_dirty,\
+    is_pull_needed_from_remote, GIT_EXE_PATH,\
+    run_git_fat_push_if_needed,\
+    set_remote_origin
 
 
 BASE_DIR='.dataworkspace'
@@ -169,37 +173,56 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         r = super().add_resource(name, resource_type, role, *args, **kwargs)
         self._add_local_dir_to_gitignore_if_needed(r)
         return r
+
+    def clone_resource(self, name:str) -> ws.LocalStateResourceMixin:
+        """Only called if the resource has local state....
+        """
+        r = super().clone_resource(name)
+        self._add_local_dir_to_gitignore_if_needed(r)
+        return r
+    
     def save(self, message:str) -> None:
         """Save the current state of the workspace"""
         commit_changes_in_repo(self.workspace_dir, message, verbose=self.verbose)
 
-    def pull_prechecks(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None,
-                       only_workspace:bool=False) -> None:
-        raise NotImplementedError("pull_prechecks")
+    def pull_workspace(self) -> ws.SyncedWorkspaceMixin:
+        # first, check for problems
+        if is_git_dirty(self.workspace_dir):
+            raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pulling." %
+                                     self.workspace_dir)
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-    def pull(self, only:Optional[List[str]]=None,
-             skip:Optional[List[str]]=None,
-             only_workspace:bool=False) -> None:
-        """Download latest updates from remote origin. By default,
-        includes any resources that support syncing via the
-        LocalStateResourceMixin.
-        """
-        raise NotImplementedError("pull")
+        # do the pooling
+        call_subprocess([GIT_EXE_PATH, 'pull', 'origin', 'master'],
+                        cwd=self.workspace_dir, verbose=self.verbose)
+        run_git_fat_pull_if_needed(self.workspace_dir, self.verbose)
 
-    def push_prechecks(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None,
-                       only_workspace:bool=False) -> None:
-        raise NotImplementedError("push_prechecks")
+        # reload and return new workspace
+        return Workspace(self.workspace_dir, batch=self.batch,
+                         verbose=self.verbose)
 
-    def push(self, only:Optional[List[str]]=None,
-             skip:Optional[List[str]]=None,
-             only_workspace:bool=False) -> None:
-        """Upload updates to remote origin. By default,
-        includes any resources that support syncing via the
-        LocalStateResourceMixin.
-        """
-        raise NotImplementedError("push")
+    def _push_precheck(self, resource_list:List[ws.LocalStateResourceMixin]) -> None:
+        if is_git_dirty(self.workspace_dir):
+            raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing." %
+                                     self.workspace_dir)
+        if is_pull_needed_from_remote(self.workspace_dir, 'master', self.verbose):
+            raise ConfigurationError("Data workspace at %s requires a pull from remote origin"%
+                                     self.workspace_dir)
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
+        super()._push_precheck(resource_list)
+
+    def push(self, resource_list:List[ws.LocalStateResourceMixin]) -> None:
+        super().push(resource_list)
+        call_subprocess([GIT_EXE_PATH, 'push', 'origin', 'master'],
+                        cwd=self.workspace_dir, verbose=self.verbose)
+        run_git_fat_push_if_needed(self.workspace_dir, verbose=self.verbose)
+
+    def publish(self, *args) -> None:
+        if len(args)!=1:
+            raise InternalError("publish takes one argument: remote_repository, got %s"%
+                                args)
+        set_remote_origin(self.workspace_dir, args[0],
+                          verbose=self.verbose)
 
     def get_next_snapshot_number(self) -> int:
         """Snapshot numbers are assigned based on how many snapshots have

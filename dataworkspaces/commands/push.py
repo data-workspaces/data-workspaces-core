@@ -1,94 +1,81 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 
 import click
+from typing import Optional, List, cast
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.utils.git_utils import is_a_git_fat_repo
-import dataworkspaces.commands.actions as actions
-from dataworkspaces.resources.resource import CurrentResources
-from dataworkspaces.resources.git_resource import \
-    is_git_dirty, is_pull_needed_from_remote
+from dataworkspaces.workspace import Workspace, LocalStateResourceMixin,\
+    SyncedWorkspaceMixin, CentralWorkspaceMixin
 
-class PushResource(actions.Action):
-    def __init__(self, ns, verbose, r):
-        super().__init__(ns, verbose)
-        self.r = r
-        r.push_prechecks()
-
-    def run(self):
-        click.echo("Pushing resource %s..." % self.r.name)
-        self.r.push()
-
-    def __str__(self):
-        return "Push state of resource '%s' to origin" % self.r.name
-
-
-class PushWorkspace(actions.Action):
-    def __init__(self, ns, verbose, workspace_dir):
-        super().__init__(ns, verbose)
-        self.workspace_dir = workspace_dir
-        if is_git_dirty(workspace_dir):
-            raise ConfigurationError("Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing." %
-                                     workspace_dir)
-        if is_pull_needed_from_remote(workspace_dir, 'master', self.verbose):
-            raise ConfigurationError("Data workspace at %s requires a pull from remote origin"%
-                                     workspace_dir)
-        if is_a_git_fat_repo(workspace_dir):
-            import dataworkspaces.third_party.git_fat as git_fat
-            self.python2_exe = git_fat.find_python2_exe()
-            self.use_git_fat = True
-        else:
-            self.use_git_fat = False
-            self.python2_exe = None
-
-    def run(self):
-        click.echo("Pushing workspace...")
-        actions.call_subprocess([actions.GIT_EXE_PATH, 'push', 'origin', 'master'],
-                                cwd=self.workspace_dir, verbose=self.verbose)
-        if self.use_git_fat:
-            import dataworkspaces.third_party.git_fat as git_fat
-            git_fat.run_git_fat(self.python2_exe, ['push'], cwd=self.workspace_dir,
-                                verbose=self.verbose)
-
-    def __str__(self):
-        return "Push state of data workspace metadata to origin"
-
-
-def get_resources_to_process(current_resources, only, skip):
+def build_resource_list(workspace:Workspace, only:Optional[List[str]], skip:Optional[List[str]]) \
+    -> List[LocalStateResourceMixin]:
+    """Build up our resource list for either push or pull commands.
+    """
+    if (only is not None) and (skip is not None):
+        raise ConfigurationError("Cannot specify both --only and --skip")
+    all_resource_names_set = frozenset(workspace.get_resource_names())
+    local_state_resources = [r for r in workspace.get_resources()
+                             if isinstance(r, LocalStateResourceMixin)]
+    local_state_names_set = frozenset([r.name for r in local_state_resources])
     if only is not None:
-        only_names = only.split(',')
-        for name in only_names:
-            if not current_resources.is_a_current_name(name):
-                raise click.UsageError("No resource '%s' exists in current workspace" % name)
-        return only_names
+        only_set = frozenset(only)
+        invalid = only_set.difference(all_resource_names_set)
+        if len(invalid)>0:
+            raise ConfigurationError("Invalid resource names were included with --only: %s"%
+                                     ', '.join(sorted(invalid)))
+        nonsync_rnames = only_set.difference(local_state_names_set)
+        if len(nonsync_rnames)>0:
+            click.echo("Skipping the following resources, which do not have local state: %s"%
+                       ', '.join(sorted(nonsync_rnames)))
+        return [cast(LocalStateResourceMixin, r) for r in local_state_resources if r.name in only_set]
     elif skip is not None:
-        skip_names = set(skip.split(','))
-        for skip_name in skip_names:
-            if not current_resources.is_a_current_name(skip_name):
-                raise click.UsageError("No resource '%s' exists in current workspace "%
-                                      skip_name)
-        names_to_push = []
-        for name in current_resources.get_names():
-            if name not in skip_names:
-                names_to_push.append(name)
-        return names_to_push
+        skip_set = frozenset(skip)
+        invalid = skip_set.difference(all_resource_names_set)
+        if len(invalid)>0:
+            raise ConfigurationError("Invalid resource names were included with --skip: %s"%
+                                     ', '.join(sorted(invalid)))
+        nonsync_rnames = all_resource_names_set.difference(skip_set).difference(local_state_names_set)
+        if len(nonsync_rnames)>0:
+            click.echo("Skipping the following resources, which do not have local state: %s"%
+                       ', '.join(sorted(nonsync_rnames)))
+        return [cast(LocalStateResourceMixin, r) for r in local_state_resources if r.name not in skip_set]
     else:
-        return current_resources.get_names()
+        nonsync_rnames = all_resource_names_set.difference(local_state_names_set)
+        if len(nonsync_rnames)>0:
+            click.echo("Skipping the following resources, which do not have local state: %s"%
+                       ', '.join(sorted(nonsync_rnames)))
+        return cast(List[LocalStateResourceMixin], local_state_resources)
 
-def push_command(workspace_dir, batch=False, verbose=False,
-                 only=None, skip=None, only_workspace=False):
-    plan = []
-    ns = actions.Namespace()
-    if not only_workspace:
-        current_resources = CurrentResources.read_current_resources(workspace_dir,
-                                                                    batch, verbose)
-        for name in get_resources_to_process(current_resources, only, skip):
-            r = current_resources.by_name[name]
-            plan.append(PushResource(ns, verbose, r))
+def push_command(workspace:Workspace, only:Optional[List[str]]=None, skip:Optional[List[str]]=None,
+                 only_workspace:bool=False) -> int:
+    """Run the push command on the pushable resources and the workspace.
+    """
+    if only_workspace:
+        if isinstance(workspace, CentralWorkspaceMixin):
+            raise ConfigurationError("--only-workspace not valid for central workspace %s"%
+                                     workspace.name)
+        resource_list = [] # type: List[LocalStateResourceMixin]
+    else:
+        resource_list = build_resource_list(workspace, only, skip)
 
-    plan.append(PushWorkspace(ns, verbose, workspace_dir))
-    actions.run_plan(plan, "push state to origins",
-                     "pushed state to origins", batch=batch, verbose=verbose)
+    if isinstance(workspace, CentralWorkspaceMixin):
+        if len(resource_list)==0:
+            click.echo("No resources to push.")
+            return 0
+        else:
+            print("Pushing resources: %s" % ', '.join([r.name for r in resource_list]))
+            workspace.push_resources(resource_list)
+    elif isinstance(workspace, SyncedWorkspaceMixin):
+        if len(resource_list)>0:
+            click.echo("Pushing workspace and resources: %s" % ', '.join([r.name for r in resource_list]))
+        elif not only_workspace:
+            click.echo("No resources to push, will still push workspace")
+        else:
+            click.echo("Pushing workspace.")
+        workspace.push(resource_list)
+
+    workspace.save("push command")
+    return len(resource_list)
 
 
 

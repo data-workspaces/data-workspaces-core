@@ -1,5 +1,47 @@
 """
 Main definitions of the workspace abstractions
+
+*Workspace backends*, like git, subclass from the ``Workspace`` base
+class. Resource implementations (e.g. local files or git resource)
+subclass from the ``Resource`` base class.
+
+Optional capabilities for both workspace backends and resource
+backends are defined via abstract *mixin* classes. These classes
+do not inherit from the base workspace/resource classes, to avoid
+issues with multiple inheritance.
+
+Complex operations involving resources use the following pattern,
+where COMMAND is the command and CAPABILITY is the capability needed
+to perform the command::
+
+  class CAPABILITYWorkspaceMixin:
+    ...
+    def _COMMAND_precheck(self, resource_list:List[CAPABILITYResourceMixin]) -> None:
+      # Backend can override to add more checks
+      for r in resource_list:
+        r.COMMAND_precheck()
+
+    def COMMAND(sef resource_list:List[CAPAIBILITYResourceMixin]) -> None:
+      self._COMMAND_precheck(resource_list)
+      ...
+      for r in resource_list:
+        r.COMMAND()
+
+The module ``dataworkspaces.commands.COMMAND`` should look like this::
+
+  def COMMAND_command(workspace, ...):
+    if not isinstance(workspace, CAPABILITYWorkspaceMixin):
+      raise ConfigurationError("Workspace %s does not support CAPABILITY"%
+                               workspace.name)
+    mixin = cast(CAPABILITYWorkspaceMixin, workspace)
+
+    ... error checking ...
+
+    resource_list = ...
+
+    workspace.COMMAND(resource_list)
+    workspace.save("Completed command COMMAND")
+
 """
 
 from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, Set, cast, Pattern
@@ -147,6 +189,12 @@ class Workspace(metaclass=ABCMeta):
         params = self._get_resource_params(resource_name)
         return params['role']
 
+    def get_resource_type(self, resource_name) -> str:
+        """Get the type of a resource without having to instantiate it.
+        """
+        params = self._get_resource_params(resource_name)
+        return params['resource_type']
+
     @abstractmethod
     def _get_resource_local_params(self, resource_name:str) -> Optional[JSONDict]:
         """If a resource has local parameters defined for it, return them.
@@ -210,13 +258,22 @@ class Workspace(metaclass=ABCMeta):
         if name not in self.get_resource_names():
             raise ConfigurationError("A resource by the name '%s' does not exist in this workspace"%
                                      name)
-        params = self._get_resource_params(name)
-        resource_type = params['resource_type']
+        resource_type =  self.get_resource_type(name)
         f = _get_resource_factory_by_resource_type(resource_type)
         assert f.has_local_state() # should only be calling if local state
-        r = f.clone(params, self)
+        r = f.clone(self._get_resource_params(name), self)
         self._add_local_params_for_resource(r.name, r.get_local_params())
         return r
+
+    def get_names_of_resources_with_local_state(self) -> Iterable[str]:
+        """Return an iterable of the resource names in the workspace that
+        have local state.
+        """
+        for name in self.get_resource_names():
+            resource_type = self.get_resource_type(name)
+            f = _get_resource_factory_by_resource_type(resource_type)
+            if f.has_local_state():
+                yield name
 
     def validate_resource_name(self, resource_name:str, subpath:Optional[str]=None,
                                expected_role:Optional[str]=None) -> None:
@@ -458,7 +515,7 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def pull_prechecks(self):
+    def pull_precheck(self):
         """Perform any prechecks before updating this resource from the
         remote origin.
         """
@@ -472,7 +529,7 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def push_prechecks(self):
+    def push_precheck(self):
         """Perform any prechecks before uploading this resource's changes to the
         remote origin.
         """
@@ -547,71 +604,100 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
     """This mixin is for workspaces that support synchronizing with a master
     copy via push/pull operations.
     """
-    @abstractmethod
-    def pull_prechecks(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None,
-                       only_workspace:bool=False) -> None:
-        pass
+    def _pull_resources_precheck(self, resource_list:List[LocalStateResourceMixin]) -> None:
+        """Default calls pull_precheck() on each of the supplied resources.
+        """
+        for r in resource_list:
+            r.pull_precheck()
 
     @abstractmethod
-    def pull(self, only:Optional[List[str]]=None,
-             skip:Optional[List[str]]=None,
-             only_workspace:bool=False) -> None:
+    def pull_workspace(self) -> 'SyncedWorkspaceMixin':
+        """Pull the workspace itself and return a new workspace object reflecting
+        the latest state changes.
+        """
+        pass
+
+    def pull_resources(self, resource_list:List[LocalStateResourceMixin]) -> None:
         """Download latest updates from remote origin. By default,
         includes any resources that support syncing via the
         LocalStateResourceMixin.
+
+        Note that this does not handle the actual workspace pull or the
+        cloning of new resources.
+        """
+        self._pull_resources_precheck(resource_list)
+        for r in resource_list:
+            r.pull()
+
+    def _push_precheck(self, resource_list:List[LocalStateResourceMixin]) -> None:
+        """Default calls pull_precheck() on each of the supplied resources.
+        """
+        for r in resource_list:
+            r.push_precheck()
+
+    def push(self,  resource_list:List[LocalStateResourceMixin]) -> None:
+        """Upload updates to remote origin.
+
+        Backend subclass also needs to handle syncing of the workspace itself.
+        If this is called with an empty set of resources, then we
+        are just syncing the workspace. Pushing the workspace should include
+        pushing of any new resources.
+        """
+        self._push_precheck(resource_list)
+
+        for r in resource_list:
+            r.push()
+
+    @abstractmethod
+    def publish(self, *args) -> None:
+        """Make a local repo available at a remote location. For example,
+         we may make it available on GitHub, GitLab or some similar service.
         """
         pass
 
-
-    @abstractmethod
-    def push_prechecks(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None,
-                       only_workspace:bool=False) -> None:
-        pass
-
-    @abstractmethod
-    def push(self, only:Optional[List[str]]=None,
-             skip:Optional[List[str]]=None,
-             only_workspace:bool=False) -> None:
-        """Upload updates to remote origin. By default,
-        includes any resources that support syncing via the
-        LocalStateResourceMixin.
-        """
-        pass
 
 class CentralWorkspaceMixin(metaclass=ABCMeta):
     """This mixin is for workspaces that have a central store
     and do not need synchronization of the workspace itself.
     They still may need to sychronize individual resources.
     """
-    @abstractmethod
-    def pull_resources_prechecks(self, only:Optional[List[str]]=None,
-                                 skip:Optional[List[str]]=None) -> None:
-        pass
+    def _pull_resources_precheck(self, resource_list:List[LocalStateResourceMixin]) -> None:
+        """Default calls pull_precheck() on each of the supplied resources.
+        """
+        for r in resource_list:
+            r.pull_precheck()
 
-    @abstractmethod
-    def pull_resources(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None) -> None:
+    def pull_resources(self, resource_list:List[LocalStateResourceMixin]) -> None:
         """Download latest resource updates from remote origin
         for resources that support syncing via the
         LocalStateResourceMixin.
         """
         pass
+        self._pull_resources_precheck(resource_list)
 
-
-    @abstractmethod
-    def push_resources_prechecks(self, only:Optional[List[str]]=None,
-                                 skip:Optional[List[str]]=None) -> None:
-        pass
+        for r in resource_list:
+            r.pull()
 
     @abstractmethod
-    def push_resources(self, only:Optional[List[str]]=None,
-                       skip:Optional[List[str]]=None) -> None:
-        """Upload updates for any resources that
-        support syncing via the LocalStateResourceMixin.
+    def get_resources_that_need_to_be_cloned(self) -> List[str]:
+        """Return a list of resources with local state that are not present
+        in the local system. This is used after a pull to clone these resources.
         """
         pass
+
+    def _push_resources_precheck(self, resource_list:List[LocalStateResourceMixin]) -> None:
+        """Default calls pull_precheck() on each of the supplied resources.
+        """
+        for r in resource_list:
+            r.push_precheck()
+
+    def push_resources(self,  resource_list:List[LocalStateResourceMixin]) -> None:
+        """Upload resource updates to remote origin.
+        """
+        self._push_resources_precheck(resource_list)
+
+        for r in resource_list:
+            r.push()
 
 
 ####################################################################

@@ -23,7 +23,7 @@ from .commands.publish import publish_command
 from .commands.push import push_command
 from .commands.pull import pull_command
 from .commands.clone import clone_command
-from .commands.run import run_command
+#from .commands.run import run_command
 from .commands.diff import diff_command
 from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
 from .errors import BatchModeError
@@ -367,9 +367,9 @@ def publish(ctx, workspace_dir, skip, remote_repository):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    publish_command(workspace_dir, remote_repository, ns.batch, ns.verbose)
-    push_command(workspace_dir, ns.batch, ns.verbose, only=None, skip=skip,
-                 only_workspace=None)
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    publish_command(workspace, remote_repository)
+    push_command(workspace, only=None, skip=skip, only_workspace=False)
 
 cli.add_command(publish)
 
@@ -398,7 +398,8 @@ def push(ctx, workspace_dir, only, skip, only_workspace):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    push_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    push_command(workspace, only=only, skip=skip,
                  only_workspace=only_workspace)
 
 cli.add_command(push)
@@ -428,7 +429,8 @@ def pull(ctx, workspace_dir, only, skip, only_workspace):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    pull_command(workspace_dir, ns.batch, ns.verbose, only=only, skip=skip,
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    pull_command(workspace, only=only, skip=skip,
                  only_workspace=only_workspace)
 
 cli.add_command(pull)

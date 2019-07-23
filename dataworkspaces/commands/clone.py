@@ -12,7 +12,7 @@ from dataworkspaces.utils.git_utils import is_a_git_fat_repo, validate_git_fat_i
 from dataworkspaces.resources.resource import \
     get_resource_file_path, get_resource_local_params_file_path
 import dataworkspaces.commands.actions as actions
-from .pull import AddRemoteResource
+#from .pull import AddRemoteResource
 
 
 def clone_command(repository, hostname, directory=None, batch=False, verbose=False):
@@ -97,7 +97,7 @@ def clone_command(repository, hostname, directory=None, batch=False, verbose=Fal
     gitignore_path = None
     try:
         for resource_json in resources_json:
-            add_remote_action = AddRemoteResource(ns, verbose, batch, directory, resource_json)
+            add_remote_action = None # XXX AddRemoteResource(ns, verbose, batch, directory, resource_json)
             plan.append(add_remote_action)
             # XXX Refactor
             #plan.append(UpdateLocalParams(ns, verbose, add_remote_action.r, directory))
