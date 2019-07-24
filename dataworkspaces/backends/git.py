@@ -3,9 +3,11 @@ Git backend for storing a workspace
 """
 
 import os
-from os.path import exists, join, isdir, basename, isabs
+from os.path import exists, join, isdir, basename, isabs, abspath, expanduser, dirname, curdir
+import shutil
 import json
 import re
+import uuid
 from typing import Any, Iterable, Optional, List, Dict
 assert Dict # make pyflakes happy
 
@@ -21,7 +23,9 @@ from dataworkspaces.utils.git_utils import \
     run_git_fat_pull_if_needed, is_git_dirty,\
     is_pull_needed_from_remote, GIT_EXE_PATH,\
     run_git_fat_push_if_needed,\
-    set_remote_origin
+    set_remote_origin, is_a_git_fat_repo,\
+    validate_git_fat_in_path
+from dataworkspaces.utils.file_utils import safe_rename
 
 
 BASE_DIR='.dataworkspace'
@@ -426,5 +430,83 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 verbose=verbose)
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
         return Workspace(workspace_dir, batch, verbose)
+
+    @staticmethod
+    def clone_workspace(hostname:str, batch:bool, verbose:bool, *args) -> ws.Workspace:
+        # args is REPOSITORY_URL [DIRECTORY]
+        if len(args)==0:
+            raise ConfigurationError("Need to specify a Git repository URL when cloning a workspace")
+        else:
+            repository = args[0] # type: str
+        directory = args[1] if len(args)==2 else None # type: Optional[str]
+        if len(args)>2:
+            raise ConfigurationError("Clone of git backend expecting at most two arguments, received: %s"%
+                                     repr(args))
+
+        # initial checks on the directory
+        if directory:
+            directory = abspath(expanduser(directory))
+            parent_dir = dirname(directory)
+            if isdir(directory):
+                raise ConfigurationError("Clone target directory '%s' already exists"% directory)
+            initial_path = directory
+        else:
+            parent_dir = abspath(expanduser(curdir))
+            initial_path = join(parent_dir, uuid.uuid4().hex) # get a unique name within this directory
+        if not isdir(parent_dir):
+            raise ConfigurationError("Parent directory '%s' does not exist" % parent_dir)
+        if not os.access(parent_dir, os.W_OK):
+            raise ConfigurationError("Unable to write into directory '%s'" % parent_dir)
+
+        # ping the remote repo
+        cmd = [GIT_EXE_PATH, 'ls-remote', '--quiet', repository]
+        try:
+            call_subprocess(cmd, parent_dir, verbose)
+        except Exception as e:
+            raise ConfigurationError("Unable to access remote repository '%s'" % repository) from e
+
+        # we have to clone the repo first to find out its name!
+        try:
+            cmd = [GIT_EXE_PATH, 'clone', repository, initial_path]
+            call_subprocess(cmd, parent_dir, verbose)
+            config_file = join(initial_path, CONFIG_FILE_PATH)
+            if not exists(config_file):
+                raise ConfigurationError("Did not find configuration file in remote repo")
+            with open(config_file, 'r') as f:
+                config_json = json.load(f)
+            if 'name' not in config_json:
+                raise InternalError("Missing 'name' property in configuration file")
+            workspace_name = config_json['name']
+            if directory is None:
+                new_name = join(parent_dir, workspace_name)
+                if isdir(new_name):
+                    raise ConfigurationError("Clone target directory %s already exists" % new_name)
+                safe_rename(initial_path, new_name)
+                directory = new_name
+            snapshot_md_dir = join(directory, SNAPSHOT_METADATA_DIR_PATH)
+            if not exists(snapshot_md_dir):
+                # It is possible that we are cloning a repo with no snapshots
+                os.mkdir(snapshot_md_dir)
+            snapshot_dir = join(directory, SNAPSHOT_DIR_PATH)
+            if not exists(snapshot_dir):
+                # It is possible that we are cloning a repo with no snapshots
+                os.mkdir(snapshot_dir)
+            if is_a_git_fat_repo(directory):
+                validate_git_fat_in_path()
+                import dataworkspaces.third_party.git_fat as git_fat
+                python2_exe = git_fat.find_python2_exe()
+                git_fat.run_git_fat(python2_exe, ['init'], cwd=directory,
+                                    verbose=verbose)
+                # pull the objects referenced by the current head
+                git_fat.run_git_fat(python2_exe, ['pull'], cwd=directory,
+                                    verbose=verbose)
+        except:
+            if isdir(initial_path):
+                shutil.rmtree(initial_path)
+            if (directory is not None) and isdir(directory):
+                shutil.rmtree(directory)
+            raise
+
+        return WorkspaceFactory.load_workspace(batch, verbose, directory)
 
 FACTORY=WorkspaceFactory()

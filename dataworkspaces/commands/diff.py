@@ -39,7 +39,7 @@ def compare_lineage_files(f1, f2):
         return '  Step %s has no lineage differences.\n' % data1['step_name']
 
 
-def diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, batch, verbose):
+def diff_command(workspace:Workspace, snapshot_or_tag1:str, snapshot_or_tag2:str) -> None:
     (snapshot1, tags1, _) = find_snapshot(snapshot_or_tag1, workspace_dir)
     snstr1 = "%s, tags %s" % (snapshot1, ','.join(tags1)) if tags1 else snapshot1
     sn1_resources = SnapshotResources.read_shapshot_manifest(snapshot1,

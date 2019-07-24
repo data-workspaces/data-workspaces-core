@@ -375,8 +375,22 @@ class WorkspaceFactory(metaclass=ABCMeta):
     @abstractmethod
     def init_workspace(workspace_name:str, dws_version:str,
                        global_params:JSONDict, local_params:JSONDict,
-                       batch, verbose,
+                       batch:bool, verbose:bool,
                        *args, **kwargs) -> Workspace: pass
+
+    @staticmethod
+    @abstractmethod
+    def clone_workspace(hostname:str, batch:bool, verbose:bool,
+                        *args) -> Workspace:
+        """Clone an existing workspace into the local environment. Note that
+        hostname is used as an instance identifier (TODO: make this more generic).
+
+        This only clones the workspace itself, any local state resources should be
+        cloned separately.
+
+        If a workspace has no local state, this factory method might not do anything.
+        """
+        pass
 
 
 def _get_factory(backend_name:str) -> WorkspaceFactory:
@@ -423,6 +437,11 @@ def init_workspace(backend_name:str, workspace_name:str, hostname:str,
                              get_global_param_defaults(),
                              get_local_param_defaults(hostname),
                              batch, verbose, *args, **kwargs)
+
+def clone_workspace(backend_name:str, hostname:str, batch:bool, verbose:bool, *args) -> Workspace:
+    """Instantiate the workspace factory based on backend name and then clone the
+    specified workspace to the local environment."""
+    return _get_factory(backend_name).clone_workspace(hostname, batch, verbose, *args)
 
 
 class ResourceRoles:
