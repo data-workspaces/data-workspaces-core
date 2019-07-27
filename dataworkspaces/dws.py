@@ -14,21 +14,21 @@ from argparse import Namespace
 from collections.abc import Sequence
 
 import dataworkspaces.workspace as ws
-from .commands.init import init_command
-from .commands.add import add_command
-from .commands.snapshot import snapshot_command
-from .commands.restore import restore_command
-from .commands.status import status_command
-from .commands.publish import publish_command
-from .commands.push import push_command
-from .commands.pull import pull_command
-from .commands.clone import clone_command
-#from .commands.run import run_command
-from .commands.diff import diff_command
-from .resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
-from .errors import BatchModeError
-from .utils.param_utils import DEFAULT_HOSTNAME
-from .utils.regexp_utils import HOSTNAME_RE
+from dataworkspaces.commands.init import init_command
+from dataworkspaces.commands.add import add_command
+from dataworkspaces.commands.snapshot import snapshot_command
+from dataworkspaces.commands.restore import restore_command
+from dataworkspaces.commands.status import status_command
+from dataworkspaces.commands.publish import publish_command
+from dataworkspaces.commands.push import push_command
+from dataworkspaces.commands.pull import pull_command
+from dataworkspaces.commands.clone import clone_command
+#from dataworkspaces.commands.run import run_command
+from dataworkspaces.commands.diff import diff_command
+from dataworkspaces.resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
+from dataworkspaces.errors import BatchModeError
+from dataworkspaces.utils.param_utils import DEFAULT_HOSTNAME
+from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)

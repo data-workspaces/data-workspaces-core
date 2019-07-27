@@ -16,7 +16,7 @@ test: clean mypy pyflakes
 #	python -m unittest $(UNIT_TESTS)
 
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy utils/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
 	cd $(DATAWORKSPACES)/resources; export MYPYPATH=$(MYPYPATH); mypy $(MYPY_RESOURCES)
