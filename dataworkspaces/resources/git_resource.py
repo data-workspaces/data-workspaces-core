@@ -376,7 +376,7 @@ class GitRepoFactory(ResourceFactory):
                                              (rname, default_local_path, remote, remote_origin_url))
             local_path = default_local_path
         parent = dirname(local_path)
-        if not exists(self.local_path):
+        if not exists(local_path):
             # cloning a fresh repository
             cmd = [GIT_EXE_PATH, 'clone', remote_origin_url, basename(local_path)]
             call_subprocess(cmd, parent, workspace.verbose)
@@ -679,7 +679,7 @@ class GitRepoSubdirFactory(ResourceFactory):
         relative_path = params['relative_path']
         if not isinstance(workspace, git_backend.Workspace):
             raise ConfigurationError("Git subdirectory resources are only supported with the Git workspace backend.")
-        workspace_dir = workspace.get_local_path_if_any()
+        workspace_dir = workspace.get_workspace_local_path_if_any()
         assert workspace_dir is not None
         local_path = join(workspace_dir, relative_path)
         if not exists(local_path):

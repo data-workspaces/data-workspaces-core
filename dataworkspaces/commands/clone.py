@@ -16,5 +16,5 @@ def clone_command(backend:str, hostname:str, batch:bool=False, verbose:bool=Fals
         for rname in rnames:
             workspace.clone_resource(rname)
 
-    workspace.save()
+    workspace.save("Clone")
     click.echo("Successfully completed clone of workspace %s."% workspace.name)

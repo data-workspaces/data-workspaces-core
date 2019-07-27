@@ -380,7 +380,7 @@ class WorkspaceFactory(metaclass=ABCMeta):
 
     @staticmethod
     @abstractmethod
-    def clone_workspace(hostname:str, batch:bool, verbose:bool,
+    def clone_workspace(local_params:JSONDict, batch:bool, verbose:bool,
                         *args) -> Workspace:
         """Clone an existing workspace into the local environment. Note that
         hostname is used as an instance identifier (TODO: make this more generic).
@@ -441,7 +441,7 @@ def init_workspace(backend_name:str, workspace_name:str, hostname:str,
 def clone_workspace(backend_name:str, hostname:str, batch:bool, verbose:bool, *args) -> Workspace:
     """Instantiate the workspace factory based on backend name and then clone the
     specified workspace to the local environment."""
-    return _get_factory(backend_name).clone_workspace(hostname, batch, verbose, *args)
+    return _get_factory(backend_name).clone_workspace(get_local_param_defaults(hostname), batch, verbose, *args)
 
 
 class ResourceRoles:
@@ -938,6 +938,24 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
             return self.get_snapshot_by_partial_hash(tag_or_hash)
         else:
             return self.get_snapshot_by_tag(tag_or_hash)
+
+    @abstractmethod
+    def _get_snapshot_manifest_as_bytes(self, hash_val:str) -> bytes:
+        """Retrieve the manifest for this snapshot. This manifest
+        was given to the backend via
+        :func:`~save_snapshot_metadata_and_manifest~. This should
+        throw a ConfigurationError if no associated snapshot is found
+        for the hash.
+        """
+        pass
+
+    def get_snapshot_manifest(self, hash_val:str) -> JSONDict:
+        """Returns the snapshot manifest for the given hash
+        as a parsed JSON structure. The top-level dict maps
+        resource names resource parameters.
+        """
+        raw_data = self._get_snapshot_manifest_as_bytes(hash_val)
+        return json.loads(raw_data.decode('utf-8'))
 
     @abstractmethod
     def list_snapshots(self, reverse:bool=True, max_count:Optional[int]=None) \

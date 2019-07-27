@@ -452,7 +452,7 @@ def clone(ctx, hostname, repository, directory):
                                     default=DEFAULT_HOSTNAME, type=HOST_PARAM)
         else:
             hostname = DEFAULT_HOSTNAME
-    clone_command(repository, hostname, directory, ns.batch, ns.verbose)
+    clone_command('dataworkspaces.backends.git', hostname, ns.batch, ns.verbose, repository, directory)
 
 cli.add_command(clone)
 
@@ -518,7 +518,8 @@ def diff(ctx, workspace_dir, snapshot_or_tag1, snapshot_or_tag2):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    diff_command(workspace_dir, snapshot_or_tag1, snapshot_or_tag2, ns.batch, ns.verbose)
+    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    diff_command(workspace, snapshot_or_tag1, snapshot_or_tag2)
 
 cli.add_command(diff)
 

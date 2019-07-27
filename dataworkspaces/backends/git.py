@@ -298,8 +298,15 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         raise ConfigurationError("Snapshot match for partial hash %s not found" %
                                  partial_hash)
 
+    def _get_snapshot_manifest_as_bytes(self, hash_val:str) -> bytes:
+        snapshot_dir = join(self.workspace_dir, SNAPSHOT_DIR_PATH)
+        snapshot_file = join(snapshot_dir, 'snapshot-%s.json'%hash_val.lower())
+        if not exists(snapshot_file):
+            raise ConfigurationError("No snapshot found for hash value %s" % hash_val)
+        with open(snapshot_file, 'rb') as f:
+            return f.read()
 
-    def list_snapshots(self, reverse:bool=True, max_count:Optional[int]=None) \
+    def list_snapshots(self, reverse:bool=True, max_count:Optional[int]=None)\
         -> Iterable[SnapshotMetadata]:
         """Returns an iterable of snapshot metadata, sorted by timestamp ascending
         (or descending if reverse is True). If max_count is specified, return at
@@ -432,7 +439,7 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         return Workspace(workspace_dir, batch, verbose)
 
     @staticmethod
-    def clone_workspace(hostname:str, batch:bool, verbose:bool, *args) -> ws.Workspace:
+    def clone_workspace(local_params:JSONDict, batch:bool, verbose:bool, *args) -> ws.Workspace:
         # args is REPOSITORY_URL [DIRECTORY]
         if len(args)==0:
             raise ConfigurationError("Need to specify a Git repository URL when cloning a workspace")
@@ -483,6 +490,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                     raise ConfigurationError("Clone target directory %s already exists" % new_name)
                 safe_rename(initial_path, new_name)
                 directory = new_name
+            with open(join(directory, LOCAL_PARAMS_PATH), 'w') as f:
+                json.dump(local_params, f, indent=2) # create an initial local params file
+            with open(join(directory, RESOURCE_LOCAL_PARAMS_PATH), 'w') as f:
+                json.dump({}, f, indent=2) # create resource local params, to be populated via resource clones
             snapshot_md_dir = join(directory, SNAPSHOT_METADATA_DIR_PATH)
             if not exists(snapshot_md_dir):
                 # It is possible that we are cloning a repo with no snapshots
