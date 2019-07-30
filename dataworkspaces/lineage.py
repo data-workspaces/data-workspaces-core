@@ -112,7 +112,7 @@ from abc import ABC, abstractmethod
 import contextlib
 from collections import OrderedDict
 import datetime
-from typing import List, Union, Any, Type, Iterable, Dict, Optional
+from typing import List, Union, Any, Type, Iterable, Dict, Optional, cast
 import os
 from os.path import exists, curdir, join
 from argparse import ArgumentParser, Namespace
@@ -406,7 +406,7 @@ class LineageBuilder:
     def with_input_paths(self, paths:List[str]) -> 'LineageBuilder':
         assert self.no_inputs is False, "Cannot specify both inputs and no inputs"
         if self.inputs is None:
-            self.inputs = copy(paths)
+            self.inputs = cast(Optional[List[Union[str, ResourceRef]]], copy(paths))
         else:
             self.inputs.extend(paths)
         return self
