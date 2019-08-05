@@ -10,6 +10,7 @@ import re
 import stat
 from tempfile import NamedTemporaryFile
 import shutil
+from typing import Set, List, Pattern, Union, Callable
 
 import click
 
@@ -114,16 +115,18 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
     return TEMPLATE_VAR_RE.sub(repl, template)
 
 
-def move_file_and_set_readonly(src, dest):
+def move_file_and_set_readonly(src:str, dest:str)->None:
     os.rename(src, dest)
     mode = os.stat(dest)[stat.ST_MODE]
     os.chmod(dest, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
 DOT_GIT_RE = re.compile('^'+re.escape('.git')+'$')
-def move_current_files_local_fs(resource_name,
-                                base_dir, rel_dest_root, exclude_files,
-                                exclude_dirs_res, move_fn=move_file_and_set_readonly,
-                                verbose=False):
+def move_current_files_local_fs(resource_name:str,
+                                base_dir:str, rel_dest_root:str,
+                                exclude_files:Set[str],
+                                exclude_dirs_res:Union[Pattern, List[Pattern]],
+                                move_fn:Callable[[str,str],None]=move_file_and_set_readonly,
+                                verbose:bool=False):
     """Utility for impelementing Resource.results_move_current_file()
     for when the files are stored on the local filesystem (e.g. local or git
     resources).
@@ -139,10 +142,10 @@ def move_current_files_local_fs(resource_name,
     abs_dest_root = join(base_dir, rel_dest_root)
     created_dir = False # only create when we actually have a file to move
     moved_files = []
-    dirs_to_remove_if_empty = []
-    if not isinstance(exclude_dirs_res, list):
-        exclude_dirs_res = [exclude_dirs_res,]
-    exclude_dirs_res.append(DOT_GIT_RE)
+    dirs_to_remove_if_empty = [] # type: List[str]
+    exclude_dirs_re_list = exclude_dirs_res if isinstance(exclude_dirs_res, list)\
+                           else [exclude_dirs_res,] # type: List[Pattern]
+    exclude_dirs_re_list.append(DOT_GIT_RE)
     for (dirpath, dirnames, filenames) in os.walk(base_dir):
         assert dirpath.startswith(base_dir)
         rel_dirpath = dirpath[len(base_dir)+1:]
@@ -156,7 +159,7 @@ def move_current_files_local_fs(resource_name,
         for (i, dir_name) in enumerate(dirnames):
             abs_dirpath = join(dirpath, dir_name)
             rel_dirpath = abs_dirpath[len(base_dir)+1:]
-            for exclude_dirs_re in exclude_dirs_res:
+            for exclude_dirs_re in exclude_dirs_re_list:
                 if exclude_dirs_re.match(rel_dirpath):
                     skip.append(i)
                     if verbose:

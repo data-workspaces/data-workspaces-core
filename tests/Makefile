@@ -5,15 +5,16 @@ DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 help:
 	@echo targets are: test clean mypy help install-rclone-deb
 
-UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
+#UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
+UNIT_TESTS=test_git_utils test_move_results test_snapshots test_file_utils test_hashtree
 
-MYPY_RESOURCES=git_resource.py hashtree.py
+MYPY_RESOURCES=git_resource.py hashtree.py local_file_resource.py
 MYPY_APIS=lineage.py
 MYPY_KITS=scikit_learn.py
 
 test: clean mypy pyflakes
-#	./testcli.sh --batch
-#	python -m unittest $(UNIT_TESTS)
+	#	./testcli.sh --batch
+	python -m unittest $(UNIT_TESTS)
 
 mypy:
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py

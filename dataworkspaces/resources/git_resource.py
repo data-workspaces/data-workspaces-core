@@ -68,19 +68,8 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
             'local_path':self.local_path
         }
 
-    def validate_subpath_exists(self, subpath):
-        """Validate that the subpath is valid within this
-        resource. Default implementation checks the local
-        filesystem if any. If the resource is remote-only,
-        then the subclass should override this method to
-        check on the remote side.
-        """
-        lp = self.get_local_path_if_any()
-        if lp is not None:
-            path = join(lp, subpath)
-            if not exists(path): # use exists() instead of isdir() as subpath could be a file
-                raise ConfigurationError("Subpath %s does not exist for resource %s, expecting it at '%s'"%
-                                         (subpath, self.name, path))
+    def validate_subpath_exists(self, subpath:str) -> None:
+        super().validate_subpath_exists(subpath)
 
     def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
                         relative_path:str) -> None:

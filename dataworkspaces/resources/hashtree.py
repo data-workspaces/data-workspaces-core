@@ -276,16 +276,16 @@ def check_hashes(roothash:str, basedir_where_hashes_are_stored:str, local_dir:st
             fd.close()
     return True
 
-def generate_sha_signature(rsrcdir:str, localpath:str, ignore:List[str]=[]):
-    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_hash)
+def generate_sha_signature(rsrcdir:str, localpath:str, ignore:List[str]=[], verbose:bool=False) ->str:
+    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_hash, verbose=verbose)
 
-def check_sha_signature(hashval:str, rsrdir:str, localpath:str, ignore:List[str]=[]):
-    return check_hashes(hashval, rsrdir, localpath, ignore=ignore, hash_fun=compute_hash)
+def check_sha_signature(hashval:str, rsrdir:str, localpath:str, ignore:List[str]=[], verbose:bool=False) ->bool:
+    return check_hashes(hashval, rsrdir, localpath, ignore=ignore, hash_fun=compute_hash, verbose=verbose)
 
-def generate_size_signature(rsrcdir:str, localpath:str, ignore:List[str]=[]):
-    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_size)
+def generate_size_signature(rsrcdir:str, localpath:str, ignore:List[str]=[], verbose:bool=False) -> str:
+    return generate_hashes(rsrcdir, localpath, ignore=ignore, hash_fun=compute_size, verbose=verbose)
 
-def check_size_signature(hashval:str, rsrdir:str, localpath:str, ignore:List[str]=[]):
-    return check_hashes(hashval, rsrdir, localpath, ignore=ignore, hash_fun=compute_size)
+def check_size_signature(hashval:str, rsrdir:str, localpath:str, ignore:List[str]=[], verbose:bool=False) -> bool:
+    return check_hashes(hashval, rsrdir, localpath, ignore=ignore, hash_fun=compute_size, verbose=verbose)
 
 # Tests have been moved to tests/test_hashtree.py

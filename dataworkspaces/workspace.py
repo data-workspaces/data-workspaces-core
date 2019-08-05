@@ -533,6 +533,20 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+    def validate_subpath_exists(self, subpath:str) -> None:
+        """Validate that the subpath is valid within this
+        resource. Default implementation checks the local
+        filesystem if any. If the resource is not file-based,
+        then the subclass should override this method to
+        implement the check.
+        """
+        lp = self.get_local_path_if_any()
+        if lp is not None:
+            path = os.path.join(lp, subpath)
+            if not os.path.exists(path): # use exists() instead of isdir() as subpath could be a file
+                raise ConfigurationError("Subpath %s does not exist for resource %s, expecting it at '%s'"%
+                                         (subpath, cast(Workspace,self).name, path))
+
     @abstractmethod
     def pull_precheck(self):
         """Perform any prechecks before updating this resource from the
@@ -1011,7 +1025,7 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def snapshot(self) -> Tuple[str, str]:
+    def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
         """Take the actual snapshot of the resource and return a tuple
         of two hash values, the first for comparison, and the second for restoring.
         The comparison hash value is the one we save in the snapshot manifest. The

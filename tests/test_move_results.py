@@ -17,7 +17,7 @@ try:
 except ImportError:
     sys.path.append(os.path.abspath(".."))
 
-from dataworkspaces.resources.snapshot_utils import \
+from dataworkspaces.utils.snapshot_utils import \
     move_current_files_local_fs, make_re_pattern_for_dir_template,\
     expand_dir_template
 from dataworkspaces.resources.git_resource import \
