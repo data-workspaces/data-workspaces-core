@@ -243,7 +243,9 @@ def local_files(ctx, role, name, path, compute_hash):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
-    add_command('file', role, name, ns.workspace_dir, ns.batch, ns.verbose, path, compute_hash)
+    path = abspath(expanduser(path))
+    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    add_command('file', role, name, workspace, path, compute_hash)
 
 add.add_command(local_files)
 
@@ -270,7 +272,8 @@ def rclone(ctx, role, name, config, compute_hash, source, dest):
     if re.match(rclone_re, source) == None:
         raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath")
     dest = abspath(expanduser(dest))
-    add_command('rclone', role, name, ns.workspace_dir, ns.batch, ns.verbose, source, dest, config, compute_hash)
+    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    add_command('rclone', role, name, workspace, source, dest, config, compute_hash)
 
 add.add_command(rclone)
 

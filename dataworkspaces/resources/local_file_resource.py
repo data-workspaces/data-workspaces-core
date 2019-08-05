@@ -162,7 +162,7 @@ class LocalFileFactory(ResourceFactory):
             assert workspace_path is not None
             hash_path = join(workspace_path, _relative_rsrc_dir_for_git_workspace(role, name))
             try:
-                os.makedirs(self.rsrcdir)
+                os.makedirs(hash_path)
                 with open(os.path.join(hash_path, 'dummy.txt'), 'w') as f:
                     f.write("Placeholder to ensure directory is added to git\n")
                 call_subprocess([GIT_EXE_PATH, 'add',
@@ -187,6 +187,9 @@ class LocalFileFactory(ResourceFactory):
         return LocalFileResource(params['name'], params['role'], workspace, params['local_path'],
                                  compute_hash=params['compute_hash'])
 
+    def has_local_state(self) -> bool:
+        return True
+
     def clone(self, params:JSONDict, workspace:Workspace) -> LocalStateResourceMixin:
         """Instantiate a resource that was created remotely. We need to verify that
         the local copy of the data exists -- we are not responsible for making certain
@@ -205,6 +208,6 @@ class LocalFileFactory(ResourceFactory):
                 os.mkdir(non_git_hashes)
         return self.from_json(params, local_params, workspace)
 
-    def suggest_name(self, workspace, local_path):
+    def suggest_name(self, workspace, local_path, compute_hash):
         return os.path.basename(local_path)
 

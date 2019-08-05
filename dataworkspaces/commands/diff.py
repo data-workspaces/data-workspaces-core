@@ -44,11 +44,11 @@ def diff_command(workspace:Workspace, snapshot_or_tag1:str, snapshot_or_tag2:str
         raise ConfigurationError("Diff command not supported for workspace %s as backend does not support snapshots"%
                                  workspace.name)
     md1 = workspace.get_snapshot_by_tag_or_hash(snapshot_or_tag1)
-    manifest1 = workspace.get_snapshot_manifest(md1.hashval)
+    manifest1 = {r['name']:r for r in workspace.get_snapshot_manifest(md1.hashval)}
     snstr1 = "%s, tags %s" % (md1.hashval, ','.join(md1.tags)) if len(md1.tags)>0 else md1.hashval
     sn1_names = frozenset([n for n in manifest1.keys()])
     md2 = workspace.get_snapshot_by_tag_or_hash(snapshot_or_tag2)
-    manifest2 = workspace.get_snapshot_manifest(md2.hashval)
+    manifest2 = {r['name']:r for r in workspace.get_snapshot_manifest(md2.hashval)}
     snstr2 = "%s, tags %s" % (md2.hashval, ','.join(md2.tags)) if len(md2.tags)>0 else md2.hashval
     sn2_names = frozenset([n for n in manifest2.keys()])
 

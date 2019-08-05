@@ -11,6 +11,10 @@ from os.path import join
 import shutil
 import subprocess
 
+
+# If set to True, by --keep-outputs option, leave the output data
+KEEP_OUTPUTS=False
+
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR,'workspace')
 CODE_DIR=join(WS_DIR, 'code')
@@ -32,9 +36,8 @@ class BaseCase(unittest.TestCase):
         self.dws=find_exe("dws", "Make sure you have enabled your python virtual environment")
 
     def tearDown(self):
-        if os.path.exists(TEMPDIR):
+        if os.path.exists(TEMPDIR) and not KEEP_OUTPUTS:
             shutil.rmtree(TEMPDIR)
-        #pass
 
     def _run_dws(self, dws_args, cwd=WS_DIR, env=None):
         command = self.dws + ' --verbose --batch '+ ' '.join(dws_args)
@@ -101,4 +104,8 @@ class TestSnapshots(BaseCase):
             self.fail("Did not get an error when calling snapshot for tag S1 a second time")
 
 if __name__ == '__main__':
+    if len(sys.argv)>1 and sys.argv[1]=='--keep-outputs':
+        KEEP_OUTPUTS=True
+        del sys.argv[1]
+        print("--keep-outputs specified, will skip cleanup steps")
     unittest.main()

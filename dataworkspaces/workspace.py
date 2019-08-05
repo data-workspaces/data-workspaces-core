@@ -275,6 +275,19 @@ class Workspace(metaclass=ABCMeta):
             if f.has_local_state():
                 yield name
 
+    def get_names_for_resources_that_need_to_be_cloned(self) -> Iterable[str]:
+        """Find all the resources that have local state, but no local parameters
+        (not even an empty dict). These needed to be cloned. This is to be
+        called during the pull() command.
+        """
+        for name in self.get_resource_names():
+            params = self._get_resource_params(name)
+            resource_type = params['resource_type']
+            f = _get_resource_factory_by_resource_type(resource_type)
+            local_params = self._get_resource_local_params(name)
+            if f.has_local_state() and local_params is None:
+                yield name
+
     def validate_resource_name(self, resource_name:str, subpath:Optional[str]=None,
                                expected_role:Optional[str]=None) -> None:
         """Validate that the given resource name and optional subpath
@@ -875,7 +888,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                 cast(FileResourceMixin, r).results_move_current_files(rel_dest_root, exclude_files,
                                                                       exclude_dirs_re)
 
-        manifest = {}
+        manifest = []
         map_of_restore_hashes = {} # type: Dict[str,Optional[str]]
         # now take the actual snapshots
         for r in current_resources:
@@ -884,8 +897,9 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
             else:
                 (compare_hash, restore_hash) = (None, None)
             map_of_restore_hashes[r.name] = restore_hash
-            manifest[r.name] = cast(Workspace, self)._get_resource_params(r.name)
-            manifest[r.name]['hash'] = compare_hash
+            entry = cast(Workspace, self)._get_resource_params(r.name)
+            entry['hash'] = compare_hash
+            manifest.append(entry)
         manifest_bytes = json.dumps(manifest, indent=2).encode('utf-8')
         manifest_hash = hash_bytes(manifest_bytes)
 
