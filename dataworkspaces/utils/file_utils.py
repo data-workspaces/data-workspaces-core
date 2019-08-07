@@ -4,8 +4,9 @@ File-related utilities
 """
 
 import os
-from os.path import dirname, isdir
+from os.path import dirname, isdir, abspath, expanduser, exists
 import shutil
+import click
 
 from dataworkspaces.errors import ConfigurationError
 
@@ -41,3 +42,22 @@ def safe_rename(src:str, dest:str) -> None:
             raise ConfigurationError("Unable to copy %s to %s: %s"%
                                      (src, dest, e)) from e
 
+
+class LocalPathType(click.Path):
+    """A subclass of click's Path input parameter type used to validate a local path
+    where we are going to put a resource. The path does not necessarily exist yet, but
+    we need to validate that the parent directory exists and is writable.
+    """
+    def __init__(self):
+        super().__init__(exists=False, file_okay=False, dir_okay=True, writable=True)
+
+    def convert(self, value, param, ctx):
+        rv = super().convert(value, param, ctx)
+        parent = dirname(rv)
+        if not exists(parent):
+            self.fail('%s "%s" does not exist.' % (self.path_type, parent), param, ctx)
+        if not isdir(parent):
+            self.fail('%s "%s" is a file.' % (self.path_type, parent), param, ctx)
+        if not os.access(parent, os.W_OK):
+            self.fail('%s "%s" is not writable.' % (self.path_type, parent), param, ctx)
+        return abspath(expanduser(rv))

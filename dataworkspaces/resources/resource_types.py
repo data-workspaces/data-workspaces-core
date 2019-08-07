@@ -10,12 +10,12 @@ def register_resource_type(scheme, factory):
     global RESOURCE_TYPES
     RESOURCE_TYPES[scheme] = factory
 
-from ..resources.git_resource import GitRepoFactory, GitRepoSubdirFactory
+from dataworkspaces.resources.git_resource import GitRepoFactory, GitRepoSubdirFactory
 register_resource_type('git', GitRepoFactory)
 register_resource_type('git-subdirectory', GitRepoSubdirFactory)
 
-from ..resources.local_file_resource import LocalFileFactory
+from dataworkspaces.resources.local_file_resource import LocalFileFactory
 register_resource_type('file', LocalFileFactory)
 
-from ..resources.rclone_resource import RcloneFactory
+from dataworkspaces.resources.rclone_resource import RcloneFactory
 register_resource_type('rclone', RcloneFactory)

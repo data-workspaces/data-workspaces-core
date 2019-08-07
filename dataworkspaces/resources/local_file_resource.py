@@ -36,7 +36,8 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
             # if the workspace is a git repo, then we can store our
             # hash files there.
             self.rsrcdir = os.path.join(workspace.workspace_dir,
-                                        _relative_rsrc_dir_for_git_workspace(self.role, self.name))
+                                        _relative_rsrc_dir_for_git_workspace(self.role,
+                                                                             self.name))
         else:
             # If the workspace is not a git repo, we store the hash
             # files under the local path. Note that this is not going

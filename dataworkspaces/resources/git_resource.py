@@ -28,7 +28,7 @@ from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
     SnapshotResourceMixin, JSONDict
 import dataworkspaces.backends.git as git_backend
-from dataworkspaces.resources.resource import LocalPathType
+from dataworkspaces.utils.file_utils import LocalPathType
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
@@ -301,7 +301,6 @@ class GitRepoFactory(ResourceFactory):
         """Instantiate a resource object from the add command's
         arguments"""
         workspace.validate_local_path_for_resource(name, local_path)
-        validate_git_fat_in_path_if_needed(local_path)
         lpr = realpath(local_path)
         if not is_git_repo(local_path):
             if isinstance(workspace, git_backend.Workspace) and \
@@ -311,10 +310,10 @@ class GitRepoFactory(ResourceFactory):
                 elif read_only:
                     raise ConfigurationError("The --read-only parameter is only valid for separate git repositories, not subdirectories.")
                 return GitRepoSubdirFactory().from_command_line(role, name,
-                                                                workspace, workspace.batch, workspace.verbose,
-                                                                local_path)
+                                                                workspace, local_path)
             else:
                 raise ConfigurationError(local_path + ' is not a git repository')
+        validate_git_fat_in_path_if_needed(local_path)
         remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
         (current, others) = get_branch_info(local_path, workspace.verbose)
         if branch!=current and branch not in others:
@@ -631,6 +630,7 @@ class GitRepoSubdirFactory(ResourceFactory):
                                 local_path)
         lpr = realpath(local_path)
         workspace_dir = _get_workspace_dir_for_git_backend(workspace)
+        validate_git_fat_in_path_if_needed(workspace_dir)
         wdr = realpath(workspace_dir)
         if not lpr.startswith(wdr):
             raise ConfigurationError("Git subdirectories can only be used as resources when under the workspace repo.")

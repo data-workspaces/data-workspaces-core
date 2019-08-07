@@ -326,8 +326,8 @@ class Workspace(metaclass=ABCMeta):
                r.get_local_path_if_any() is None:
                 continue
             other_real_path = os.path.realpath(r.get_local_path_if_any())
-            if other_real_path.startswith(real_local_path) or \
-               real_local_path.startswith(other_real_path):
+            common = os.path.commonpath([real_local_path, other_real_path])
+            if other_real_path==common or real_local_path==common:
                 raise ConfigurationError("Proposed path %s for resource %s, conflicts with local path %s for resource %s"%
                                          (proposed_local_path, proposed_resource_name,
                                           r.get_local_path_if_any(), r.name))

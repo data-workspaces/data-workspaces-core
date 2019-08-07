@@ -2,31 +2,32 @@
 """
 Resource for files copied in by rclone 
 """
-from errno import EEXIST
 import os
 import os.path 
 import stat
-import shutil
+from typing import Tuple, List, Set, Pattern, Optional
+import json
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.utils.subprocess_utils import call_subprocess
-from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
-from .resource import Resource, ResourceFactory
-from . import hashtree
+from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
+    FileResourceMixin, SnapshotResourceMixin, JSONDict, ResourceRoles, ResourceFactory
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
+from dataworkspaces.third_party.rclone import RClone
 
-from . import rclone
-
-LOCAL_FILE = 'rclone'
+RCLONE_RESOURCE_TYPE = 'rclone'
 
 """
 dws add rclone [options] remote local
 
 See 
 """
-class RcloneResource(Resource):
-    def __init__(self, name, role, workspace_dir, remote_origin, local_path, config=None, compute_hash=False, ignore=[], verbose=False):
-        super().__init__(LOCAL_FILE, name, role, workspace_dir)
+
+
+class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
+    def __init__(self, name:str, role:str, workspace:Workspace,
+                 remote_origin:str, local_path:str, config:Optional[str]=None,
+                 compute_hash:bool=False, ignore:List[str]=[], verbose:bool=False):
+        super().__init__(RCLONE_RESOURCE_TYPE, name, role, workspace)
         (self.remote_name, rpath) = remote_origin.split(':')
         self.remote_path = os.path.abspath(rpath)
         self.remote_origin = self.remote_name + ':' + self.remote_path
@@ -36,85 +37,80 @@ class RcloneResource(Resource):
         self.verbose = verbose
         self.config = config
         if config:
-            self.rclone = rclone.RClone(cfgfile=self.config)
+            self.rclone = RClone(cfgfile=self.config)
         else:
-            self.rclone = rclone.RClone()
+            self.rclone = RClone()
 
-        self.rsrcdir = os.path.abspath(self.workspace_dir + '/.dataworkspace/' + LOCAL_FILE + '/' + self.role + '/' + self.name)
-        self.rsrcdir_relative = '.dataworkspace/' + LOCAL_FILE + '/' + self.role + '/' + self.name
+    def get_params(self) -> JSONDict:
+        return {
+            'resource_type':self.resource_type,
+            'name':self.name,
+            'role':self.role,
+            'remote_origin':self.remote_origin,
+            'local_path':self.local_path,
+            'config':self.config,
+            'compute_hash':self.compute_hash
+        }
 
-    def to_json(self):
-        d = super().to_json()
-        d['remote_origin'] = self.remote_origin
-        d['local_path'] = self.local_path
-        d['config'] = self.config
-        d['compute_hash'] = self.compute_hash
-        return d
-
-    def local_params_to_json(self):
-        return {'local_path' : self.local_path,
-                'remote_origin' : self.remote_origin,
-                'config' : self.config,
-                'compute_hash' : self.compute_hash }
-
-    def get_local_path_if_any(self):
+    def get_local_path_if_any(self) -> str:
         return self.local_path
-    
-    def add_prechecks(self):
-        # if not(os.path.isdir(self.local_path)):
-        #    raise ConfigurationError(self.local_path + ' does not exist')
-        if os.path.exists(self.local_path) and not(os.access(self.local_path, os.W_OK)): 
-            raise ConfigurationError(self.local_path + ' does not have write permission')
-        if os.path.realpath(self.local_path)==os.path.realpath(self.workspace_dir):
-            raise ConfigurationError("Cannot add the entire workspace as a file resource")
-        known_remotes = self.rclone.listremotes()
-        if self.remote_name not in known_remotes:
-            raise ConfigurationError("Remote '" + self.remote_name + "' not found by rclone")
+
+    def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
+                                   exclude_dirs_re:Pattern) -> None:
+        move_current_files_local_fs(self.name, self.local_path, rel_dest_root,
+                                    exclude_files, exclude_dirs_re,
+                                    verbose=self.workspace.verbose)
+
+    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+        """save JSON results data to the specified path in the resource.
+        """
+        assert self.role==ResourceRoles.RESULTS
+        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
+        parent_dir = os.path.dirname(abs_dest_path)
+        if not os.path.isdir(parent_dir):
+            os.makedirs(parent_dir)
+        with open(abs_dest_path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def get_local_params(self) -> JSONDict:
+        return {} # TODO: local filepath can override global path
+
+    def pull_precheck(self) -> None:
+        """Nothing to do, since we donot support sync.
+        TODO: Support pulling from remote
+        """
+        pass
+
+    def pull(self) -> None:
+        """Nothing to do, since we donot support sync.
+        TODO: Support pulling from remote
+        """
+        pass
+
+    def push_precheck(self) -> None:
+        """Nothing to do, since we donot support sync.
+        """
+        pass
+
+    def push(self) -> None:
+        """Nothing to do, since we donot support sync.
+        """
+        pass
+
+
         
     def add(self):
         print("rclone: Add is called")
         self.add_from_remote()
 
-    def add_from_remote(self):
-        print("In rclone:add")
-        if not (os.path.exists(self.local_path)):
-            os.makedirs(self.local_path)
-        if not (os.path.exists(self.rsrcdir)):
-            try:
-                os.makedirs(self.rsrcdir)
-                with open(os.path.join(self.rsrcdir, 'dummy.txt'), 'w') as f:
-                    f.write("Placeholder to ensure directory is added to git\n")
-                call_subprocess([GIT_EXE_PATH, 'add',
-                                 self.rsrcdir_relative],
-                                        cwd=self.workspace_dir)
-                call_subprocess([GIT_EXE_PATH, 'commit', '-m',
-                                 "Adding resource %s" % self.name],
-                                        cwd=self.workspace_dir)
-            except OSError as exc:
-                if exc.errno == EEXIST and os.path.isdir(self.rsrcdir):
-                    pass
-                else: raise
-        ret = self.rclone.copy(self.remote_origin, self.local_path)
-        if ret['code'] != 0:
-            raise Exception("rclone copy raised error %d: %s" % (ret['code'], ret['err']))
-        # mark the files as readonly
-        print('Marking files as readonly')
-        for (dirpath, dirnames, filenames) in os.walk(self.local_path):
-            for f_name in filenames:
-                abspath = os.path.abspath(os.path.join(dirpath, f_name))
-                mode = os.stat(abspath)[stat.ST_MODE]
-                os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
-    def snapshot_prechecks(self):
+
+    def snapshot_precheck(self) -> None:
         pass
 
-
-    def results_move_current_files(self, rel_dest_root, exclude_files,
-                                   exclude_dirs_re):
-        move_current_files_local_fs(self.name, self.local_path, rel_dest_root, exclude_files, exclude_dirs_re) 
-
-    def snapshot(self):
-        print("In snapshot: ", self.remote_name,  self.remote_path, self.local_path)
+    def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
+        if self.workspace.verbose:
+            print("In snapshot: ", self.remote_name,  self.remote_path, self.local_path)
         if self.compute_hash:
             (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way']) 
         else:
@@ -122,20 +118,7 @@ class RcloneResource(Resource):
         print('Snapshot returns ', ret, out)
         return (ret, None) # None for the restore hash since we cannot restore
 
-    def add_results_file(self, temp_path, rel_dest_path):
-        """Move a results file from the temporary location to
-        the specified path in the resource. Caller responsible
-        for cleanup.
-        """
-        assert self.role==ResourceRoles.RESULTS
-        assert os.path.exists(temp_path)
-        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
-        parent_dir = os.path.dirname(abs_dest_path)
-        if not os.path.isdir(parent_dir):
-            os.makedirs(parent_dir)
-        shutil.copy(temp_path, abs_dest_path)
-
-    def restore_prechecks(self, hashval):
+    def restore_precheck(self, hashval):
         pass
         # rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)
         # if not rc:
@@ -144,32 +127,77 @@ class RcloneResource(Resource):
     def restore(self, hashval):
         pass # rclone-d files: do nothing to restore
 
+    def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
+                        relative_path:str) -> None:
+        pass
+
+    def validate_subpath_exists(self, subpath:str) -> None:
+        super().validate_subpath_exists(subpath)
+
     def __str__(self):
-        return "Rclone-d repo %s, locally copied in %s in role '%s'" % (self.remote_origin, self.local_path, self.role)
+        return "Rclone-d repo %s, locally copied in %s in role '%s'" %\
+                (self.remote_origin, self.local_path, self.role)
 
 class RcloneFactory(ResourceFactory):
-    def from_command_line(self, role, name, workspace_dir, batch, verbose,
+    def _add_prechecks(self, local_path, remote_path, config) -> RClone:
+        if os.path.exists(local_path) and not(os.access(local_path, os.W_OK)): 
+            raise ConfigurationError(local_path + ' does not have write permission')
+        if config:
+            rclone = RClone(cfgfile=config)
+        else:
+            rclone = RClone()
+        known_remotes = rclone.listremotes()
+        if remote_path not in known_remotes:
+            raise ConfigurationError("Remote '" + remote_path + "' not found by rclone")
+        return rclone
+
+    def _copy_from_remote(self, local_path, remote_origin, rclone):
+        if not (os.path.exists(local_path)):
+            os.makedirs(local_path)
+        ret = rclone.copy(remote_origin, local_path)
+        if ret['code'] != 0:
+            raise ConfigurationError("rclone copy raised error %d: %s" % (ret['code'], ret['err']))
+        # mark the files as readonly
+        print('Marking files as readonly')
+        for (dirpath, dirnames, filenames) in os.walk(local_path):
+            for f_name in filenames:
+                abspath = os.path.abspath(os.path.join(dirpath, f_name))
+                mode = os.stat(abspath)[stat.ST_MODE]
+                os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+
+    def from_command_line(self, role, name, workspace,
                           remote_path, local_path, config, compute_hash):
-        """Instantiate a resource object from the add command's arguments"""
-        return RcloneResource(name, role, workspace_dir, remote_path, local_path, config, compute_hash)
+        rclone = self._add_prechecks(local_path, remote_path, config)
+        self._copy_from_remote(local_path, remote_path, rclone)
+        return RcloneResource(name, role, workspace, remote_path, local_path, config,
+                              compute_hash)
 
-    def from_json(self, json_data, local_params, workspace_dir, batch, verbose):
+    def from_json(self, params:JSONDict, local_params:JSONDict,
+                  workspace:Workspace) -> RcloneResource:
         """Instantiate a resource object from the parsed resources.json file"""
-        assert json_data['resource_type']==LOCAL_FILE
-        return RcloneResource(json_data['name'],
-                                 json_data['role'],  
-                                 workspace_dir, json_data['remote_origin'], json_data['local_path'],
-                                 json_data['config'], json_data['compute_hash'])
+        assert params['resource_type']==RCLONE_RESOURCE_TYPE
+        return RcloneResource(params['name'],
+                                 params['role'],  
+                                 workspace,  params['remote_origin'], params['local_path'],
+                                 params['config'], params['compute_hash'])
 
-    def from_json_remote(self, json_data, workspace_dir, batch, verbose):
-        """Instantiate a resource object from the parsed resources.json file"""
-        assert json_data['resource_type']==LOCAL_FILE
-        # XXX need to convert local path to be stored in local params
-        return RcloneResource(json_data['name'],
-                                 json_data['role'], 
-                                 workspace_dir, json_data['remote_origin'], json_data['local_path'],
-                                 json_data['config'], json_data['compute_hash'])
+    def has_local_state(self) -> bool:
+        return True
 
-    def suggest_name(self, local_path, *args):
+    def clone(self, params:JSONDict, workspace:Workspace) -> LocalStateResourceMixin:
+        """Instantiate a resource that was created remotely. In this case, we will
+        copy from the remote origin.
+        """
+        local_path = params['local_path']
+        remote_path = params['remote_path']
+        config = params['config']
+        rclone = self._add_prechecks(local_path, remote_path, config)
+        self._copy_from_remote(local_path, remote_path, rclone)
+        return RcloneResource(params['name'], params['role'], workspace, remote_path, local_path, config,
+                              params['compute_hash'])
+
+
+
+    def suggest_name(self, local_path, compute_hash):
         return os.path.basename(local_path)
 

@@ -25,7 +25,7 @@ from dataworkspaces.commands.pull import pull_command
 from dataworkspaces.commands.clone import clone_command
 #from dataworkspaces.commands.run import run_command
 from dataworkspaces.commands.diff import diff_command
-from dataworkspaces.resources.resource import RESOURCE_ROLE_CHOICES, ResourceRoles
+from dataworkspaces.workspace import RESOURCE_ROLE_CHOICES, ResourceRoles
 from dataworkspaces.errors import BatchModeError
 from dataworkspaces.utils.param_utils import DEFAULT_HOSTNAME
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
