@@ -8,12 +8,15 @@ match a subpath and replace it, or there is no intersection.
 
 import datetime
 import os
-from os.path import join, exists, isdir, basename, realpath, abspath, expanduser
+from os.path import join, exists, isdir, basename, realpath, abspath, expanduser,\
+                    commonpath
 from typing import List, Any, Optional, Tuple, NamedTuple, Set, Dict, cast
 from copy import copy
 import json
 import shutil
 import sys
+from abc import ABCMeta, abstractmethod
+
 
 import click
 
@@ -26,6 +29,18 @@ class LineageConsistencyError(LineageError):
     have inconsistent versions.
     """
     pass
+
+class LineageConflictError(LineageError):
+    """Thrown when attempting to save lineage data at a different
+    granularity than other entries for the same resource.
+    """
+    pass
+
+class LineageNotFoundError(LineageError):
+    """Thrown when a requested entry is not found in the lineage store.
+    """
+    pass
+
 
 class JsonKeyError(InternalError):
     def __init__(self, classobj, key, filename=None):
@@ -68,6 +83,23 @@ class ResourceRef(NamedTuple):
     """
     name: str
     subpath: Optional[str] = None
+
+    def covers(self, other:ResourceRef) -> bool:
+        """Return True if this reference is strictly higher in
+        the hierarchy than the other reference. This happens when
+        both have the same resource name and:
+
+        1. this reference does not have a subpath and the other reference does, *or*
+        2. both references have subpaths and this one is a parent of the other
+        """
+        if self.name==other.name and \
+           ((self.subpath==None and other.subpath is not None) or
+            self.subpath!=other.subpath and
+            commonpath([self.subpath, other.subpath])==self.subpath):
+            return True
+        else:
+            return False
+
 
 
 class Certificate:
@@ -190,7 +222,7 @@ class ResourceCert:
                                                   filename=filename))
 
 
-class ResourceLineage:
+class ResourceLineage(metaclass=ABCMeta):
     """Base class for the lineage of a resource, either a step that wrote it
     or a source data snapshot
     """
@@ -237,12 +269,13 @@ class ResourceLineage:
         """
         raise NotImplementedError(self.__class__.__name__)
 
+    @abstractmethod
     def get_subpaths_for_resource(self, resource_name:str) -> Set[Optional[str]]:
         """Return a set of all subpaths for this resource. For the step
         lineage, this will look at the outputs. For the source data lineage,
         this will just return a set containing one path.
         """
-        raise NotImplementedError(self.__class__.__name__)
+        pass
 
     def replace_certificate(self, old_rc:ResourceCert, new_rc:ResourceCert) -> None:
         """Replace the old certificate with the new one. This is used to
@@ -825,6 +858,216 @@ class ResourceLineages:
             lineage for lineage in self.lineages
             if lineage.get_resource_cert_for_resource(ref) is None
         ]
+
+
+class LineageStore(metaclass=ABCMeta):
+    """Abstract interface for storing lineage data. This can have mutiple
+    impelementations. Workspaces that support lineage should subclass from
+    this.
+
+    The :instance: parameter common to all methods represents the particular workspace copy or
+    workflow instance that is running. For the git-based backend, this defaults to the hostname.
+    """
+    @abstractmethod
+    def store_entry(self, instance:str, ref:ResourceRef, lineage:ResourceLineage) -> None:
+        """Store the specified lineage object at the specific reference for the
+        workspace instance. This should throw a LineageConflictError if it
+        would cover an existing entry or an existing entry would cover this
+        resource.
+
+        The lineage store is not responsible for verifying that the ref is indeed
+        associated with the lineage object -- that is the responsbility of the caller.
+        A given lineage object may be stored to multiple refs (e.g. a step with multiple
+        outputs).
+        """
+        pass
+
+    @abstractmethod
+    def retrieve_entry(self, instance:str, ref:ResourceRef) -> ResourceLineage:
+        """Retrieve the specified entry. If an exact match is not found,
+        return an entry that covers the specified ref. If still not match
+        is found, raise a LineageNotFoundError.
+        """
+        pass
+
+    @abstractmethod
+    def has_entry(self, instance:str, ref:ResourceRef, include_covers:bool=True) -> bool:
+        """Return True if the specified lineage exists in the store.
+        If include_covers is True and there isn't an exact match,
+        also return True if there exists a cover for this reference in the store.
+        """
+        pass
+
+    @abstractmethod
+    def clear_entry(self, instance:str, ref:ResourceRef) -> None:
+        """Clear any entry at the specified resource reference as well as any
+        entries covered by this reference. 
+        """
+        pass
+
+    @abstractmethod
+    def snapshot_lineage(self, instance:str, snapshot_hash:str,
+                         resource_names:List[str]) -> None:
+        """Save the current lineage data for the specified snapshot.
+        Only the specified resources are processed. If there is no
+        lineage available for a given resource, an empty entry should
+        be saved, so that restoring will clear-out any existing lineage.
+        """
+        pass
+
+    @abstractmethod
+    def restore_lineage(self, instance:str, snapshot_hash:str,
+                        resources_to_restore:List[str]) -> None:
+        """Restore the lineage for the specified resources from the specified snapshot.
+        Any existing entries for the specified resources should first be cleared.
+        Then, any entries for those resources copied to the current lineage.
+        If a resource has not entries, that is fine, it remains in the cleared
+        (unknown) state.
+        """
+        pass
+
+    def get_lineage_for_resource(self, instance:str, resource_name:str) -> \
+          Tuple[List[ResourceLineage], bool]:
+        """Return a list of all transitive lineage for the specified
+        resource and a boolean indicating whether the lineage is complete
+        """
+        pass # XXX: need to implement on top of api
+
+
+class FileLineageStore(LineageStore):
+    """Store lineage date on the local filesystem.
+    """
+    def __init__(self, instance:str, current_lineage_path:str, snapshot_lineage_path:str):
+        """:current_lineage_path: is private to the instance.
+
+        :snapshot_lineage_path: should be replicated/visible to all instances
+        of the workspace.
+
+        We pass in :instance: to the constructor as this implementation works against
+        local state only and the instance parameters of the methods must all match
+        this instance.
+        """
+        self.instance = instance
+        self.current_lineage_path = current_lineage_path
+        self.snapshot_lineage_path = snapshot_lineage_path
+
+    def _parse_rfile(self, resource_name:str, rfile_path:str) -> Dict[ResourceRef, ResourceLineage]:
+        with open(rfile_path, 'r') as f:
+            data = json.load(f)
+        assert isinstance(data, list)
+        # For backward compatibility, the resource file is a list of lineages rather than a map from
+        # refs to lineages. We need to recreate the map.
+        # TODO: support reading/writing a new format that uses the map directly
+        lineages = [ResourceLineage.from_json(r, rfile_path) for r in data]
+        mapping = {} # type: Dict[ResourceRef, ResourceLineage]
+        for l in lineages:
+            subpaths = l.get_subpaths_for_resource(resource_name)
+            for subpath in subpaths:
+                mapping[ResourceRef(resource_name, subpath)] = l
+        return mapping
+
+    def _save_rfile(self, resource_name:str, rfile_path:str,
+                    lineage_map:Dict[ResourceRef, ResourceLineage]) -> None:
+        # for backward compability, we just save the lineage values
+        with open(rfile_path, 'w') as f:
+            json.dump([r.to_json() for r in lineage_map.values()])
+
+    def store_entry(self, instance:str, ref:ResourceRef, lineage:ResourceLineage) -> None:
+        assert instance==self.instance
+        rfile = join(self.current_lineage_path, ref.name+'.json')
+        if exists(rfile):
+            # case where we need to merge into data
+            mapping = self._parse_rfile(rfile)
+            # check for conflicts
+            for other_ref in mapping.keys():
+                if other_ref==ref:
+                    break # got an exact match, there won't be conflicts
+                elif other_ref.covers(ref):
+                    raise LineageConflictError("Cannot store new lineage data at %s: existing lineage data %s is a parent path"%
+                                               (ref, other_ref))
+                elif ref.covers(other_ref):
+                    # TODO: Consider whether we can allow conflicts in this case.
+                    raise LineageConflictError("Cannot store new lineage data at %s: existing lineage data %s is a child path"%
+                                               (ref, other_ref))
+            mapping[ref] = lineage
+        else:
+            mapping = {ref:lineage}
+        self._save_rfile(ref.name, rfile, mapping)
+
+    def retrieve_entry(self, instance:str, ref:ResourceRef) -> ResourceLineage:
+        assert instance==self.instance
+        rfile = join(self.current_lineage_path, ref.name+'.json')
+        if not exists(rfile):
+            raise LineageNotFoundError("No lineage exists for %s"% ref)
+        mapping = self._parse_rfile(ref.name, rfile)
+        for (other_ref, lineage) in mapping.items():
+            if ref==other_ref or other_ref.covers(ref):
+                return lineage
+        raise LineageNotFoundError("No lineage exists for %s" % ref)
+
+    def has_entry(self, instance:str, ref:ResourceRef, include_covers:bool=True) -> bool:
+        assert instance==self.instance
+        rfile = join(self.current_lineage_path, ref.name+'.json')
+        if not exists(rfile):
+            return False
+        mapping = self._parse_rfile(ref.name, rfile)
+        for (other_ref, lineage) in mapping.items():
+            if ref==other_ref or (include_covers and other_ref.covers(ref)):
+                return True
+        return False
+
+    def clear_entry(self, instance:str, ref:ResourceRef) -> None:
+        assert instance==self.instance
+        rfile = join(self.current_lineage_path, ref.name+'.json')
+        if ref.subpath is None:
+            # special case when its the entire file
+            if exists(rfile):
+                os.remove(rfile)
+        else:
+            mapping = self._parse_rfile(ref.name, rfile)
+            keys = [k for k in mapping.keys()]
+            changed = False
+            for key in keys:
+                if ref==key or ref.covers(key):
+                    del mapping[key]
+                    changed = True
+            if changed:
+                self._save_rfile(ref.name, rfile, mapping)
+
+    def snapshot_lineage(self, instance:str, snapshot_hash:str,
+                         resource_names:List[str]) -> None:
+        assert instance==self.instance
+        snapshot_dir = self.join(self.snapshot_lineage_path, snapshot_hash)
+        if not exists(snapshot_dir):
+            os.mkdirs(snapshot_dir)
+        if len(resource_names)==0:
+            with open(join(snapshot_dir, 'placeholder.txt'), 'w') as f:
+                f.write("No resources for lineage snapshot %s\n"% snapshot_hash)
+                return
+        for resource_name in resource_names:
+            rfile = join(self.current_lineage_path, resource_name+'.json')
+            if exists(rfile):
+                shutil.copyfile(rfile, join(snapshot_dir, resource_name+'.json'))
+            else:
+                self._save_rfile(resource_name, join(snapshot_dir, resource_name+'.json'),
+                                 {})
+
+    def restore_lineage(self, instance:str, snapshot_hash:str,
+                        resources_to_restore:List[str]) -> None:
+        assert instance==self.instance
+        snapshot_dir = self.join(self.snapshot_lineage_path, snapshot_hash)
+        if not exists(snapshot_dir):
+            raise LineageNotFoundError("Did not find lineage data for snapshot %s" % snapshot_hash)
+        for resource_name in resources_to_restore:
+            rfile = join(snapshot_dir, resource_name + '.json')
+            curr_rfile = join(self.current_lineage_path, resource_name + '.json')
+            if exists(rfile):
+                shutil.copyfile(rfile, curr_file)
+            elif exists(curr_rfile):
+                os.remove(curr_rfile) # if included in the restore, but no lineage data remove current
+        
+
+
 
 class LineageStoreCurrent:
     """Lineage store for the current state of the resources.
