@@ -9,12 +9,13 @@ match a subpath and replace it, or there is no intersection.
 import datetime
 import os
 from os.path import join, exists, basename, realpath, abspath, expanduser,\
-                    commonpath
-from typing import List, Any, Optional, Tuple, NamedTuple, Dict, Union, Iterable
+                    commonpath, dirname
+from typing import List, Any, Optional, Tuple, NamedTuple, Dict, Union, Iterable, cast
 import json
 import shutil
 import sys
 from abc import ABCMeta, abstractmethod
+from string import Template
 
 
 
@@ -295,39 +296,52 @@ def _check_for_step_dependency_conflicts(step_name, refs:List[ResourceRef]) -> N
 
 
 def _check_for_step_transitive_consistency(instance:str, step_name:str,
-                                           certs:List[Certificate],
+                                           refs:List[Certificate],
                                            store:'LineageStore') -> None:
-    """For a list of certs, either for input or code dependencies, check that (transitively) only one
+    """For a list of refs, either for input or code dependencies, check that (transitively) only one
     version of each unique ref is reference. Throws LineageConsistencyError if a mismatch
     is found or if a reference has already been overwritten.
-
-    Note that you need to create placeholders for the inputs before running this.
     """
-    transitive_certs = set(certs) # certs we have already processed or are in the to_process queue
-    to_process = [cert for cert in certs]
+    transitive_refs = set(certs) # certs we have already processed or are in the to_process queue
+    to_process = [ref for ref in refs]
+    print("Initial queue:") # XXX
+    for ref in to_process:
+        print("  %s" % ref) # XXX
+    print() # XXX
+    ref_to_cert = {} # type: Dict[ResourceRef, Certificate]
     while len(to_process)>0:
-        next_to_process = [] # type: List[Certificate]
+        next_to_process = [] # type: List[ref]
         for cert in to_process:
+            print("Processing %s" % cert) # XXX
             lineage = store.retrieve_entry(instance, cert.ref)
-            other_cert = lineage.get_cert_for_ref(cert.ref)
-            if other_cert is None:
+            if lineage is None:
                 raise LineageConsistencyError("Step %s transitively depends on %s, which is not in the lineage store"%
                                               (step_name, cert.ref))
-            if other_cert!=cert:
-                raise LineageConsistencyError("Step %s depends on two versions of %s: %s and %s"
-                                              %(step_name, cert.ref, other_cert, cert))
+            print("  lineage: %s" % (lineage.step_name if isinstance(lineage, StepLineage)
+                                                       else lineage)) # XXX
+            if cert.ref in ref_to_cert:
+                print("  Adding to ref_to_cert table") # XXX
+                other_cert = ref_to_cert[cert.ref]
+                if other_cert!=cert:
+                    raise LineageConsistencyError('Step %s (transitively) depends on %s which has two versions: %s and %s'%
+                                                  (step_name, cert.ref, cert, other_cert))
+            else:
+                ref_to_cert[cert.ref] = cert
             if isinstance(lineage, StepLineage):
                 for new_cert in lineage.get_input_certs():
-                    if new_cert not in transitive_certs:
-                        transitive_certs.add(new_cert)
+                    if new_cert not in transitive_refs:
+                        print("    Added input cert %s to queue" % new_cert) # XXX
+                        transitive_refs.add(new_cert)
                         next_to_process.append(new_cert)
+                    else:
+                        print("  Cert %s already processed or already in queue" % new_cert) # XXX
         to_process = next_to_process
 
 
 class StepLineage(ResourceLineage):
     __slots__ = ['step_name', 'start_time', 'parameters', 'input_resources',
-                 'code_resources',
-                 'output_resources', 'execution_time_seconds',
+                 'code_resources', 'output_resources',
+                 'outputs_by_resource', 'execution_time_seconds',
                  'command_line', 'run_from_directory']
     def __init__(self, step_name:str, start_time:datetime.datetime,
                  parameters:Dict[str, Any],
@@ -355,6 +369,9 @@ class StepLineage(ResourceLineage):
             else:
                 self.outputs_by_resource[rname] = [oc,]
 
+    def __str__(self):
+        return "StepLineage(step_name=%s,\n  input_resources=%s,\n  code_resources=%s,\n  output_resources=%s)" % \
+            (self.step_name, self.input_resources, self.code_resources, self.output_resources)
     @staticmethod
     def make_step_lineage(instance:str, step_name:str, start_time:datetime.datetime,
                           parameters:Dict[str, Any],
@@ -471,16 +488,17 @@ class StepLineage(ResourceLineage):
     def add_output(self, instance:str, store:'LineageStore',
                    ref:ResourceRef):
         # first, validate that this path is compatibile with what we already have
-        for cert in self.outputs_by_resource[ref.name]:
-            if cert.ref==ref:
-                raise LineageConflictError("Attempt to add %s as an output to step %s multiple times."
-                                           % (ref, self.step_name,))
-            elif cert.ref.covers(ref):
-                raise LineageConflictError("Error adding output %s to step %s: this is a subpath of %s"%
-                                           (ref, self.step_name, cert.ref))
-            elif ref.covers(cert.ref):
-                raise LineageConflictError("Error adding output %s to step %s: a subpath already exists in the outputs: %s"%
-                                           (ref, self.step_name, cert.ref))
+        if ref.name in self.outputs_by_resource:
+            for cert in self.outputs_by_resource[ref.name]:
+                if cert.ref==ref:
+                    raise LineageConflictError("Attempt to add %s as an output to step %s multiple times."
+                                               % (ref, self.step_name,))
+                elif cert.ref.covers(ref):
+                    raise LineageConflictError("Error adding output %s to step %s: this is a subpath of %s"%
+                                               (ref, self.step_name, cert.ref))
+                elif ref.covers(cert.ref):
+                    raise LineageConflictError("Error adding output %s to step %s: a subpath already exists in the outputs: %s"%
+                                               (ref, self.step_name, cert.ref))
         placeholder = store.get_placeholder_cert_for_output(instance, ref,
                                                             "Step %s at %s"%
                                                             (self.step_name,
@@ -759,6 +777,17 @@ class LineageStore(metaclass=ABCMeta):
         """
         pass # XXX: need to implement on top of api
 
+    @abstractmethod
+    def iterate_all(self, instance:str) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
+        """Iterate through the contents of the store
+        """
+        pass
+
+    @abstractmethod
+    def dump(self, instance:str) -> None:
+        """Print the current contents of the store (for debugging).
+        """
+        pass
 
 class FileLineageStore(LineageStore):
     """Store lineage data on the local filesystem.
@@ -930,7 +959,133 @@ class FileLineageStore(LineageStore):
             elif exists(curr_rfile):
                 os.remove(curr_rfile) # if included in the restore, but no lineage data remove current
 
+    def iterate_all(self, instance:str) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
+        """Iterate through the contents of the store
+        """
+        self._load_resource_cache()
+        for (rname, mapping) in self.resource_cache.items():
+            for (ref, lineage) in mapping.items():
+                yield (ref, lineage)
 
+
+    def dump(self, instance:str) -> None:
+        self._load_resource_cache()
+        def _indent(s, level, underline=None):
+            for line in s.split('\n'):
+                indented=" "*level + line
+                print(indented)
+                if underline is not None:
+                    print(" "*level + underline*len(line))
+        _indent("Lineage store", 2, "=")
+        for (rname, mapping) in self.resource_cache.items():
+            _indent("Resource %s"%rname, 4, "-")
+            for (ref, lineage) in mapping.items():
+                _indent(str(ref)+":", 6)
+                _indent(json.dumps(lineage.to_json(), indent=2), 8)
+        print()
+
+GRAPH_TEMPLATE_FILE=abspath(join(dirname(__file__),
+                                 '../third_party/lineage_graph_template.html'))
+
+def make_lineage_graph_for_visualization(instance:str, store:LineageStore, output_file:str,
+                                         width=1024, height=800) -> None:
+    next_node_id = 1
+    ref_nodes = {} # type: Dict[ref, int]
+    cert_nodes = {} # type: Dict[Certificate, int]
+    lineage_nodes = {} # type: Dict[str, int]
+    nodes = [] # type: List[Dict[str, Any]]
+    links = [] # type: List[Dict[str, Any]]
+
+    def ref_name(ref):
+        return ref.name if ref.subpath is None else ref.name + ":/" + ref.subpath
+    def cert_name(cert):
+        return ref_name(cert.ref) + ":" + \
+                (cert.hashval if isinstance(cert, HashCertificate) \
+                 else "version=%d"%cast(PlaceholderCertificate, cert).version)
+    def lineage_to_names(lineage):
+        if isinstance(lineage, StepLineage):
+            sname = "Step %s at %s" % (lineage.step_name, lineage.start_time)
+            return (sname, sname)
+        elif isinstance(lineage, SourceDataLineage):
+            return ("SourceData", cert_name(lineage.cert))
+        elif isinstance(lineage, CodeLineage):
+            return ("Code", cert_name(lineage.cert))
+        
+    for (ref, lineage) in store.iterate_all(instance):
+        if ref not in ref_nodes:
+            ref_node = {
+                "name": ref_name(ref),
+                "label": "Ref",
+                "id":next_node_id
+            }
+            nodes.append(ref_node)
+            ref_nodes[ref] = next_node_id
+            next_node_id += 1
+        cert = lineage.get_cert_for_ref(ref)
+        if cert not in cert_nodes:
+            c_node = {
+                "name": cert_name(cert),
+                "label":"Cert",
+                "id":next_node_id
+            }
+            nodes.append(c_node)
+            cert_nodes[cert] = next_node_id
+            next_node_id += 1
+        (sname, lname) = lineage_to_names(lineage)
+        if lname not in lineage_nodes:
+            l_node = {
+                "name":sname,
+                "label":"Lineage",
+                "id":next_node_id
+            }
+            nodes.append(l_node)
+            lineage_nodes[lname] = next_node_id
+            next_node_id += 1
+        links.append({'source':ref_nodes[ref],
+                      'target':cert_nodes[cert],
+                      'type':'CERT'})
+        links.append({'source':cert_nodes[cert],
+                      'target':lineage_nodes[lname],
+                      'type':'LINEAGE'})
+        if isinstance(lineage, StepLineage):
+            for icert in lineage.get_input_certs():
+                if icert not in cert_nodes:
+                    ic_node = {
+                        "name": cert_name(icert),
+                        "label":"Cert",
+                        "id":next_node_id
+                    }
+                    cert_nodes[icert] = next_node_id
+                    next_node_id += 1
+                    nodes.append(ic_node)
+                    if icert.ref not in ref_nodes:
+                        iref_node = {
+                            "name": ref_name(icert.ref),
+                            "label": "Ref",
+                            "id":next_node_id
+                        }
+                        nodes.append(iref_node)
+                        ref_nodes[icert.ref] = next_node_id
+                        next_node_id += 1
+                    links.append({
+                        'source':ref_nodes[icert.ref],
+                        'target':cert_nodes[icert],
+                        'type':"CERT"
+                    })
+                links.append({
+                    "source":lineage_nodes[lname],
+                    "target":cert_nodes[icert],
+                    "type": "INPUT"
+                })
+    if not exists(GRAPH_TEMPLATE_FILE):
+        raise InternalError("Could not find lineage graph template")
+    graph_str = json.dumps({"nodes":nodes, "links":links}, indent=2)
+    with open(GRAPH_TEMPLATE_FILE, 'r') as f, open(output_file, 'w') as g:
+        data = f.read()
+        t = Template(data)
+        g.write(t.substitute(LINEAGE_GRAPH=graph_str,
+                             WIDTH=str(width),
+                             HEIGHT=str(height)))
 
 
 def infer_step_name(argv=sys.argv):
