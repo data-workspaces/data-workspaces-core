@@ -119,13 +119,17 @@ class Certificate(metaclass=ABCMeta):
         ref = ResourceRef(obj['resource_name'], subpath=obj.get('subpath', None))
         cert_obj = obj['certificate']
         validate_json_keys(cert_obj, Certificate, ['cert_type',], filename=filename)
-        cert_type = obj['cert_type']
+        cert_type = cert_obj['cert_type']
         if cert_type == 'hash':
             validate_json_keys(cert_obj, HashCertificate, ['hashval', 'comment'], filename=filename)
             return HashCertificate(ref, cert_obj['hashval'], cert_obj['comment'])
         elif cert_type=='placeholder':
             validate_json_keys(cert_obj, PlaceholderCertificate, ['version', 'comment'], filename=filename)
-            return PlaceholderCertificate(ref, cert_obj['version'], cert_obj['comment'])
+            if cert_obj.get('is_output', False)==True:
+                return OutputPlaceholderCert(ref, cert_obj['version'],
+                                             cert_obj['comment'])
+            else:
+                return InputPlaceholderCert(ref, cert_obj['version'], cert_obj['comment'])
         else:
             raise JsonValueError(Certificate, 'cert_type', ['hash', 'placeholder'], cert_type)
 
@@ -176,17 +180,28 @@ class PlaceholderCertificate(Certificate):
     def __str__(self):
         return self.__repr__()
 
+    def create_hash_cert(self, hashval:str) -> HashCertificate:
+        return HashCertificate(ref=self.ref, hashval=hashval, comment=self.comment)
+
+
+class InputPlaceholderCert(PlaceholderCertificate):
+    """Variant of placeholder certificate created when we read from a resource
+    that has no lineage in the current store or when there is a prior has lineage
+    that might be out-of-date.
+    """
+    __slots__=()
     def __repr__(self):
-        return 'PlaceholderCertificate(ref=%s, version=%d, comment="%s")' % (self.ref, self.version, self.comment)
+        return 'InputPlaceholderCert(ref=%s, version=%d, comment="%s")' % (self.ref, self.version, self.comment)
 
     def __hash__(self):
-        return hash((self.ref, self.version),)
+        return hash((self.ref, self.version, False),)
 
     def __eq__(self, other) -> bool:
-        return isinstance(other, PlaceholderCertificate) and other.ref==self.ref and other.version==self.version
+        return isinstance(other, InputPlaceholderCert) and other.ref==self.ref \
+                   and other.version==self.version
 
     def __ne__(self, other) -> bool:
-        return (not isinstance(other, PlaceholderCertificate)) or other.ref!=self.ref or other.version!=self.version
+        return (not isinstance(other, InputPlaceholderCert)) or other.ref!=self.ref or other.version!=self.version
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -195,12 +210,43 @@ class PlaceholderCertificate(Certificate):
             "certificate": {
                 'cert_type':'placeholder',
                 'version':self.version,
-                'comment':self.comment
+                'comment':self.comment,
+                'is_ouput':False
             }
         }
 
-    def create_hash_cert(self, hashval:str) -> HashCertificate:
-        return HashCertificate(ref=self.ref, hashval=hashval, comment=self.comment)
+
+class OutputPlaceholderCert(PlaceholderCertificate):
+    """Variant of placeholder certificate created when we write to a resource
+    (via a step). This one is never compatible with a previous hash, while an
+    input placeholder cert might be compatible, if nothing has changed since the
+    last snapshot.
+    """
+    def __repr__(self):
+        return 'OutputPlaceholderCert(ref=%s, version=%d, comment="%s")' % (self.ref, self.version, self.comment)
+
+    def __hash__(self):
+        return hash((self.ref, self.version, True),)
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, OutputPlaceholderCert) and other.ref==self.ref \
+                   and other.version==self.version
+
+    def __ne__(self, other) -> bool:
+        return (not isinstance(other, OutputPlaceholderCert)) or other.ref!=self.ref or other.version!=self.version
+
+
+    def to_json(self) -> Dict[str, Any]:
+        return {
+            "resource_name":self.ref.name,
+            "subpath":self.ref.subpath,
+            "certificate": {
+                'cert_type':'placeholder',
+                'version':self.version,
+                'comment':self.comment,
+                'is_ouput':True
+            }
+        }
 
 
 class ResourceLineage(metaclass=ABCMeta):
@@ -289,52 +335,50 @@ def _check_for_step_dependency_conflicts(step_name, refs:List[ResourceRef]) -> N
                 elif ref.covers(other_ref):
                     raise LineageConflictError("Step %s has dependency on %s, which is a subpath of %s. Please use %s only." %
                                                (step_name, other_ref, ref, ref))
-                else:
-                    refs_by_resource[rname].append(ref)
+            refs_by_resource[rname].append(ref)
         else:
             refs_by_resource[rname] = [ref,]
 
 
 def _check_for_step_transitive_consistency(instance:str, step_name:str,
-                                           refs:List[Certificate],
+                                           refs:List[ResourceRef],
                                            store:'LineageStore') -> None:
-    """For a list of refs, either for input or code dependencies, check that (transitively) only one
-    version of each unique ref is reference. Throws LineageConsistencyError if a mismatch
+    """For a list of refs, either for input or code dependencies, check that (transitively)
+    only one version of each unique ref is reference. Throws LineageConsistencyError if a mismatch
     is found or if a reference has already been overwritten.
+
+    This is to be called before placeholders are created. A missing entry is going to become
+    a placeholder. We need to run *before* adding placeholders so that we do not
+    overwrite an older hash with a placeholder.
     """
-    transitive_refs = set(certs) # certs we have already processed or are in the to_process queue
     to_process = [ref for ref in refs]
-    print("Initial queue:") # XXX
-    for ref in to_process:
-        print("  %s" % ref) # XXX
-    print() # XXX
     ref_to_cert = {} # type: Dict[ResourceRef, Certificate]
     while len(to_process)>0:
-        next_to_process = [] # type: List[ref]
-        for cert in to_process:
-            print("Processing %s" % cert) # XXX
-            lineage = store.retrieve_entry(instance, cert.ref)
-            if lineage is None:
-                raise LineageConsistencyError("Step %s transitively depends on %s, which is not in the lineage store"%
-                                              (step_name, cert.ref))
-            print("  lineage: %s" % (lineage.step_name if isinstance(lineage, StepLineage)
-                                                       else lineage)) # XXX
-            if cert.ref in ref_to_cert:
-                print("  Adding to ref_to_cert table") # XXX
-                other_cert = ref_to_cert[cert.ref]
+        next_to_process = [] # type: List[ResourceRef]
+        for ref in to_process:
+            try:
+                lineage = store.retrieve_entry(instance, ref)
+            except LineageNotFoundError:
+                #Refis not yet in store, will be a placeholder
+                continue
+            cert = lineage.get_cert_for_ref(ref)
+            assert cert is not None
+            if ref in ref_to_cert:
+                other_cert = ref_to_cert[ref]
                 if other_cert!=cert:
                     raise LineageConsistencyError('Step %s (transitively) depends on %s which has two versions: %s and %s'%
-                                                  (step_name, cert.ref, cert, other_cert))
+                                                  (step_name, ref, cert, other_cert))
             else:
-                ref_to_cert[cert.ref] = cert
+                ref_to_cert[ref] = cert
             if isinstance(lineage, StepLineage):
-                for new_cert in lineage.get_input_certs():
-                    if new_cert not in transitive_refs:
-                        print("    Added input cert %s to queue" % new_cert) # XXX
-                        transitive_refs.add(new_cert)
-                        next_to_process.append(new_cert)
+                for input_cert in lineage.get_input_certs():
+                    if input_cert.ref in ref_to_cert:
+                        if input_cert!=ref_to_cert[input_cert.ref]:
+                            raise LineageConsistencyError('Step %s (transitively) depends on %s which has two versions: %s and %s'%
+                                                          (step_name, input_cert.ref, input_cert, ref_to_cert[input_cert.ref]))
                     else:
-                        print("  Cert %s already processed or already in queue" % new_cert) # XXX
+                        ref_to_cert[input_cert.ref] = input_cert
+                        next_to_process.append(input_cert.ref)
         to_process = next_to_process
 
 
@@ -387,25 +431,25 @@ class StepLineage(ResourceLineage):
         # verify that no dependecy covers another
         _check_for_step_dependency_conflicts(step_name, input_resource_refs)
         _check_for_step_dependency_conflicts(step_name, code_resource_refs)
+        # validate that only one dependent version for each input version
+        _check_for_step_transitive_consistency(instance, step_name, input_resource_refs,
+                                               lineage_store)
+        # for now, don't be strict and don't enforce for the code level
+        # _check_for_step_transitive_consistency(instance, step_name, code_resource_refs,
+        #                                        lambda sl: sl.code_resources,
+        #                                        lineage_store)
 
         # create placeholders for dependencies as needed
         input_certs = [
-            lineage_store.get_or_create_placeholder_cert(instance, ref,
-                                                         "Step %s at %s"% (step_name, start_time),
-                                                         for_code=False)
+            lineage_store.get_or_create_cert(instance, ref,
+                                             "Step %s at %s"% (step_name, start_time),
+                                             for_code=False)
                        for ref in input_resource_refs] # List[ResourceCert]
         code_certs = [
-            lineage_store.get_or_create_placeholder_cert(instance, ref,
-                                                         "Step %s at %s"% (step_name, start_time),
-                                                         for_code=True)
+            lineage_store.get_or_create_cert(instance, ref,
+                                             "Step %s at %s"% (step_name, start_time),
+                                             for_code=True)
                        for ref in code_resource_refs] # List[ResourceCert]
-        # validate that only one dependent version for each input version
-        _check_for_step_transitive_consistency(instance, step_name, input_certs,
-                                               lineage_store)
-        # for now, don't be strict and don't enforce for the code level
-        # _check_for_step_transitive_consistency(instance, step_name, code_certs,
-        #                                        lambda sl: sl.code_resources,
-        #                                        lineage_store)
 
         # if we got here, we didn't find any inconsistencies
         return StepLineage(step_name, start_time, parameters, input_certs, code_certs,
@@ -432,7 +476,7 @@ class StepLineage(ResourceLineage):
         return self.code_resources
 
     def replace_placeholders(self, hash_mapping:Dict[str, str]) -> bool:
-        has_substitutions = False
+        #has_substitutions = False
         has_resources_in_snapshot = False
         unmapped_placeholders = []
         # First substitute outputs. This is more complex due to the
@@ -452,7 +496,7 @@ class StepLineage(ResourceLineage):
                             found = True
                             break
                     assert found
-                    has_substitutions = True
+                    #has_substitutions = True
                 else:
                     unmapped_placeholders.append(cert)
         # inputs and code are easier
@@ -464,7 +508,7 @@ class StepLineage(ResourceLineage):
                 if cert.ref.name in hash_mapping:
                     new_cert = cert.create_hash_cert(hash_mapping[cert.ref.name])
                     self.input_resources[i] = new_cert
-                    has_substitutions = True
+                    #has_substitutions = True
                 else:
                     unmapped_placeholders.append(cert)
         for i in range(len(self.code_resources)):
@@ -475,14 +519,16 @@ class StepLineage(ResourceLineage):
                 if cert.ref.name in hash_mapping:
                     new_cert = cert.create_hash_cert(hash_mapping[cert.ref.name])
                     self.code_resources[i] = new_cert
-                    has_substitutions = True
+                    #has_substitutions = True
                 else:
                     unmapped_placeholders.append(cert)
 
         if has_resources_in_snapshot and len(unmapped_placeholders)>0:
             raise LineagePlaceHolderError("Lineage step %s will be included in snapshot, but has unmapped placeholders: %s"%
                                           (self.step_name, ', '.join([str(c) for c in unmapped_placeholders])))
-        return has_substitutions
+        # We alway return true, as a multi-output step may have been substituted for another step, but needs
+        # needs to be written separately for each output.
+        return True
 
 
     def add_output(self, instance:str, store:'LineageStore',
@@ -700,7 +746,7 @@ class LineageStore(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def replace_placeholders(self, instance:str, hash_mapping:Dict[str, str]) -> None:
+    def replace_placeholders(self, instance:str, hash_mapping:Dict[str, str], verbose:bool=False) -> None:
         """Replace any placeholder certificates associated with the specified resources
         with HashCertificate's that have the specified hash. This is done ahead of a snapshot.
         Throws a LineagePlaceHolderError if a placeholder is not replaced and would be included
@@ -720,15 +766,12 @@ class LineageStore(metaclass=ABCMeta):
         Only the specified resources are processed. If there is no
         lineage available for a given resource, an empty entry should
         be saved, so that restoring will clear-out any existing lineage.
-
-        If any of the resources to be snapshotted have a placeholder reference, a
-        LineagePlaceholderError exception should be thrown.
         """
         pass
 
     @abstractmethod
     def restore_lineage(self, instance:str, snapshot_hash:str,
-                        resources_to_restore:List[str]) -> None:
+                        resources_to_restore:List[str], vebose:bool=False) -> None:
         """Restore the lineage for the specified resources from the specified snapshot.
         Any existing entries for the specified resources should first be cleared.
         Then, any entries for those resources copied to the current lineage.
@@ -737,25 +780,25 @@ class LineageStore(metaclass=ABCMeta):
         """
         pass
 
-    def get_or_create_placeholder_cert(self, instance:str, ref:ResourceRef,
-                                       comment:str, for_code:bool=False) -> Certificate:
-        """If there is a placeholder lineage at the specified ref, then return it.
-        Otherwise, create a new placeholder with the specified comment and return that
+    def get_or_create_cert(self, instance:str, ref:ResourceRef,
+                           comment:str, for_code:bool=False) -> Certificate:
+        """If there is a lineage at the specified ref, then return the associated certificate.
+        Otherwise, create a new input placeholder with the specified comment and return that
         placeholder.
         """
         if self.has_entry(instance, ref):
             existing = self.retrieve_entry(instance, ref)
             cert = existing.get_cert_for_ref(ref)
             assert cert is not None
-            if isinstance(cert, PlaceholderCertificate):
-                return cert
-        new_cert = PlaceholderCertificate(ref, version=1, comment=comment)
-        new_lineage = CodeLineage(new_cert) if for_code else SourceDataLineage(new_cert)
-        self.store_entry(instance, new_lineage)
-        return new_cert
+            return cert
+        else:
+            new_cert = InputPlaceholderCert(ref, version=1, comment=comment)
+            new_lineage = CodeLineage(new_cert) if for_code else SourceDataLineage(new_cert)
+            self.store_entry(instance, new_lineage)
+            return new_cert
 
     def get_placeholder_cert_for_output(self, instance:str, ref:ResourceRef,
-                                        comment:str) -> PlaceholderCertificate:
+                                        comment:str) -> OutputPlaceholderCert:
         """Get a new placeholder certificate for using in a step output.
         If there already is a placeholder there, we bump up the version.
         We don't store anything in the lineage store itself until the step
@@ -766,8 +809,8 @@ class LineageStore(metaclass=ABCMeta):
             cert = existing.get_cert_for_ref(ref)
             assert cert is not None
             if isinstance(cert, PlaceholderCertificate):
-                return PlaceholderCertificate(ref, version=cert.version+1, comment=comment)
-        return PlaceholderCertificate(ref, version=1, comment=comment)
+                return OutputPlaceholderCert(ref, version=cert.version+1, comment=comment)
+        return OutputPlaceholderCert(ref, version=1, comment=comment)
 
 
     def get_lineage_for_resource(self, instance:str, resource_name:str) -> \
@@ -845,7 +888,7 @@ class FileLineageStore(LineageStore):
                     lineage_map:Dict[ResourceRef, ResourceLineage]) -> None:
         # for backward compability, we just save the lineage values
         with open(rfile_path, 'w') as f:
-            json.dump([r.to_json() for r in lineage_map.values()], f)
+            json.dump([r.to_json() for r in lineage_map.values()], f, indent=2)
 
     def store_entry(self, instance:str, lineage:ResourceLineage) -> None:
         assert instance==self.instance
@@ -913,16 +956,22 @@ class FileLineageStore(LineageStore):
             if changed:
                 self._save_rfile(ref.name, rfile, mapping)
 
-    def replace_placeholders(self, instance:str, hash_mapping:Dict[str, str]) -> None:
+    def replace_placeholders(self, instance:str, hash_mapping:Dict[str, str], verbose=False) -> None:
         assert instance==self.instance
         # we load the entire current store, as following the backlinks can go to any resource
         self._load_resource_cache()
         dirty_resources = set() # need to save these at the end
         for (rname, mapping) in self.resource_cache.items():
-            for lineage in mapping.values():
+            for (ref, lineage) in mapping.items():
                 dirty = lineage.replace_placeholders(hash_mapping)
                 if dirty:
                     dirty_resources.add(rname)
+                    if verbose:
+                        print("replaced placeholders for ref %s lineage\n   %s"%
+                              (repr(ref), lineage))
+                else:
+                    if verbose:
+                        print("No placeholders for ref %s lineage:  \n%s" % (repr(ref), lineage))
         for rname in dirty_resources:
             self._save_rfile(rname, join(self.current_lineage_path, rname+'.json'),
                              self.resource_cache[rname])
@@ -946,7 +995,7 @@ class FileLineageStore(LineageStore):
                                  {})
 
     def restore_lineage(self, instance:str, snapshot_hash:str,
-                        resources_to_restore:List[str]) -> None:
+                        resources_to_restore:List[str], verbose=False) -> None:
         assert instance==self.instance
         snapshot_dir = join(self.snapshot_lineage_path, snapshot_hash)
         if not exists(snapshot_dir):
@@ -956,8 +1005,19 @@ class FileLineageStore(LineageStore):
             curr_rfile = join(self.current_lineage_path, resource_name + '.json')
             if exists(rfile):
                 shutil.copyfile(rfile, curr_rfile)
+                if verbose:
+                    print("Restore: copied %s to %s" % (rfile, curr_rfile))
             elif exists(curr_rfile):
                 os.remove(curr_rfile) # if included in the restore, but no lineage data remove current
+                if verbose:
+                    print("Removed %s, as %s has no lineage data with this snapshot" %
+                          (curr_rfile, resource_name))
+            else:
+                if verbose:
+                    print("No lineage data for resource %s" % resource_name)
+        # invalidate the cache
+        self.resource_cache = {} # type: ignore
+
 
     def iterate_all(self, instance:str) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
         """Iterate through the contents of the store
@@ -990,7 +1050,7 @@ GRAPH_TEMPLATE_FILE=abspath(join(dirname(__file__),
 def make_lineage_graph_for_visualization(instance:str, store:LineageStore, output_file:str,
                                          width=1024, height=800) -> None:
     next_node_id = 1
-    ref_nodes = {} # type: Dict[ref, int]
+    ref_nodes = {} # type: Dict[ResourceRef, int]
     cert_nodes = {} # type: Dict[Certificate, int]
     lineage_nodes = {} # type: Dict[str, int]
     nodes = [] # type: List[Dict[str, Any]]
@@ -1022,6 +1082,7 @@ def make_lineage_graph_for_visualization(instance:str, store:LineageStore, outpu
             ref_nodes[ref] = next_node_id
             next_node_id += 1
         cert = lineage.get_cert_for_ref(ref)
+        assert cert is not None
         if cert not in cert_nodes:
             c_node = {
                 "name": cert_name(cert),
