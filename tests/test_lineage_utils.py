@@ -331,7 +331,48 @@ class TestStoreMixin(metaclass=ABCMeta):
         s2 = self._get_store()
         second_store = sorted([(ref, lineage.get_cert_for_ref(ref)) for (ref, lineage) in s2.iterate_all(instance)])
         self.assertEqual(initial_store, second_store)
-        
+
+    def test_get_lineage_for_resource(self):
+        s = self._get_store()
+        instance = self._get_instance()
+        self._run_initial_workflow()
+        (lineages, warnings) = s.get_lineage_for_resource(instance, 'results')
+        self.assertEqual(warnings, 0)
+        cert_list = []
+        for l in lineages:
+            cert_list.extend(l.get_certs())
+            if isinstance(l, StepLineage):
+                print("  step %s" % l.step_name)
+            elif isinstance(l, SourceDataLineage):
+                print("  data source %s" % l.cert)
+            elif isinstance(l, CodeLineage):
+                print("  code %s" % l.cert)
+        def check_for_cert(ref, hashval):
+            for cert in cert_list:
+                if cert.ref==ref and cert.hashval==hashval:
+                    return
+            self.fail("Did not find a cert %s %s in cert list %s" %
+                      (ref, hashval, cert_list))
+        check_for_cert(RESULTS, 'results_hash')
+        check_for_cert(INTERMEDIATE_S2, 'intermediate_hash')
+        check_for_cert(INTERMEDIATE_S1, 'intermediate_hash')
+        check_for_cert(R2_FOO_BAR, 'r2hash')
+        check_for_cert(R1, 'r1hash')
+        check_for_cert(CODE, 'code_hash')
+        self.assertEqual(len(cert_list),6)
+        self.assertEqual(len(lineages), 6)
+
+        # test case for an inconsistent lineage
+        self._run_step('step1', [R1, R2_FOO_BAR], [INTERMEDIATE_S1])
+        (lineages, warnings) = s.get_lineage_for_resource(instance, 'results')
+        self.assertEqual(warnings, 1)
+        print("Got expected warning for %s" % repr(INTERMEDIATE_S1))
+
+        # test case where we don't have any lineage for a resource
+        (lineages, warnings) = s.get_lineage_for_resource(instance, 'non-existent')
+        self.assertEqual(warnings, 1)
+        self.assertEqual(len(lineages), 0)
+
 
 LOCAL_STORE_DIR=os.path.join(TEMPDIR, 'local_store')
 SNAPSHOT_DIR=os.path.join(TEMPDIR, 'lineage_snapshots')
@@ -362,46 +403,6 @@ class TestFileLineageStore(unittest.TestCase, TestStoreMixin):
             shutil.rmtree(TEMPDIR)
 
 
-
-    # def test_get_lineage_for_resource(self):
-    #     s = self._run_initial_workflow()
-    #     (lineages, complete) = s.get_lineage_for_resource('results')
-    #     self.assertTrue(complete)
-    #     rclist = []
-    #     for l in lineages:
-    #         rclist.extend(l.get_resource_certificates())
-    #         if isinstance(l, StepLineage):
-    #             print("  step %s" % l.step_name)
-    #         else:
-    #             print("  data source %s" % l.resource_cert)
-    #     def check_for_rc(ref, hashval):
-    #         for rc in rclist:
-    #             if rc.ref==ref and rc.certificate.hashval==hashval:
-    #                 return
-    #         self.fail("Did not find an rc %s %s in rc list %s" %
-    #                   (ref, hashval, rclist))
-    #     check_for_rc(RESULTS, 'results_hash')
-    #     check_for_rc(INTERMEDIATE_S2, 'intermediate_hash')
-    #     check_for_rc(INTERMEDIATE_S1, 'intermediate_hash')
-    #     check_for_rc(R2_FOO_BAR, 'r2hash')
-    #     check_for_rc(R1, 'r1hash')
-    #     self.assertEqual(len(rclist), 5)
-    #     self.assertEqual(len(lineages), 5)
-
-    #     # test case for an inconsistent lineage
-    #     step1_lineage = StepLineage.make_step_lineage('step1', datetime.datetime.now(),
-    #                                                  [('p1', 'v1'), ('p2', 5)],
-    #                                                   [R1, R2_FOO_BAR], [CODE], s)
-    #     step1_lineage.add_output(s, INTERMEDIATE_S1)
-    #     step1_lineage.execution_time_seconds = 5
-    #     s.add_step(step1_lineage)
-    #     (lineages, complete) = s.get_lineage_for_resource('results')
-    #     self.assertFalse(complete)
-
-    #     # test case where we don't have any lineage for a resource
-    #     (lineages, complete) = s.get_lineage_for_resource('non-existent')
-    #     self.assertFalse(complete)
-    #     self.assertEqual(len(lineages), 0)
 
 if __name__ == '__main__':
     if len(sys.argv)>1 and sys.argv[1]=='--keep-outputs':
