@@ -8,7 +8,7 @@ import shutil
 import re
 import tempfile
 import json
-from typing import Any
+from typing import Any, List
 
 import click
 
@@ -103,9 +103,61 @@ def git_init(repo_dir, verbose=False):
                     verbose=verbose)
 
 
-def git_add(repo_dir, relative_paths, verbose=False):
+def git_add(repo_dir:str, relative_paths:List[str], verbose:bool=False) -> None:
     call_subprocess([GIT_EXE_PATH, 'add']+relative_paths,
                     cwd=repo_dir, verbose=verbose)
+
+
+def git_remove_subtree(repo_dir:str, relative_path:str, remove_history:bool=False,
+                       verbose:bool=False) -> None:
+    if remove_history:
+        # removing history is problematic, as you need to --force the
+        # next time you do a push. That also implies that you do a pull before
+        # running the delete. See
+        # https://help.github.com/en/articles/removing-sensitive-data-from-a-repository
+        # for details.
+        assert 0, "removing history not currently supported"
+        if is_git_staging_dirty(repo_dir):
+            # The history rewrite will fail if the repo is dirty, so
+            # we will commit first.
+            call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                             'commit before removing %s and its history'%
+                               relative_path],
+                            cwd=repo_dir, verbose=verbose)
+        call_subprocess([GIT_EXE_PATH, 'filter-branch', '--index-filter',
+                         "%s rm --cached --ignore-unmatch -rf %s"%
+                           (GIT_EXE_PATH, relative_path),
+                         '--prune-empty', '-f', 'HEAD'],
+                        cwd=repo_dir, verbose=verbose)
+    else:
+        call_subprocess([GIT_EXE_PATH, 'rm', '-rf', relative_path],
+                        cwd=repo_dir, verbose=verbose)
+
+def git_remove_file(repo_dir:str, relative_path:str, remove_history:bool=False,
+                    verbose:bool=False) -> None:
+    if remove_history:
+        # removing history is problematic, as you need to --force the
+        # next time you do a push. That also implies that you do a pull before
+        # running the delete. See
+        # https://help.github.com/en/articles/removing-sensitive-data-from-a-repository
+        # for details.
+        assert 0, "removing history not currently supported"
+        if is_git_staging_dirty(repo_dir):
+            # The history rewrite will fail if the repo is dirty, so
+            # we will commit first.
+            call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                             'commit before removing %s and its history'%
+                               relative_path],
+                            cwd=repo_dir, verbose=verbose)
+        call_subprocess([GIT_EXE_PATH, 'filter-branch', '--index-filter',
+                         "%s rm --cached --ignore-unmatch  %s"%
+                           (GIT_EXE_PATH, relative_path),
+                         '--prune-empty', '-f', 'HEAD'],
+                        cwd=repo_dir, verbose=verbose)
+    else:
+        call_subprocess([GIT_EXE_PATH, 'rm', relative_path],
+                        cwd=repo_dir, verbose=verbose)
+
 
 
 def commit_changes_in_repo(local_path, message, remove_empty_dirs=False,

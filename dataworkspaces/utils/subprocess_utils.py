@@ -1,7 +1,7 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """Utilities related to calling subprocesses
 """
-from subprocess import run, PIPE
+from subprocess import run, PIPE, CalledProcessError
 import os
 from os.path import abspath, expanduser, join, isfile
 import click
@@ -17,7 +17,11 @@ def call_subprocess(args, cwd, verbose=False):
     if verbose:
         click.echo(" ".join(args) + " [run in %s]" % cwd)
     cp = run(args, cwd=cwd, encoding='utf-8', stdout=PIPE, stderr=PIPE)
-    cp.check_returncode()
+    try:
+        cp.check_returncode()
+    except CalledProcessError:
+        click.echo(cp.stderr)
+        raise
     if verbose:
         click.echo(cp.stdout)
     return cp.stdout # can ignore if you don't need this.

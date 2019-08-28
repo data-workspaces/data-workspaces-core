@@ -790,6 +790,12 @@ class LineageStore(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def delete_snapshot_lineage(self, instance:str, snapshot_hash:str) -> None:
+        """Delete any lineage data associated with the specified snapshot.
+        """
+        pass
+
+    @abstractmethod
     def iterate_all(self, instance:str) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
         """Iterate through the contents of the store
         """
@@ -963,14 +969,63 @@ class FileLineageStore(LineageStore):
                 if rname not in self.resource_cache:
                     self._parse_rfile(rname)
 
-    def _save_rfile(self, resource_name:str,
-                    lineage_map:Dict[ResourceRef, ResourceLineage],
-                    rfile_path:Optional[str]=None) -> None:
-        if rfile_path is None:
-            rfile_path = join(self.current_lineage_path, resource_name+'.json')
+    def _save_rfile_to_curr(self, resource_name:str,
+                            lineage_map:Dict[ResourceRef, ResourceLineage]) -> str:
+        """Save the resource mapping to the current lineage. Returns the path in case it
+        is needed by a subpclass
+        """
+        rfile_path = join(self.current_lineage_path, resource_name+'.json')
         # for backward compability, we just save the lineage values
         with open(rfile_path, 'w') as f:
             json.dump([r.to_json() for r in lineage_map.values()], f, indent=2)
+        return rfile_path
+
+    def _get_snapshot_path(self, resource_name:str, snapshot_hash:str) -> str:
+        return join(join(self.snapshot_lineage_path, snapshot_hash),
+                    resource_name+'.json')
+
+    def _snapshot_rfile_exists(self, resource_name:str, snapshot_hash:str) -> bool:
+        return exists(self._get_snapshot_path(resource_name, snapshot_hash))
+
+    def _ensure_snapshot_dir_exists(self, snapshot_hash:str) -> None:
+        snapshot_dir = join(self.snapshot_lineage_path, snapshot_hash)
+        if not exists(snapshot_dir):
+            os.makedirs(snapshot_dir)
+
+    def _save_rfile_to_snapshot(self, resource_name:str,
+                                lineage_map:Dict[ResourceRef, ResourceLineage],
+                                snapshot_hash:str) -> str:
+        """Save the resource mapping to the snapshot. Returns the path in case it
+        is needed by a subclass.
+        """
+        snapshot_path = self._get_snapshot_path(resource_name, snapshot_hash)
+        # for backward compability, we just save the lineage values
+        with open(snapshot_path, 'w') as f:
+            json.dump([r.to_json() for r in lineage_map.values()], f, indent=2)
+        return snapshot_path
+
+    def _copy_rfile_to_snapshot(self, resource_name:str, snapshot_hash:str) -> Tuple[str, str]:
+        src_rpath = join(self.current_lineage_path, resource_name+'.json')
+        dest_rpath = self._get_snapshot_path(resource_name, snapshot_hash)
+        shutil.copyfile(src_rpath, dest_rpath)
+        return (src_rpath, dest_rpath)
+
+    def _copy_snapshot_rfile_to_current(self, resource_name:str, snapshot_hash:str) -> Tuple[str, str]:
+        src_rpath = self._get_snapshot_path(resource_name, snapshot_hash)
+        dest_rpath = join(self.current_lineage_path, resource_name + '.json')
+        shutil.copyfile(src_rpath, dest_rpath)
+        return (src_rpath, dest_rpath)
+
+    def _write_placeholder_to_snapshot(self, snapshot_hash:str, filename:str, content:str) -> str:
+        path = join(join(self.snapshot_lineage_path, snapshot_hash), filename)
+        with open(path, 'w') as f:
+            f.write(content)
+        return path
+
+    def _delete_from_current(self, resource_name:str) -> str:
+        rfile_path = join(self.current_lineage_path, resource_name+'.json')
+        os.remove(rfile_path)
+        return rfile_path
 
     def store_entry(self, instance:str, lineage:ResourceLineage) -> None:
         assert instance==self.instance
@@ -993,7 +1048,7 @@ class FileLineageStore(LineageStore):
             else:
                 mapping = {cert.ref:lineage}
             self.resource_cache[cert.ref.name] = mapping
-            self._save_rfile(cert.ref.name, mapping)
+            self._save_rfile_to_curr(cert.ref.name, mapping)
 
     def retrieve_entry(self, instance:str, ref:ResourceRef) -> ResourceLineage:
         assert instance==self.instance
@@ -1019,9 +1074,8 @@ class FileLineageStore(LineageStore):
         assert instance==self.instance
         if ref.subpath is None:
             # special case when its the entire file
-            rfile = join(self.current_lineage_path, ref.name + '.json')
-            if exists(rfile):
-                os.remove(rfile)
+            if self._rfile_exists(ref.name):
+                self._delete_from_current(ref.name)
             if ref.name in self.resource_cache:
                 del self.resource_cache[ref.name]
         else:
@@ -1033,7 +1087,7 @@ class FileLineageStore(LineageStore):
                     del mapping[key] # also updates the cache
                     changed = True
             if changed:
-                self._save_rfile(ref.name, mapping)
+                self._save_rfile_to_curr(ref.name, mapping)
 
     def get_refs_for_resource(self, instance:str, resource_name:str) -> Iterable[ResourceRef]:
         """Iterate through all the refs in this store belonging to this resource.
@@ -1064,25 +1118,21 @@ class FileLineageStore(LineageStore):
                     if verbose:
                         print("No placeholders for ref %s lineage:  \n%s" % (repr(ref), lineage))
         for rname in dirty_resources:
-            self._save_rfile(rname, self.resource_cache[rname])
+            self._save_rfile_to_curr(rname, self.resource_cache[rname])
 
     def snapshot_lineage(self, instance:str, snapshot_hash:str,
                          resource_names:List[str]) -> None:
         assert instance==self.instance
-        snapshot_dir = join(self.snapshot_lineage_path, snapshot_hash)
-        if not exists(snapshot_dir):
-            os.makedirs(snapshot_dir)
+        self._ensure_snapshot_dir_exists(snapshot_hash)
         if len(resource_names)==0:
-            with open(join(snapshot_dir, 'placeholder.txt'), 'w') as f:
-                f.write("No resources for lineage snapshot %s\n"% snapshot_hash)
-                return
+            self._write_placeholder_to_snapshot(snapshot_hash, 'placeholder.txt',
+                                                "No resources for lineage snapshot %s\n"% snapshot_hash)
+            return
         for resource_name in resource_names:
-            rfile = join(self.current_lineage_path, resource_name+'.json')
-            if exists(rfile):
-                shutil.copyfile(rfile, join(snapshot_dir, resource_name+'.json'))
+            if self._rfile_exists(resource_name):
+                self._copy_rfile_to_snapshot(resource_name, snapshot_hash)
             else:
-                self._save_rfile(resource_name, {},
-                                 rfile_path=join(snapshot_dir, resource_name+'.json'))
+                self._save_rfile_to_snapshot(resource_name, {}, snapshot_hash)
 
     def restore_lineage(self, instance:str, snapshot_hash:str,
                         resources_to_restore:List[str], verbose=False) -> None:
@@ -1091,23 +1141,28 @@ class FileLineageStore(LineageStore):
         if not exists(snapshot_dir):
             raise LineageNotFoundError("Did not find lineage data for snapshot %s" % snapshot_hash)
         for resource_name in resources_to_restore:
-            rfile = join(snapshot_dir, resource_name + '.json')
-            curr_rfile = join(self.current_lineage_path, resource_name + '.json')
-            if exists(rfile):
-                shutil.copyfile(rfile, curr_rfile)
+            if self._snapshot_rfile_exists(resource_name, snapshot_hash):
+                (src_rpath, dest_rpath) = self._copy_snapshot_rfile_to_current(resource_name, snapshot_hash)
                 if verbose:
-                    print("Restore: copied %s to %s" % (rfile, curr_rfile))
-            elif exists(curr_rfile):
-                os.remove(curr_rfile) # if included in the restore, but no lineage data remove current
+                    print("Restore: copied %s to %s" % (src_rpath, dest_rpath))
+            elif self._rfile_exists(resource_name):
+                # if included in the restore, but no lineage data remove current
+                deleted_rfile = self._delete_from_current(resource_name)
                 if verbose:
                     print("Removed %s, as %s has no lineage data with this snapshot" %
-                          (curr_rfile, resource_name))
+                          (deleted_rfile, resource_name))
             else:
                 if verbose:
                     print("No lineage data for resource %s" % resource_name)
         # invalidate the cache
         self.resource_cache = {} # type: ignore
 
+    def delete_snapshot_lineage(self, instance:str, snapshot_hash:str) -> None:
+        """Delete any lineage data associated with the specified snapshot.
+        """
+        snapshot_dir = join(self.snapshot_lineage_path, snapshot_hash)
+        if exists(snapshot_dir):
+            shutil.rmtree(snapshot_dir)
 
     def iterate_all(self, instance:str) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
         """Iterate through the contents of the store

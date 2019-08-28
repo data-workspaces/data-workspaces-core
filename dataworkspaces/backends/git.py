@@ -8,7 +8,7 @@ import shutil
 import json
 import re
 import uuid
-from typing import Any, Iterable, Optional, List, Dict
+from typing import Any, Iterable, Optional, List, Dict, Tuple, cast
 assert Dict # make pyflakes happy
 
 import click
@@ -24,8 +24,11 @@ from dataworkspaces.utils.git_utils import \
     is_pull_needed_from_remote, GIT_EXE_PATH,\
     run_git_fat_push_if_needed,\
     set_remote_origin, is_a_git_fat_repo,\
-    validate_git_fat_in_path
-from dataworkspaces.utils.file_utils import safe_rename
+    validate_git_fat_in_path, git_remove_file, git_remove_subtree
+from dataworkspaces.utils.file_utils import safe_rename, get_subpath_from_absolute
+from dataworkspaces.utils.param_utils import HOSTNAME
+from dataworkspaces.utils.lineage_utils import \
+    FileLineageStore, LineageStore, ResourceRef, ResourceLineage
 
 
 BASE_DIR='.dataworkspace'
@@ -36,6 +39,48 @@ RESOURCES_FILE_PATH='.dataworkspace/resources.json'
 RESOURCE_LOCAL_PARAMS_PATH='.dataworkspace/resource_local_params.json'
 SNAPSHOT_DIR_PATH='.dataworkspace/snapshots'
 SNAPSHOT_METADATA_DIR_PATH='.dataworkspace/snapshot_metadata'
+CURRENT_LINEAGE_DIR_PATH='.dataworkspace/current_lineage'
+SNAPSHOT_LINEAGE_DIR_PATH='.dataworkspace/snapshot_lineage'
+
+class GitFileLineageStore(FileLineageStore):
+    """Subclass of file lineage store that adds
+    the lineage files to the git repo.
+    """
+    def __init__(self, workspace:'Workspace'):
+        super().__init__(cast(Workspace, workspace).get_instance(),
+                         join(workspace.workspace_dir, CURRENT_LINEAGE_DIR_PATH),
+                         join(workspace.workspace_dir, SNAPSHOT_LINEAGE_DIR_PATH))
+        self.workspace = workspace
+
+    def _add_to_git(self, path):
+        git_add(self.workspace.workspace_dir,
+                [get_subpath_from_absolute(self.workspace.workspace_dir, path)],
+                verbose=self.workspace.verbose)
+
+    def _save_rfile_to_snapshot(self, resource_name:str,
+                                lineage_map:Dict[ResourceRef, ResourceLineage],
+                                snapshot_hash:str) -> str:
+        rpath = super()._save_rfile_to_snapshot(resource_name, lineage_map,
+                                                snapshot_hash)
+        self._add_to_git(rpath)
+        return rpath
+
+    def _copy_rfile_to_snapshot(self, resource_name:str, snapshot_hash:str) -> Tuple[str, str]:
+        (spath, dpath) = super()._copy_rfile_to_snapshot(resource_name, snapshot_hash)
+        self._add_to_git(dpath)
+        return (spath, dpath)
+
+    def _write_placeholder_to_snapshot(self, snapshot_hash:str, filename:str, content:str) -> str:
+        spath = super()._write_placeholder_to_snapshot(snapshot_hash, filename, content)
+        self._add_to_git(spath)
+        return spath
+
+    def delete_snapshot_lineage(self, instance:str, snapshot_hash:str) -> None:
+        """Delete any lineage data associated with the specified snapshot.
+        """
+        lineage_relative_path = join(SNAPSHOT_LINEAGE_DIR_PATH, snapshot_hash)
+        git_remove_subtree(self.workspace.workspace_dir, lineage_relative_path,
+                           verbose=self.workspace.verbose)
 
 
 class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin):
@@ -46,12 +91,25 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super().__init__(cf_data['name'], cf_data['dws-version'], batch, verbose)
         self.global_params = cf_data['global_params']
         self.local_params = self._load_json_file(LOCAL_PARAMS_PATH)
+        hostname = self.local_params[HOSTNAME] # TODO: make this user settable when creating the workspace
+        assert isinstance(hostname, str)
+        self.instance = hostname
         self.resource_params = self._load_json_file(RESOURCES_FILE_PATH) # type: List[JSONDict]
         self.resource_params_by_name = {} # type: Dict[str, JSONDict]
         for r in self.resource_params:
             self.resource_params_by_name[r['name']] = r
         self.resource_local_params_by_name = \
             self._load_json_file(RESOURCE_LOCAL_PARAMS_PATH) # type: Dict[str,JSONDict]
+        self.lineage_store = GitFileLineageStore(self)
+
+    def get_instance(self) -> str:
+        return self.instance
+
+    def supports_lineage(self) -> bool:
+        return True
+
+    def get_lineage_store(self) -> LineageStore:
+        return self.lineage_store
 
     def _load_json_file(self, relative_path):
         f_path = join(self.workspace_dir, relative_path)
@@ -325,7 +383,10 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
     def _delete_snapshot_metadata_and_manifest(self, hash_val:str)-> None:
         """Given a snapshot hash, delete the associated metadata.
         """
-        raise NotImplementedError("delete snapshot")
+        rel_snapshot_file = join(SNAPSHOT_DIR_PATH, 'snapshot-%s.json'%hash_val.lower())
+        git_remove_file(self.workspace_dir, rel_snapshot_file, verbose=self.verbose)
+        rel_metadata_file = join(SNAPSHOT_METADATA_DIR_PATH, '%s_md.json'%hash_val.lower())
+        git_remove_file(self.workspace_dir, rel_metadata_file, verbose=self.verbose)
 
     def _snapshot_precheck(self, current_resources:Iterable[ws.Resource]) -> None:
         """Run any prechecks before taking a snapshot. This should throw
@@ -344,12 +405,12 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super()._restore_precheck(restore_hashes, restore_resources)
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-    def restore(self, restore_hashes:Dict[str,str],
+    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,str],
                 restore_resources:List[ws.SnapshotResourceMixin]) -> None:
         """We override restore to perform a git-fat pull at the end,
         if needed.
         """
-        super().restore(restore_hashes, restore_resources)
+        super().restore(snapshot_hash, restore_hashes, restore_resources)
         run_git_fat_pull_if_needed(self.workspace_dir, self.verbose)
 
     def remove_tag_from_snapshot(self, hash_val:str, tag:str) -> None:
@@ -422,6 +483,7 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             json.dump(local_params, f, indent=2)
         with open(join(workspace_dir, RESOURCE_LOCAL_PARAMS_PATH), 'w') as f:
             json.dump({}, f, indent=2)
+        os.mkdir(join(workspace_dir, CURRENT_LINEAGE_DIR_PATH))
 
         with open(join(workspace_dir, GIT_IGNORE_FILE_PATH), 'w') as f:
                 f.write("%s\n" % basename(LOCAL_PARAMS_PATH))
@@ -502,6 +564,9 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             if not exists(snapshot_dir):
                 # It is possible that we are cloning a repo with no snapshots
                 os.mkdir(snapshot_dir)
+            current_lineage_dir = join(directory, CURRENT_LINEAGE_DIR_PATH)
+            if not exists(current_lineage_dir):
+                os.mkdir(current_lineage_dir)
             if is_a_git_fat_repo(directory):
                 validate_git_fat_in_path()
                 import dataworkspaces.third_party.git_fat as git_fat

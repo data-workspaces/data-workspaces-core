@@ -44,7 +44,7 @@ The module ``dataworkspaces.commands.COMMAND`` should look like this::
 
 """
 
-from typing import Dict, Any, Iterable, Optional, List, Tuple, NamedTuple, Set, cast, Pattern
+from typing import Dict, Any, Iterable, Optional, List, Tuple, Set, cast, Pattern
 
 from abc import ABCMeta, abstractmethod
 import importlib
@@ -54,8 +54,10 @@ import getpass
 import json
 import re
 
-from dataworkspaces.errors import ConfigurationError, InternalError
-from dataworkspaces.utils.hash_utils import is_a_git_hash, is_a_shortened_git_hash
+from dataworkspaces.errors import ConfigurationError, PathNotAResourceError, InternalError
+from dataworkspaces.utils.hash_utils import \
+    is_a_git_hash, is_a_shortened_git_hash, hash_bytes
+
 from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
                                              get_global_param_defaults,\
                                              get_local_param_defaults,\
@@ -66,7 +68,8 @@ from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
 from dataworkspaces.utils.snapshot_utils import validate_template,\
                                                 expand_dir_template,\
                                                 make_re_pattern_for_dir_template
-from dataworkspaces.utils.hash_utils import hash_bytes
+from dataworkspaces.utils.file_utils import get_subpath_from_absolute
+from dataworkspaces.utils.lineage_utils import ResourceRef, LineageStore
 
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
@@ -83,6 +86,19 @@ class Workspace(metaclass=ABCMeta):
         self.dws_version = dws_version
         self.batch = batch
         self.verbose = verbose
+
+    @abstractmethod
+    def get_instance(self) -> str:
+        """Return a unique identifier for this instance of the workspace.
+        For lineage tracking, it is assumed that only one pipeline is running
+        at a time in an instance. If the workspace exists on a local filesystem,
+        then it should correspond to the machine and path where the workspace
+        resides. Typically, some combination of hostname and user are sufficient.
+
+        Uniquenes of the instance is important for things like naming the
+        results snapshot subdirectories.
+        """
+        pass
 
     @abstractmethod
     def _get_global_params(self) -> JSONDict:
@@ -332,6 +348,30 @@ class Workspace(metaclass=ABCMeta):
                                          (proposed_local_path, proposed_resource_name,
                                           r.get_local_path_if_any(), r.name))
 
+    def map_local_path_to_resource(self, path:str,
+                                   expecting_a_code_resource:bool=False) -> ResourceRef:
+        """Given a path on the local filesystem, map it to
+           a resource and the path within the resource.
+           Raises PathNotAResourceError if no match is found.
+        """
+        for rname in self.get_names_of_resources_with_local_state():
+            r = self.get_resource(rname)
+            assert isinstance(r, LocalStateResourceMixin)
+            rpath = r.get_local_path_if_any()
+            if rpath is None:
+                continue
+            try:
+                subpath = get_subpath_from_absolute(rpath, path)
+                role = self.get_resource_role(rname)
+                if expecting_a_code_resource and role!=ResourceRoles.CODE:
+                    raise ConfigurationError("Expecting a code resource, but %s is %s"%
+                                             (rname, role))
+                return ResourceRef(rname, subpath)
+            except ValueError:
+                pass # just try the next one
+        raise PathNotAResourceError("Path '%s' does not correspond to a resource in this workspace"%
+                                    path)
+
     def suggest_resource_name(self, resource_type:str,
                               role:str, *args):
         """Given the arguments passed in for creating a resource, suggest
@@ -540,9 +580,11 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_local_path_if_any(self):
+    def get_local_path_if_any(self) -> Optional[str]:
         """If the resource has an associated local path on the system,
-        return it. Othewise, return None.
+        return it. Othewise, return None. Even if it has local state,
+         this might not be a file-based resource. Thus, the return
+        value is an Optional string.
         """
         pass
 
@@ -674,6 +716,16 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
         self._pull_resources_precheck(resource_list)
         for r in resource_list:
             r.pull()
+
+        # We need to clear the current lineage for pulled resources since we
+        #don't know what the pull command did to it.
+        if isinstance(self, SnapshotWorkspaceMixin) and self.supports_lineage():
+            instance = self.get_instance()
+            lstore = self.get_lineage_store()
+            for r in resource_list:
+                if self.verbose:
+                    print("Clearing lineage on resource %s" % r.name)
+                lstore.clear_entry(instance, ResourceRef(r.name, None))
 
     def _push_precheck(self, resource_list:List[LocalStateResourceMixin]) -> None:
         """Default calls pull_precheck() on each of the supplied resources.
@@ -856,6 +908,8 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         We assume that the tag does not already exist
         (checks can be made in the command before calling this method).
 
+        We also copy the lineage data if the workspace supports lineage.
+
         Returns the snapshot metadata and the (binary) snapshot hash. These
         should be saved into the workspace by the caller (i.e. the snapshot command).
         We don't do that here, as futher interactions with the user may be needed. In
@@ -890,12 +944,16 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
 
         manifest = []
         map_of_restore_hashes = {} # type: Dict[str,Optional[str]]
+        # compare hashes used for lineage
+        map_of_compare_hashes = {} # type: Dict[str,str]
         # now take the actual snapshots
         for r in current_resources:
             if isinstance(r, SnapshotResourceMixin):
                 (compare_hash, restore_hash) = r.snapshot()
             else:
                 (compare_hash, restore_hash) = (None, None)
+            if compare_hash is not None:
+                map_of_compare_hashes[r.name] = compare_hash
             map_of_restore_hashes[r.name] = restore_hash
             entry = cast(Workspace, self)._get_resource_params(r.name)
             entry['hash'] = compare_hash
@@ -908,6 +966,15 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                                     rel_dest_root,
                                     map_of_restore_hashes,
                                     metric_name, metric_value)
+
+        if self.supports_lineage():
+            instance = workspace.get_instance()
+            lstore = self.get_lineage_store()
+            lstore.replace_placeholders(instance,
+                                        map_of_compare_hashes,
+                                        verbose=workspace.verbose)
+            lstore.snapshot_lineage(instance, manifest_hash,
+                                    [r.name for r in current_resources])
         return metadata, manifest_bytes
         
     def _restore_precheck(self, restore_hashes:Dict[str,str],
@@ -923,7 +990,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         for r in restore_resources:
             r.restore_precheck(restore_hashes[cast(Resource, r).name])
 
-    def restore(self, restore_hashes:Dict[str,str],
+    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,str],
                 restore_resources:List['SnapshotResourceMixin']) -> None:
         """Restore the specified resources to the specified hashes.
         The list should have been previously filtered to include only
@@ -933,6 +1000,14 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
 
         for r in restore_resources:
             r.restore(restore_hashes[cast(Resource, r).name])
+
+        if self.supports_lineage():
+            assert isinstance(self, Workspace)
+            self.get_lineage_store().restore_lineage(self.get_instance(),
+                                                     snapshot_hash,
+                                                     [r.name for r in
+                                                      restore_resources],
+                                                     verbose=self.verbose)
 
     @abstractmethod
     def get_snapshot_metadata(self, hash_val:str) -> SnapshotMetadata:
@@ -1026,6 +1101,25 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                     r.delete_snapshot(md.hashval, md.restore_hashes[rname],
                                       md.relative_destination_path)
         self._delete_snapshot_metadata_and_manifest(hash_val)
+        if self.supports_lineage():
+            instance = cast(Workspace, set).get_instance()
+            self.get_lineage_store().delete_snapshot_lineage(instance,
+                                                             hash_val)
+
+    @abstractmethod
+    def supports_lineage(self) -> bool:
+        """Return True if this workspace's backend supports lineage,
+        False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_lineage_store(self) -> LineageStore:
+        """Return the store for lineage data. If this workspace backend
+        does not support lineage for some reason, the call should
+        raise a ConfigurationError.
+        """
+        pass
 
 
 class SnapshotResourceMixin(metaclass=ABCMeta):
@@ -1071,49 +1165,5 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
         pass
 
 
-####################################################################
-#                Mixins for Lineage functionality                  #
-####################################################################
 
-class ResourceRef(NamedTuple):
-    """A namedtuple that is to indentify a resource or path within
-    a resource for lineage purposes (e.g. the input or output of a
-    workflow step).
-    The ``name`` parameter is the name of a resource. The optional
-    ``subpath`` parameter is a relative path within that resource.
-    The subpath lets you store inputs/outputs from multiple steps
-    within the same resource and track them independently.
-    """
-    name: str
-    subpath: Optional[str] = None
-
-
-class LineageWorkspaceMixin(SnapshotResourceMixin):
-    """Mixin class for workspaces that support a lineage store.
-    This builds on the snapshots, so we extend from the Snapshot Workspace
-    API.
-
-    The lineage store should store resource ref to lineage mappings.
-    When a snapshot takes place, the linage for the affected resources
-    is saved. When a restore takes place, the lineage for the affected
-    resources is restored as well.
-
-    TODO: This needs some concept of either local state or an execution
-    id, particularly in the case where there is a single centralized store.
-    """
-    @abstractmethod
-    def add_lineage(self, ref:ResourceRef, lineage_data:JSONDict) -> None:pass
-
-    @abstractmethod
-    def get_lineage_for_ref(self, ref:ResourceRef) -> Optional[JSONDict]:
-        """Returns the current lineage associated with the resource ref
-        or None if there is no lineage data presensent.
-        """
-        pass
-
-    @abstractmethod
-    def get_lineages_for_resource(self, resource_name:str) -> List[JSONDict]:
-        """Return a list of lineage objects associated with the resource.
-        """
-        pass
 

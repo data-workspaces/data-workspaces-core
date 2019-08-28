@@ -9,6 +9,12 @@ class ConfigurationError(Exception):
     """
     pass
 
+class PathNotAResourceError(ConfigurationError):
+    """Raised when a path on the local filesystem does not correspond to a
+    resource and it is expected to.
+    """
+    pass
+
 class LineageError(ConfigurationError):
     """An error related to data lineage (e.g. action would make it impossible
     to track lineage)

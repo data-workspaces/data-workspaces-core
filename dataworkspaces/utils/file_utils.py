@@ -4,9 +4,10 @@ File-related utilities
 """
 
 import os
-from os.path import dirname, isdir, abspath, expanduser, exists
+from os.path import dirname, isdir, abspath, expanduser, exists, isabs, commonpath
 import shutil
 import click
+from typing import Optional
 
 from dataworkspaces.errors import ConfigurationError
 
@@ -41,6 +42,28 @@ def safe_rename(src:str, dest:str) -> None:
         except Exception as e:
             raise ConfigurationError("Unable to copy %s to %s: %s"%
                                      (src, dest, e)) from e
+
+
+def get_subpath_from_absolute(absolute_parent_path:str, absolute_child_path:str)\
+    -> Optional[str]:
+    """Given two absolute paths where one is the parent of the other, return the
+    child path as a relative path from the parent. Returns None if the paths are
+    equal and raises a ValueError if absolute_child_path is not actually a
+    parent of absolute_parent_path.
+    """
+    assert isabs(absolute_parent_path)
+    assert isabs(absolute_child_path)
+    if absolute_parent_path.endswith('/') and len(absolute_parent_path)>1:
+        absolute_parent_path = absolute_parent_path[:-1]
+    if absolute_child_path.endswith('/') and len(absolute_child_path)>1:
+        absolute_child_path = absolute_child_path[:-1]
+    if absolute_child_path==absolute_parent_path:
+        return None
+    if commonpath([absolute_parent_path, absolute_child_path])!=absolute_parent_path:
+        raise ValueError("'%s is not a subpath of '%s'"%
+                         (absolute_child_path, absolute_parent_path))
+    else:
+        return absolute_child_path[len(absolute_parent_path)+1:]
 
 
 class LocalPathType(click.Path):

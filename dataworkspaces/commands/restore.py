@@ -125,15 +125,7 @@ def restore_command(workspace:Workspace, tag_or_hash:str,
             raise UserAbort()
 
     # do the work!
-    mixin.restore(restore_hashes, restore_resource_list)
-    # XXX need to add back in lineage
-    # # handling of lineage
-    # current_lineage_dir = get_current_lineage_dir(workspace_dir)
-    # snapshot_lineage_dir = get_snapshot_lineage_dir(workspace_dir, snapshot_hash)
-    # if isdir(snapshot_lineage_dir):
-    #     plan.append(CopyLineageFilesToCurrent(ns, verbose, current_lineage_dir,
-    #                                           snapshot_lineage_dir,
-    #                                           names_to_restore_lineage))
+    mixin.restore(md.hashval, restore_hashes, restore_resource_list)
     workspace.save("Restore to %s" % md.hashval)
 
 

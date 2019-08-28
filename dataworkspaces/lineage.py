@@ -113,17 +113,16 @@ import contextlib
 from collections import OrderedDict
 import datetime
 from typing import List, Union, Any, Type, Iterable, Dict, Optional, cast
-import os
-from os.path import exists, curdir, join
+from os.path import curdir, join
 from argparse import ArgumentParser, Namespace
-import json
 from copy import copy
 
+from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.workspace_utils import get_workspace
+from dataworkspaces.workspace import Workspace, load_workspace, FileResourceMixin,\
+                                     PathNotAResourceError
 from dataworkspaces.utils.lineage_utils import \
-    ResourceRef, StepLineage, LineageStoreCurrent,\
-    get_current_lineage_dir, infer_step_name, infer_script_path
-from dataworkspaces.resources.resource import CurrentResources
+    ResourceRef, StepLineage, infer_step_name, infer_script_path
 
 
 
@@ -140,24 +139,20 @@ class Lineage(contextlib.AbstractContextManager):
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
                  code:List[Union[str, ResourceRef]],
-                 workspace_dir:str,
+                 workspace:Workspace,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
-        self.lineage_dir = get_current_lineage_dir(workspace_dir)
-        if not exists(self.lineage_dir):
-            os.makedirs(self.lineage_dir)
-        self.store = LineageStoreCurrent.load(self.lineage_dir)
-        self.resources = CurrentResources.read_current_resources(workspace_dir,
-                                                                 batch=True,
-                                                                 verbose=False)
+        self.workspace = workspace
+        self.instance = workspace.get_instance()
+        self.store = workspace.get_lineage_store()
         input_resource_refs=[] # type: List[ResourceRef]
         for r_or_p in inputs:
             if isinstance(r_or_p, ResourceRef):
-                self.resources.validate_resource_name(r_or_p.name, r_or_p.subpath)
+                workspace.validate_resource_name(r_or_p.name, r_or_p.subpath)
                 input_resource_refs.append(r_or_p)
             else:
-                (name, subpath) = self.resources.map_local_path_to_resource(r_or_p)
-                input_resource_refs.append(ResourceRef(name, subpath))
+                ref = workspace.map_local_path_to_resource(r_or_p)
+                input_resource_refs.append(ref)
         code_resource_refs=[] # type: List[ResourceRef]
         for r_or_p in code:
             if isinstance(r_or_p, ResourceRef):
@@ -165,20 +160,30 @@ class Lineage(contextlib.AbstractContextManager):
                                                       expecting_a_code_resource=True)
                 code_resource_refs.append(r_or_p)
             else:
-                (name, subpath) = \
-                  self.resources.map_local_path_to_resource(r_or_p,
-                                                            expecting_a_code_resource=True)
+                ref = workspace.map_local_path_to_resource(r_or_p,
+                                                           expecting_a_code_resource=True)
                 # For now, we will resolve code paths at the resource level.
                 # We drop the subpath, unless the user provided it explicitly
                 # through a ResourceRef.
-                crr = ResourceRef(name, None)
+                crr = ResourceRef(ref.name, None)
                 if crr not in code_resource_refs:
                     code_resource_refs.append(crr)
-        self.step = StepLineage.make_step_lineage(step_name, start_time,
+
+        # The run_from_directory can be either a resource reference (best),
+        # a path on the local filesystem, or None
+        try:
+            run_from_directory = workspace.map_local_path_to_resource(current_directory)\
+                                 if current_directory is not None else None
+        except PathNotAResourceError:
+            run_from_directory = current_directory
+
+        self.step = StepLineage.make_step_lineage(workspace.get_intance(),
+                                                  step_name, start_time,
                                                   parameters, input_resource_refs,
                                                   code_resource_refs,
                                                   self.store,
-                                                  command_line=command_line)
+                                                  command_line=command_line,
+                                                  run_from_directory=run_from_directory)
         self.in_progress = True
 
     def add_output_path(self, path:str):
@@ -187,8 +192,8 @@ class Lineage(contextlib.AbstractContextManager):
         if the step fails (:func:`~abort` is called), the associated resource
         and subpath will be marked as being in an "unknown" state.
         """
-        (name, subpath) = self.resources.map_local_path_to_resource(path)
-        self.step.add_output(self.store, ResourceRef(name, subpath))
+        ref = self.resources.map_local_path_to_resource(path)
+        self.step.add_output(self.store, ref)
 
     def add_output_ref(self, ref:ResourceRef):
         """Add the resource reference to the lineage as an output of the step.
@@ -208,8 +213,8 @@ class Lineage(contextlib.AbstractContextManager):
                   self.step.step_name, file=sys.stderr)
         else:
             self.in_progress = False
-        self.store.invalidate_step_outputs(self.step.output_resources)
-        self.store.save(self.lineage_dir)
+        for output_cert in self.step.output_resources:
+            self.store.clear_entry(self.instance, output_cert.ref)
 
     def _set_execution_time(self):
         """If the execution time has not already been set, and the start timestamp
@@ -235,8 +240,7 @@ class Lineage(contextlib.AbstractContextManager):
         else:
             self.in_progress = False
         self._set_execution_time()
-        self.store.add_step(self.step)
-        self.store.save(self.lineage_dir)
+        self.store.store_entry(self.instance, self.step)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None:
@@ -244,6 +248,7 @@ class Lineage(contextlib.AbstractContextManager):
         else:
             self.abort()
         return False # don't suppress any exception
+
 
 class ResultsLineage(Lineage):
     """Lineage for a results step. This subclass is returned by the
@@ -261,17 +266,18 @@ class ResultsLineage(Lineage):
                  inputs:List[Union[str, ResourceRef]],
                  code:List[Union[str, ResourceRef]],
                  results_dir:str,
-                 workspace_dir:str,
+                 workspace:Workspace,
                  run_description:Optional[str]=None,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
         super().__init__(step_name, start_time, parameters,
-                         inputs, code, workspace_dir, command_line, current_directory)
-        self.results_dir = results_dir
-        (self.results_rname, self.results_subpath) = \
-            self.resources.map_local_path_to_resource(results_dir)
-        self.add_output_ref(ResourceRef(self.results_rname,
-                                        self.results_subpath))
+                         inputs, code, workspace, command_line, current_directory)
+        self.results_ref = self.workspace.map_local_path_to_resource(results_dir)
+        self.results_resource = self.workspace.get_resource(self.results_ref.name)
+        if not isinstance(self.results_resource, FileResourceMixin):
+            raise ConfigurationError("Resource '%s' does not support a file API and thus won't support writing results."%
+                                     self.results_ref.name)
+        self.add_output_ref(self.results_ref)
         self.run_description = run_description
 
     def write_results(self, metrics:Dict[str, Any]):
@@ -291,14 +297,13 @@ class ResultsLineage(Lineage):
             'run_description':self.run_description,
             'metrics': metrics
         }
-        if self.results_subpath:
-            results_relpath = join(self.results_subpath, "results.json")
+        if self.results_ref.subpath is not None:
+            results_relpath = join(self.results_ref.subpath, "results.json")
         else:
             results_relpath = "results.json"
-        self.resources.by_name[self.results_rname]\
-            .add_results_file_from_buffer(json.dumps(data, indent=2),
-                                          results_relpath)
-        print("Wrote results to %s:%s" % (self.results_rname, results_relpath))
+        cast(FileResourceMixin, self.results_resource).add_results_file(data,
+                                                                        results_relpath)
+        print("Wrote results to %s:%s" % (self.results_ref.name, results_relpath))
 
 
 
@@ -456,18 +461,21 @@ class LineageBuilder:
         inputs = self.inputs if self.inputs is not None else [] # type: List[Union[str, Any]]
         if self.workspace_dir is None:
             self.workspace_dir = get_workspace()
+        # TODO: need to make this handle other backends as well.
+        workspace = load_workspace('dataworkspaces.backends.git', False, False,
+                                   self.workspace_dir)
         if self.results_dir is not None:
             return ResultsLineage(self.step_name, datetime.datetime.now(),
                                   self.parameters, inputs, self.code,
                                   self.results_dir,
-                                  workspace_dir=self.workspace_dir,
+                                  workspace=workspace,
                                   run_description=self.run_description,
                                   command_line=self.command_line,
                                   current_directory=self.current_directory)
         else:
             return Lineage(self.step_name, datetime.datetime.now(),
                            self.parameters, inputs, self.code,
-                           self.workspace_dir,
+                           workspace,
                            self.command_line, self.current_directory)
 
 
