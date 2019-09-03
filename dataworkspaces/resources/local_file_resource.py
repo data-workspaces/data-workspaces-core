@@ -5,14 +5,15 @@ Resource for files living in a local directory
 from errno import EEXIST
 import os
 from os.path import join, exists
-from typing import List, Pattern, Tuple, Optional, Set
+from typing import List, Pattern, Tuple, Optional, Set, Union
 import json
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
-    FileResourceMixin, SnapshotResourceMixin, JSONDict, ResourceRoles, ResourceFactory
+    FileResourceMixin, SnapshotResourceMixin, JSONDict, JSONList,\
+    ResourceRoles, ResourceFactory
 import dataworkspaces.resources.hashtree as hashtree
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 import dataworkspaces.backends.git as git_backend
@@ -67,7 +68,7 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
                                     verbose=self.workspace.verbose)
 
 
-    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+    def add_results_file(self, data:Union[JSONDict,JSONList], rel_dest_path:str) -> None:
         """save JSON results data to the specified path in the resource.
         """
         assert self.role==ResourceRoles.RESULTS

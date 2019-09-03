@@ -137,16 +137,6 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
     mixin.save_snapshot_metadata_and_manifest(md, manifest)
     workspace.save("Completed snapshot %s" % md.hashval)
 
-    # XXX add back in lineage
-    # # see if we need to add lineage files
-    # save_lineage = SaveLineageData(ns, verbose, workspace_dir, resource_names,
-    #                                results_resources, rel_dest_root)
-    # if save_lineage.has_lineage_files():
-    #     plan.append(save_lineage)
-    #     plan.append(actions.GitAdd(ns, verbose, workspace_dir,
-    #                                actions.NamespaceRef('lineage_files', list, ns)))
-    # plan.append(actions.GitCommit(ns, verbose, workspace_dir,
-    #                               commit_message=lambda:"Snapshot "+ns.snapshot_hash))
     if tag:
         click.echo("Have successfully taken snapshot of workspace, tagged with '%s', hash is %s." %
                    (tag, md.hashval))

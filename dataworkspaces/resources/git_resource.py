@@ -8,9 +8,8 @@ from os.path import realpath, basename, isdir, join, dirname, exists,\
                     abspath, expanduser
 import stat
 import click
-import shutil
 import json
-from typing import Set, Pattern
+from typing import Set, Pattern, Union
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -26,7 +25,7 @@ from dataworkspaces.utils.git_utils import \
     is_pull_needed_from_remote
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
-    SnapshotResourceMixin, JSONDict
+    SnapshotResourceMixin, JSONDict, JSONList
 import dataworkspaces.backends.git as git_backend
 from dataworkspaces.utils.file_utils import LocalPathType
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
@@ -112,7 +111,7 @@ class GitRepoResource(GitResourceBase):
                              '-m', "Move current results to %s" % rel_dest_root],
                             cwd=self.local_path, verbose=self.workspace.verbose)
 
-    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+    def add_results_file(self, data:Union[JSONDict,JSONList], rel_dest_path:str) -> None:
         """Save JSON results data to the specified path in the resource.
         """
         assert self.role==ResourceRoles.RESULTS
@@ -436,25 +435,6 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                             cwd=self.workspace_dir,
                             verbose=self.workspace.verbose)
 
-    def add_results_file(self, temp_path, rel_dest_path):
-        """Move a results file from the temporary location to
-        the specified path in the resource. Caller responsible
-        for cleanup of temp_path
-        """
-        assert exists(temp_path)
-        abs_dest_path = join(self.local_path, rel_dest_path)
-        parent_dir = dirname(abs_dest_path)
-        if not exists(parent_dir):
-            os.makedirs(parent_dir)
-        # Need to use copy instead of move, because /tmp might be in a separate
-        # filesystem (see issue #21). Caller will do cleanup of temp file.
-        shutil.copyfile(temp_path, abs_dest_path)
-        rel_path_in_repo = join(self.relative_path, rel_dest_path)
-        call_subprocess([GIT_EXE_PATH, 'add', rel_path_in_repo],
-                        cwd=self.workspace_dir, verbose=self.verbose)
-        call_subprocess([GIT_EXE_PATH, 'commit',
-                         '-m', "Added %s" % rel_path_in_repo],
-                        cwd=self.workspace_dir, verbose=self.verbose)
 
     def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
@@ -475,6 +455,21 @@ class GitRepoResultsSubdirResource(GitResourceBase):
         raise InternalError("Should never call restore on a git subdirectory resource (%s)"%
                             self.name)
 
+    def add_results_file(self, data:Union[JSONDict,JSONList], rel_dest_path:str) -> None:
+        """Save JSON results data to the specified path in the resource.
+        """
+        abs_dest_path = join(self.local_path, rel_dest_path)
+        parent_dir = dirname(abs_dest_path)
+        if not exists(parent_dir):
+            os.makedirs(parent_dir)
+        with open(abs_dest_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        rel_to_repo_path = join(self.relative_path, rel_dest_path)
+        call_subprocess([GIT_EXE_PATH, 'add', rel_to_repo_path],
+                        cwd=self.workspace_dir, verbose=self.workspace.verbose)
+        call_subprocess([GIT_EXE_PATH, 'commit',
+                         '-m', "Added %s" % rel_to_repo_path],
+                        cwd=self.workspace_dir, verbose=self.workspace.verbose)
 
     def push_precheck(self):
         if not exists(self.local_path):
@@ -530,7 +525,7 @@ class GitRepoSubdirResource(GitResourceBase):
                                    exclude_dirs_re:Pattern):
         raise InternalError("results_move_current_files should not be called for %s" % self.__class__.__name__)
 
-    def add_results_file(self, temp_path, rel_dest_path):
+    def add_results_file(self, data, rel_dest_path) -> None:
         """Copy a results file from the temporary location to
         the specified path in the resource. Caller responsible for cleanup.
         """

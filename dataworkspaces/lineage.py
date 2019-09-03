@@ -113,14 +113,15 @@ import contextlib
 from collections import OrderedDict
 import datetime
 from typing import List, Union, Any, Type, Iterable, Dict, Optional, cast
-from os.path import curdir, join
+from os.path import curdir, join, isabs, abspath, expanduser
 from argparse import ArgumentParser, Namespace
 from copy import copy
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.workspace_utils import get_workspace
 from dataworkspaces.workspace import Workspace, load_workspace, FileResourceMixin,\
-                                     PathNotAResourceError
+                                     PathNotAResourceError, SnapshotWorkspaceMixin,\
+                                     ResourceRoles
 from dataworkspaces.utils.lineage_utils import \
     ResourceRef, StepLineage, infer_step_name, infer_script_path
 
@@ -142,9 +143,11 @@ class Lineage(contextlib.AbstractContextManager):
                  workspace:Workspace,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
-        self.workspace = workspace
+        self.workspace = workspace # type: Workspace
         self.instance = workspace.get_instance()
-        self.store = workspace.get_lineage_store()
+        # if not isinstance(workspace, SnapshotWorkspaceMixin) or not workspace.supports_lineage():
+        #     raise ConfigurationError("Backend for workspace %s does not support lineage" % workspace.name)
+        self.store = cast(SnapshotWorkspaceMixin, workspace).get_lineage_store()
         input_resource_refs=[] # type: List[ResourceRef]
         for r_or_p in inputs:
             if isinstance(r_or_p, ResourceRef):
@@ -156,8 +159,8 @@ class Lineage(contextlib.AbstractContextManager):
         code_resource_refs=[] # type: List[ResourceRef]
         for r_or_p in code:
             if isinstance(r_or_p, ResourceRef):
-                self.resources.validate_resource_name(r_or_p.name, r_or_p.subpath,
-                                                      expecting_a_code_resource=True)
+                self.workspace.validate_resource_name(r_or_p.name, r_or_p.subpath,
+                                                      expected_role=ResourceRoles.CODE)
                 code_resource_refs.append(r_or_p)
             else:
                 ref = workspace.map_local_path_to_resource(r_or_p,
@@ -172,12 +175,16 @@ class Lineage(contextlib.AbstractContextManager):
         # The run_from_directory can be either a resource reference (best),
         # a path on the local filesystem, or None
         try:
-            run_from_directory = workspace.map_local_path_to_resource(current_directory)\
-                                 if current_directory is not None else None
+            if current_directory is not None:
+                if not isabs(current_directory):
+                    current_directory = abspath(expanduser((current_directory)))
+                run_from_directory = workspace.map_local_path_to_resource(current_directory) # type: Optional[ResourceRef]
+            else:
+                run_from_directory = None
         except PathNotAResourceError:
-            run_from_directory = current_directory
+            run_from_directory = None
 
-        self.step = StepLineage.make_step_lineage(workspace.get_intance(),
+        self.step = StepLineage.make_step_lineage(workspace.get_instance(),
                                                   step_name, start_time,
                                                   parameters, input_resource_refs,
                                                   code_resource_refs,
@@ -186,14 +193,14 @@ class Lineage(contextlib.AbstractContextManager):
                                                   run_from_directory=run_from_directory)
         self.in_progress = True
 
-    def add_output_path(self, path:str):
+    def add_output_path(self, path:str) -> None:
         """Resolve the path to a resource name and subpath. Add
         that to the lineage as an output of the step. From this point on,
         if the step fails (:func:`~abort` is called), the associated resource
         and subpath will be marked as being in an "unknown" state.
         """
-        ref = self.resources.map_local_path_to_resource(path)
-        self.step.add_output(self.store, ref)
+        ref = self.workspace.map_local_path_to_resource(path) # mypy: ignore
+        self.step.add_output(self.workspace.get_instance(), self.store, ref) # mypy: ignore
 
     def add_output_ref(self, ref:ResourceRef):
         """Add the resource reference to the lineage as an output of the step.
@@ -201,7 +208,7 @@ class Lineage(contextlib.AbstractContextManager):
         associated resource and subpath will be marked as being in an
         "unknown" state.
         """
-        self.step.add_output(self.store, ref)
+        self.step.add_output(self.workspace.get_instance(), self.store, ref)
 
     def abort(self):
         """The step has failed, so we mark its outputs in an unknown state.
@@ -274,11 +281,11 @@ class ResultsLineage(Lineage):
                          inputs, code, workspace, command_line, current_directory)
         self.results_ref = self.workspace.map_local_path_to_resource(results_dir)
         self.results_resource = self.workspace.get_resource(self.results_ref.name)
+        self.add_output_ref(self.results_ref)
+        self.run_description = run_description
         if not isinstance(self.results_resource, FileResourceMixin):
             raise ConfigurationError("Resource '%s' does not support a file API and thus won't support writing results."%
                                      self.results_ref.name)
-        self.add_output_ref(self.results_ref)
-        self.run_description = run_description
 
     def write_results(self, metrics:Dict[str, Any]):
         """Write a ``results.json`` file to the results directory
@@ -376,7 +383,7 @@ class LineageBuilder:
         self.current_directory = None # type: Optional[str]
         self.parameters = None        # type: Optional[Dict[str, Any]]
         self.inputs = None            # type: Optional[List[Union[str, ResourceRef]]]
-        self.no_inputs = False        # type: Boolean
+        self.no_inputs = False        # type: Optional[bool]
         self.code = []                # type: List[Union[str, ResourceRef]]
         self.workspace_dir = None     # type: Optional[str]
         self.results_dir = None       # type: Optional[str]

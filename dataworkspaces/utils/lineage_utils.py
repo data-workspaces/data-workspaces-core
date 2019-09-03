@@ -4,13 +4,22 @@ Utilities for data lineage files
 
 For now, the resource overwriting rule is that, we either completely
 match a subpath and replace it, or there is no intersection.
+
+For pretty printing of resources and certs, the convention is:
+
+* Don't indent before the first line
+* For subsequent lines, indent as specified
+* For sub-objects, call .pp(indent+2)
+* No newline at the end
+
+The __repr__ call should just be pp(0)
 """
 
 import datetime
 import os
 from os.path import join, exists, basename, realpath, abspath, expanduser,\
                     commonpath, dirname
-from typing import List, Any, Optional, Tuple, NamedTuple, Dict, Union, Iterable, cast
+from typing import List, Any, Optional, Tuple, NamedTuple, Dict, Iterable, cast
 import json
 import shutil
 import sys
@@ -112,6 +121,12 @@ class Certificate(metaclass=ABCMeta):
         self.ref = ref
         self.comment = comment
 
+    @abstractmethod
+    def pp(self, indent:int=2) -> str:
+        """Pretty print with the specified indent level
+        """
+        pass
+
     @staticmethod
     def from_json(obj:Any, filename:Optional[str]=None):
         validate_json_keys(obj, Certificate, ['resource_name', 'certificate'],
@@ -146,12 +161,12 @@ class HashCertificate(Certificate):
     def __hash__(self):
         return hash((self.ref, self.hashval),)
 
-    def __repr__(self):
+    def __str__(self):
         return 'HashCertificate(ref=%s, hashval=%s, comment="%s")' % \
             (self.ref, self.hashval, self.comment)
 
-    def __str__(self):
-        return self.__repr__()
+    def __repr__(self):
+        return self.pp()
 
     def __eq__(self, other) -> bool:
         return isinstance(other, HashCertificate) and other.ref==self.ref and other.hashval==self.hashval
@@ -170,6 +185,13 @@ class HashCertificate(Certificate):
             }
         }
 
+    def pp(self, indent:int=2) -> str:
+        """Pretty print with the specified indent level
+        """
+        return 'HashCertificate(ref=%s, hashval=%s,\n%scomment="%s")' % (self.ref, self.hashval, " "*(indent+2),
+                                                                         self.comment)
+
+
 
 class PlaceholderCertificate(Certificate):
     __slots__ = ('version',)
@@ -177,8 +199,11 @@ class PlaceholderCertificate(Certificate):
         super().__init__(ref, comment)
         self.version = version
 
-    def __str__(self):
-        return self.__repr__()
+    def pp(self, indent:int=2) -> str:
+        """Pretty print with the specified indent level
+        """
+        return 'PlaceholderCertificate(ref=%s,  version=%d,\n%scomment="%s")' % \
+            (self.ref, self.version, " "*(indent+2), self.comment)
 
     def create_hash_cert(self, hashval:str) -> HashCertificate:
         return HashCertificate(ref=self.ref, hashval=hashval, comment=self.comment)
@@ -190,8 +215,18 @@ class InputPlaceholderCert(PlaceholderCertificate):
     that might be out-of-date.
     """
     __slots__=()
+    def __str__(self):
+        return 'InputPlaceholderCert(ref=%s, version=%d, comment="%s")' % \
+            (self.ref, self.version, self.comment)
+
+    def pp(self, indent:int=2) -> str:
+        """Pretty print with the specified indent level
+        """
+        return 'InputPlaceholderCert(ref=%s,  version=%d,\n%scomment="%s")' % \
+            (self.ref, self.version, " "*(indent+2), self.comment)
+
     def __repr__(self):
-        return 'InputPlaceholderCert(ref=%s, version=%d, comment="%s")' % (self.ref, self.version, self.comment)
+        return self.pp()
 
     def __hash__(self):
         return hash((self.ref, self.version, False),)
@@ -222,8 +257,18 @@ class OutputPlaceholderCert(PlaceholderCertificate):
     input placeholder cert might be compatible, if nothing has changed since the
     last snapshot.
     """
+    def __str__(self):
+        return 'OutputPlaceholderCert(ref=%s, version=%d, comment="%s")' % \
+            (self.ref, self.version, self.comment)
+
+    def pp(self, indent:int=2) -> str:
+        """Pretty print with the specified indent level
+        """
+        return 'OutputPlaceholderCert(ref=%s,  version=%d,\n%scomment="%s")' % \
+            (self.ref, self.version, " "*(indent+2), self.comment)
+
     def __repr__(self):
-        return 'OutputPlaceholderCert(ref=%s, version=%d, comment="%s")' % (self.ref, self.version, self.comment)
+        return self.pp()
 
     def __hash__(self):
         return hash((self.ref, self.version, True),)
@@ -271,6 +316,12 @@ class ResourceLineage(metaclass=ABCMeta):
     def to_json(self) -> Dict[str, Any]:
         pass
 
+
+    @abstractmethod
+    def pp(self, indent:int=0) -> str:
+        """Pretty print the lineage with the specified indentation level.
+        """
+        pass
 
     @abstractmethod
     def get_cert_for_ref(self, ref:ResourceRef) -> \
@@ -394,7 +445,7 @@ class StepLineage(ResourceLineage):
                  output_resources:Optional[List[Certificate]]=None,
                  execution_time_seconds:Optional[float]=None,
                  command_line:Optional[List[str]]=None,
-                 run_from_directory:Optional[Union[str, ResourceRef]]=None):
+                 run_from_directory:Optional[ResourceRef]=None):
         self.step_name = step_name
         self.start_time = start_time
         self.parameters = parameters
@@ -414,8 +465,26 @@ class StepLineage(ResourceLineage):
                 self.outputs_by_resource[rname] = [oc,]
 
     def __str__(self):
-        return "StepLineage(step_name=%s,\n  input_resources=%s,\n  code_resources=%s,\n  output_resources=%s)" % \
-            (self.step_name, self.input_resources, self.code_resources, self.output_resources)
+        return "StepLineage(step_name=%s,\n  inputs=%s,\n  code=%s,\n  outputs=%s)" % \
+            (self.step_name, [c.ref for c in self.input_resources], [c.ref for c in self.code_resources],
+             [c.ref for c in self.output_resources])
+
+    def __repr__(self):
+        return self.pp()
+
+    def pp(self, indent:int=0) -> str:
+        """Pretty print the lineage with the specified indentation level.
+        """
+        def pp_certs(name, lst, indent):
+            spaces = ' '*(indent+2)
+            return indent*" " + name + "=[" + (',\n'+spaces).join(c.pp(indent+2) for c in lst) +']'
+        s = ' '*indent + "StepLineage(step_name=%s,\n" % self.step_name
+        s += pp_certs('inputs', self.input_resources, indent+2)
+        s += ',\n' + pp_certs('outputs', self.output_resources, indent+2)
+        s == ',\n' + pp_certs('code', self.code_resources, indent+2)
+        s += ')'
+        return s
+
     @staticmethod
     def make_step_lineage(instance:str, step_name:str, start_time:datetime.datetime,
                           parameters:Dict[str, Any],
@@ -423,7 +492,7 @@ class StepLineage(ResourceLineage):
                           code_resource_refs:List[ResourceRef],
                           lineage_store:'LineageStore',
                           command_line:Optional[List[str]]=None,
-                          run_from_directory:Optional[Union[str, ResourceRef]]=None) -> 'StepLineage':
+                          run_from_directory:Optional[ResourceRef]=None) -> 'StepLineage':
         """At the start of a step's run, create a step lineage object
         to be updated as the step progesses. Validates that the inputs
         to the step are consistent.
@@ -612,6 +681,12 @@ class SourceDataLineage(ResourceLineage):
     def __str__(self):
         return 'SourceDataLineage(%s)' % self.cert
 
+    def __repr__(self):
+        return self.pp()
+
+    def pp(self, indent:int=2) -> str:
+        return 'SourceDataLineage(%s)' % self.cert.pp(indent+2)
+
     def get_cert_for_ref(self, ref:ResourceRef) -> \
                               Optional[Certificate]:
         if ref==self.cert.ref or self.cert.ref.covers(ref):
@@ -656,6 +731,12 @@ class CodeLineage(ResourceLineage):
 
     def __str__(self):
         return 'CodeLineage(%s)' % self.cert
+
+    def __repr__(self):
+        return self.pp()
+
+    def pp(self, indent:int=2) -> str:
+        return 'CodeLineage(%s)' % self.cert.pp(indent+2)
 
     def get_cert_for_ref(self, ref:ResourceRef) -> \
                               Optional[Certificate]:

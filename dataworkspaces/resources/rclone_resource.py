@@ -5,12 +5,13 @@ Resource for files copied in by rclone
 import os
 import os.path 
 import stat
-from typing import Tuple, List, Set, Pattern, Optional
+from typing import Tuple, List, Set, Pattern, Optional, Union
 import json
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
-    FileResourceMixin, SnapshotResourceMixin, JSONDict, ResourceRoles, ResourceFactory
+    FileResourceMixin, SnapshotResourceMixin, JSONDict, JSONList,\
+    ResourceRoles, ResourceFactory
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 from dataworkspaces.third_party.rclone import RClone
 
@@ -61,7 +62,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
                                     exclude_files, exclude_dirs_re,
                                     verbose=self.workspace.verbose)
 
-    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+    def add_results_file(self, data:Union[JSONDict,JSONList], rel_dest_path:str) -> None:
         """save JSON results data to the specified path in the resource.
         """
         assert self.role==ResourceRoles.RESULTS

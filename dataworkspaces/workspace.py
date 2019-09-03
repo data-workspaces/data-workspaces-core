@@ -44,7 +44,7 @@ The module ``dataworkspaces.commands.COMMAND`` should look like this::
 
 """
 
-from typing import Dict, Any, Iterable, Optional, List, Tuple, Set, cast, Pattern
+from typing import Dict, Any, Iterable, Optional, List, Tuple, Set, cast, Pattern, Union
 
 from abc import ABCMeta, abstractmethod
 import importlib
@@ -74,6 +74,7 @@ from dataworkspaces.utils.lineage_utils import ResourceRef, LineageStore
 # Standin for a JSON object/dict. The value type is overly
 # permissive, as mypy does not yet support recursive types.
 JSONDict=Dict[str,Any]
+JSONList=List[Any]
 
 class Workspace(metaclass=ABCMeta):
     def __init__(self, name:str, dws_version:str,
@@ -354,6 +355,8 @@ class Workspace(metaclass=ABCMeta):
            a resource and the path within the resource.
            Raises PathNotAResourceError if no match is found.
         """
+        if not os.path.isabs(path):
+            path = os.path.normpath(os.path.join(os.path.abspath(os.path.expanduser(os.path.curdir)), path))
         for rname in self.get_names_of_resources_with_local_state():
             r = self.get_resource(rname)
             assert isinstance(r, LocalStateResourceMixin)
@@ -563,7 +566,8 @@ class FileResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def add_results_file(self, data:JSONDict, rel_dest_path:str) -> None:
+    def add_results_file(self, data:Union[JSONDict,JSONList],
+                         rel_dest_path:str) -> None:
         """Save JSON results data to the specified path in the resource.
         """
         pass
@@ -714,7 +718,9 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
         cloning of new resources.
         """
         self._pull_resources_precheck(resource_list)
+        assert isinstance(self, Workspace)
         for r in resource_list:
+            print("[pull] pulling resource %s" %r.name) # XXX
             r.pull()
 
         # We need to clear the current lineage for pulled resources since we
@@ -723,6 +729,7 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
             instance = self.get_instance()
             lstore = self.get_lineage_store()
             for r in resource_list:
+                print("[pull] clearing resource %s" %r.name) # XXX
                 if self.verbose:
                     print("Clearing lineage on resource %s" % r.name)
                 lstore.clear_entry(instance, ResourceRef(r.name, None))
@@ -937,10 +944,12 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         self._snapshot_precheck(current_resources)
 
         # now, move the files for result resources
+        resources_with_moved_files = [] # type: List[str]
         for r in current_resources:
             if r.has_results_role() and isinstance(r, FileResourceMixin):
                 cast(FileResourceMixin, r).results_move_current_files(rel_dest_root, exclude_files,
                                                                       exclude_dirs_re)
+                resources_with_moved_files.append(r.name)
 
         manifest = []
         map_of_restore_hashes = {} # type: Dict[str,Optional[str]]
@@ -975,6 +984,23 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                                         verbose=workspace.verbose)
             lstore.snapshot_lineage(instance, manifest_hash,
                                     [r.name for r in current_resources])
+
+            # TODO: consider whether the writing of lineage data and the clearing
+            # of results resources should be done outside of this method.
+            
+            # We write the lineage data out after the snapshot, as we want it to
+            # include everything from the snapshot. Since results resources are
+            # additive, we won't be missing anything if we
+            # restore to this snapshot.
+            self.write_result_lineage_for_snapshot(metadata.relative_destination_path)
+
+            # For all the results resources for which we moved the files to a
+            # snapshot-specific subdirectory, we need to clear the lineage.
+            # This needs to happen after the previous step.
+            for rname in resources_with_moved_files:
+                lstore.clear_entry(instance, ResourceRef(rname, None))
+                if cast(Workspace,self).verbose:
+                    print("Cleared lineage for results resource %s" % rname)
         return metadata, manifest_bytes
         
     def _restore_precheck(self, restore_hashes:Dict[str,str],
@@ -1120,6 +1146,29 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         raise a ConfigurationError.
         """
         pass
+
+    def write_result_lineage_for_snapshot(self, rel_dest_path:str) -> None:
+        assert self.supports_lineage()
+        assert isinstance(self, Workspace)
+        instance = self.get_instance()
+        store = self.get_lineage_store()
+        for rname in self.get_resource_names():
+            if self.get_resource_role(rname)!=ResourceRoles.RESULTS:
+                continue
+            r = self.get_resource(rname)
+            if not isinstance(r, FileResourceMixin):
+                continue
+            (lineage, warnings) = store.get_lineage_for_resource(instance, rname)
+            if len(lineage)>0:
+                lineage_dict = {
+                    'resource_name':rname,
+                    'complete':warnings==0,
+                    'lineages':[l.to_json() for l in lineage]
+                }
+                r.add_results_file(lineage_dict, os.path.join(rel_dest_path, 'lineage.json'))
+                print("Wrote lineage for %s to lineage.json" % rname)
+            elif self.verbose:
+                print("No lineage available for %s, not writing a lineage.json file" % rname)
 
 
 class SnapshotResourceMixin(metaclass=ABCMeta):

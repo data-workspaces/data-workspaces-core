@@ -6,7 +6,7 @@ help:
 	@echo targets are: test clean mypy help install-rclone-deb
 
 #UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
-UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_file_utils test_hashtree test_lineage_utils
+UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_file_utils test_hashtree test_lineage_utils test_lineage
 
 MYPY_APIS=lineage.py
 MYPY_KITS=scikit_learn.py
@@ -16,16 +16,15 @@ test: clean mypy pyflakes
 	python -m unittest $(UNIT_TESTS)
 
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py lineage.py
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy utils/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy resources/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy commands/
-	#cd $(DATAWORKSPACES); mypy --ignore-missing-imports $(MYPY_APIS)
 	#cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
-	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py
+	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py
 	cd $(DATAWORKSPACES)/utils; pyflakes *.py
 	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes *.py
