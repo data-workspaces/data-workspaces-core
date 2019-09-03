@@ -41,6 +41,8 @@ def _get_notebook_name() -> Optional[str]:
                 if nn['kernel']['id'] == kernel_id:
                     relative_path = nn['notebook']['path']
                     return join(ss['notebook_dir'], relative_path)
+        print("Did not find a matching notebook server for %s" % connection_file)
+        return None
     else:
         return None  # not running in the server
 
@@ -68,7 +70,8 @@ def is_notebook() -> bool:
     """Return true if this code is running in a notebook.
     """
     try:
-        shell = get_ipython().__class__.__name__
+        # if running in ipython, get_ipython() will be in the global contect
+        shell = get_ipython().__class__.__name__ # type: ignore
         if shell == 'ZMQInteractiveShell':
             return True   # Jupyter notebook or qtconsole
         elif shell == 'TerminalInteractiveShell':

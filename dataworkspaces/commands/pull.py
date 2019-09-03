@@ -8,21 +8,6 @@ from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.workspace import Workspace,\
     SyncedWorkspaceMixin, CentralWorkspaceMixin
 
-# XXX need to port lineage
-# class InvalidateLineage(actions.Action):
-#     def __init__(self, ns, verbose, current_lineage_dir, pulled_resource_names):
-#         super().__init__(ns, verbose)
-#         self.current_lineage_dir = current_lineage_dir
-#         self.pulled_resource_names = pulled_resource_names
-
-#     def run(self):
-#         LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
-#                                                        self.pulled_resource_names)
-
-#     def __str__(self):
-#         return 'Invalidate lineage for resources: %s' % \
-#             ', '.join(self.pulled_resource_names)
-
 
 def _pull_and_clone_resources(workspace, only, skip):
     resource_list_names = build_resource_list(workspace, only, skip)

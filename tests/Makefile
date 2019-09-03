@@ -6,10 +6,9 @@ help:
 	@echo targets are: test clean mypy help install-rclone-deb
 
 #UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
-UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_file_utils test_hashtree test_lineage_utils test_lineage
+UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_file_utils test_hashtree test_lineage_utils test_lineage test_jupyter_kit
 
-MYPY_APIS=lineage.py
-MYPY_KITS=scikit_learn.py
+MYPY_KITS=scikit_learn.py jupyter.py
 
 test: clean mypy pyflakes
 	#	./testcli.sh --batch
@@ -21,7 +20,7 @@ mypy:
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy resources/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy commands/
-	#cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
+	cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py

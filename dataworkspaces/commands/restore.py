@@ -7,25 +7,6 @@ from dataworkspaces.errors import ConfigurationError, UserAbort, \
 from dataworkspaces.workspace import Workspace, SnapshotWorkspaceMixin,\
                                      SnapshotResourceMixin, ResourceRoles
 
-# XXX add back in lineage
-# class CopyLineageFilesToCurrent(actions.Action):
-#     def __init__(self, ns, verbose, current_lineage_dir, snapshot_lineage_dir,
-#                  resource_names):
-#         super().__init__(ns, verbose)
-#         self.current_lineage_dir = current_lineage_dir
-#         self.snapshot_lineage_dir = snapshot_lineage_dir
-#         self.resource_names = resource_names
-
-#     def run(self):
-#         if not isdir(self.current_lineage_dir):
-#             os.makedirs(self.current_lineage_dir)
-#         LineageStoreCurrent.restore_store_from_snapshot(self.snapshot_lineage_dir,
-#                                                         self.current_lineage_dir,
-#                                                         self.resource_names)
-
-#     def __str__(self):
-#         return "Copy lineage files from snapshot to current lineage"
-
 
 
 def restore_command(workspace:Workspace, tag_or_hash:str,

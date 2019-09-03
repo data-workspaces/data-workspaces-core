@@ -41,62 +41,6 @@ def merge_snapshot_metadata(old, new, batch):
         updated_timestamp=new.timestamp
     )
 
-# XXX Need to add back in lineage!
-# class SaveLineageData(actions.Action):
-#     @actions.requires_from_ns('snapshot_hash', str)
-#     @actions.requires_from_ns('map_of_hashes', dict)
-#     @actions.provides_to_ns('lineage_files', list)
-#     def __init__(self, ns, verbose, workspace_dir, resource_names,
-#                  results_resources, rel_dest_root):
-#         super().__init__(ns, verbose)
-#         self.workspace_dir = workspace_dir
-#         self.current_lineage_dir = get_current_lineage_dir(workspace_dir)
-#         self.resource_names = resource_names
-#         self.results_resources = results_resources
-#         self.rel_dest_root = rel_dest_root
-#         if not isdir(self.current_lineage_dir):
-#             self.num_files = 0
-#         else:
-#             currfiles= set(LineageStoreCurrent.get_resource_names_in_fsstore(
-#                            self.current_lineage_dir))
-#             self.num_files = len(currfiles.intersection(set(resource_names)))
-
-#     def has_lineage_files(self):
-#         return self.num_files > 0
-
-#     def run(self):
-#         assert self.has_lineage_files()
-#         snapshot_hash = self.ns.snapshot_hash
-#         map_of_hashes = self.ns.map_of_hashes
-#         store = LineageStoreCurrent.load(self.current_lineage_dir)
-#         store.replace_placeholders_with_real_certs(map_of_hashes)
-#         store.save(self.current_lineage_dir)
-#         for rr in self.results_resources:
-#             (lineages, complete) = store.get_lineage_for_resource(rr.name)
-#             if len(lineages)>0:
-#                 data = {'resource_name':rr.name,
-#                         'complete':complete,
-#                         'lineages':[l.to_json() for l in lineages]}
-#                 rr.add_results_file_from_buffer(json.dumps(data, indent=2),
-#                                                 join(self.rel_dest_root,
-#                                                      'lineage.json'))
-#         lineage_dir = get_snapshot_lineage_dir(self.workspace_dir, snapshot_hash)
-#         os.makedirs(lineage_dir)
-#         (dest_files, warnings) =\
-#             LineageStoreCurrent.copy_fsstore_to_snapshot(self.current_lineage_dir,
-#                                                          lineage_dir,
-#                                                          self.resource_names)
-#         self.ns.lineage_files = dest_files
-#         # We need to invalidate the resource lineage for any results,
-#         # as we've moved the data to a subdirectory
-#         if len(self.results_resources)>0:
-#             LineageStoreCurrent.invalidate_fsstore_entries(self.current_lineage_dir,
-#                                                            [rr.name for rr in self.results_resources])
-
-#     def __str__(self):
-#         return "Copy lineage %d files from current workspace to snapshot lineage" % \
-#             self.num_files
-
 
 
 def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''):
@@ -127,8 +71,6 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
 
     try:
         old_md = mixin.get_snapshot_metadata(md.hashval)
-        print("Old_md: %s" % old_md) # XXX
-        print("New_md: %s" % md) # XXX
     except:
         old_md = None
     if old_md is not None:
