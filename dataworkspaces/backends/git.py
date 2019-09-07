@@ -19,12 +19,14 @@ from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, git_init, git_add,\
-    validate_git_fat_in_path_if_needed, \
-    run_git_fat_pull_if_needed, is_git_dirty,\
+    is_git_dirty,\
     is_pull_needed_from_remote, GIT_EXE_PATH,\
-    run_git_fat_push_if_needed,\
-    set_remote_origin, is_a_git_fat_repo,\
-    validate_git_fat_in_path, git_remove_file, git_remove_subtree
+    set_remote_origin, \
+    git_remove_file, git_remove_subtree
+from dataworkspaces.utils.git_fat_utils import \
+    validate_git_fat_in_path_if_needed, \
+    run_git_fat_pull_if_needed, validate_git_fat_in_path, run_git_fat_push_if_needed,\
+    setup_git_fat_for_repo, is_a_git_fat_repo
 from dataworkspaces.utils.file_utils import safe_rename, get_subpath_from_absolute
 from dataworkspaces.utils.param_utils import HOSTNAME
 from dataworkspaces.utils.lineage_utils import \
@@ -459,7 +461,11 @@ class WorkspaceFactory(ws.WorkspaceFactory):
     def init_workspace(workspace_name:str, dws_version:str, # type: ignore
                        global_params:JSONDict, local_params:JSONDict,
                        batch:bool, verbose:bool,
-                       workspace_dir:str) -> ws.Workspace:
+                       workspace_dir:str,
+                       git_fat_remote:Optional[str]=None,
+                       git_fat_user:Optional[str]=None,
+                       git_fat_port:Optional[int]=None,
+                       git_fat_attributes:Optional[str]=None) -> ws.Workspace:
         if not exists(workspace_dir):
             raise ConfigurationError("Directory for new workspace '%s' does not exist"%
                                      workspace_dir)
@@ -498,6 +504,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 [CONFIG_FILE_PATH, RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
                 verbose=verbose)
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
+
+        if git_fat_remote is not None:
+            setup_git_fat_for_repo(workspace_dir, git_fat_remote, git_fat_user,
+                                   git_fat_port, git_fat_attributes, verbose)
         return Workspace(workspace_dir, batch, verbose)
 
     @staticmethod

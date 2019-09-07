@@ -2,7 +2,7 @@
 """
 Utility functions related to interacting with git
 """
-from os.path import isdir, join, dirname, exists
+from os.path import isdir, join, dirname
 from subprocess import run, PIPE
 import shutil
 import re
@@ -107,6 +107,12 @@ def git_add(repo_dir:str, relative_paths:List[str], verbose:bool=False) -> None:
     call_subprocess([GIT_EXE_PATH, 'add']+relative_paths,
                     cwd=repo_dir, verbose=verbose)
 
+
+def git_commit(repo_dir:str, message:str, verbose:bool=False) -> None:
+    """Unconditional git commit
+    """
+    call_subprocess([GIT_EXE_PATH, 'commit', '-m', message],
+                    cwd=repo_dir, verbose=verbose)
 
 def git_remove_subtree(repo_dir:str, relative_path:str, remove_history:bool=False,
                        verbose:bool=False) -> None:
@@ -354,64 +360,6 @@ def get_subdirectory_hash(repo_dir, relpath, verbose=False):
                         relpath)
 
 
-def get_dot_gitfat_file_path(workspace_dir):
-    return join(workspace_dir, '.gitfat')
-
-def is_a_git_fat_repo(repo_dir):
-    assert is_git_repo(repo_dir), "%s is not a git repo" % repo_dir
-    return exists(get_dot_gitfat_file_path(repo_dir))
-
-def has_git_fat_been_initialized(repo_dir):
-    return isdir(join(repo_dir, '.git/fat'))
-
-# Utility funtions for issue #12 - if a repo is git-fat enabled, and git-fat is not in the path,
-# git add will fail silently for filter calls (e.g. in git add). We explicitly check that
-# the executable is in the path in situations where we will call git as a subprocess.
-
-GIT_FAT_ERRMSG=\
-"Ensure that the dataworkspaces package is installed and that you have activated your virtual environment (if any)."
-
-def validate_git_fat_in_path() -> None:
-    """Validate that git-fat is in the path, asssuming we already know that this
-    is a git-fat repo.
-    If the executable is not found, throw a configuration error. We need to do this, as git itself
-    will not return an error return code if a filter (e.g. git-fat) is not found.
-    """
-    find_exe('git-fat', GIT_FAT_ERRMSG,
-             additional_search_locations=[])
-
-def validate_git_fat_in_path_if_needed(repo_dir:str) -> None:
-    """Validate that git-fat is in the path, if this repo is git-fat enabled.
-    Otherwise, throw a configuration error. We need to do this, as git itself
-    will not return an error return code if a filter (e.g. git-fat) is not found.
-    """
-    if not is_a_git_fat_repo(repo_dir):
-        return
-    find_exe('git-fat', GIT_FAT_ERRMSG,
-             additional_search_locations=[])
-
-def run_git_fat_pull_if_needed(repo_dir:str, verbose:bool) -> None:
-    """When restoring resources from snapshots or running a pull, we need to
-    also run git-fat pull, if the repo is a git-fat repo
-    """
-    if not is_a_git_fat_repo(repo_dir):
-        return
-    else:
-        import dataworkspaces.third_party.git_fat as git_fat
-        python2_exe = git_fat.find_python2_exe()
-        git_fat.run_git_fat(python2_exe, ['pull'],
-                            cwd=repo_dir, verbose=verbose)
-
-def run_git_fat_push_if_needed(repo_dir:str, verbose:bool) -> None:
-    """Push the git-fat updates for the repo, if it is git fat-enabled
-    """
-    if not is_a_git_fat_repo(repo_dir):
-        return
-    else:
-        import dataworkspaces.third_party.git_fat as git_fat
-        python2_exe = git_fat.find_python2_exe()
-        git_fat.run_git_fat(python2_exe, ['push'],
-                            cwd=repo_dir, verbose=verbose)
 
 
 def get_remote_origin_url(repo_dir:str, verbose:bool) -> str:

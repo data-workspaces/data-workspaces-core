@@ -148,8 +148,9 @@ class RcloneFactory(ResourceFactory):
         else:
             rclone = RClone()
         known_remotes = rclone.listremotes()
-        if remote_path not in known_remotes:
-            raise ConfigurationError("Remote '" + remote_path + "' not found by rclone")
+        (remote_name, _) = remote_path.split(":")
+        if remote_name not in known_remotes:
+            raise ConfigurationError("Remote '" + remote_name + "' not found by rclone")
         return rclone
 
     def _copy_from_remote(self, local_path, remote_origin, rclone):

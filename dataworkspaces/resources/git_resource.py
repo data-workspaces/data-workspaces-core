@@ -19,10 +19,12 @@ from dataworkspaces.utils.git_utils import \
     get_local_head_hash, commit_changes_in_repo,\
     checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
-    checkout_subdir_and_apply_commit, is_a_git_fat_repo,\
-    has_git_fat_been_initialized, validate_git_fat_in_path,\
-    validate_git_fat_in_path_if_needed, get_subdirectory_hash,\
+    checkout_subdir_and_apply_commit, get_subdirectory_hash,\
     is_pull_needed_from_remote
+from dataworkspaces.utils.git_fat_utils import \
+    is_a_git_fat_repo,\
+    has_git_fat_been_initialized, validate_git_fat_in_path,\
+    validate_git_fat_in_path_if_needed
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
     SnapshotResourceMixin, JSONDict, JSONList
@@ -177,7 +179,7 @@ class GitRepoResource(GitResourceBase):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing." %
                 self.local_path)
-        if is_pull_needed_from_remote(self.local_path, self.branch, self.verbose):
+        if is_pull_needed_from_remote(self.local_path, self.branch, self.workspace.verbose):
             raise ConfigurationError("Resource '%s' requires a pull from the remote origin before pushing." %
                                      self.name)
         if is_a_git_fat_repo(self.local_path):
@@ -192,13 +194,13 @@ class GitRepoResource(GitResourceBase):
         if self.read_only:
             click.echo("Skipping push of resource %s, as it is read-only" % self.name)
             return
-        switch_git_branch_if_needed(self.local_path, self.branch, self.verbose)
+        switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
         call_subprocess([GIT_EXE_PATH, 'push', 'origin', self.branch],
-                        cwd=self.local_path, verbose=self.verbose)
+                        cwd=self.local_path, verbose=self.workspace.verbose)
         if self.uses_git_fat:
             import dataworkspaces.third_party.git_fat as git_fat
             git_fat.run_git_fat(self.python2_exe, ['push'], cwd=self.local_path,
-                                verbose=self.verbose)
+                                verbose=self.workspace.verbose)
 
     def pull_precheck(self):
         if is_git_dirty(self.local_path):
