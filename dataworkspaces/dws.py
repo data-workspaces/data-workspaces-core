@@ -10,6 +10,7 @@ import click
 import re
 import os
 from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
+from typing import Optional
 from argparse import Namespace
 from collections.abc import Sequence
 
@@ -270,7 +271,8 @@ def rclone(ctx, role, name, config, compute_hash, source, dest):
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     rclone_re = r'.*:.*'
     if re.match(rclone_re, source) == None:
-        raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath")
+        raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath",
+                                   option_name='source')
     dest = abspath(expanduser(dest))
     workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
     add_command('rclone', role, name, workspace, source, dest, config, compute_hash)
@@ -335,11 +337,12 @@ cli.add_command(snapshot)
                    "(due to lack of a restore hash or removing the resource from workspace).")
 @click.argument('tag_or_hash', type=str, default=None, required=True)
 @click.pass_context
-def restore(ctx, workspace_dir, only, leave, strict, tag_or_hash):
+def restore(ctx, workspace_dir:str, only:Optional[str], leave:Optional[str], strict:bool, tag_or_hash:str):
     """Restore the workspace to a prior state"""
     ns = ctx.obj
     if (only is not None) and (leave is not None):
-        raise click.BadOptionUsage(message="Please specify either --only or --leave, but not both")
+        raise click.BadOptionUsage(message="Please specify either --only or --leave, but not both",
+                                   option_name='--only')
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
@@ -347,7 +350,10 @@ def restore(ctx, workspace_dir, only, leave, strict, tag_or_hash):
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
     workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
-    restore_command(workspace, tag_or_hash, only=only, leave=leave, strict=strict)
+    restore_command(workspace, tag_or_hash,
+                    only=only.split(',') if only else None,
+                    leave=leave.split(',') if leave else None,
+                    strict=strict)
 
 cli.add_command(restore)
 
@@ -359,7 +365,7 @@ cli.add_command(restore)
               help="Comma-separated list of resource names that you wish to skip when pushing. The rest will be pushed to their remote origins, if applicable.")
 @click.argument('remote-repository', type=str, default=None, required=True)
 @click.pass_context
-def publish(ctx, workspace_dir, skip, remote_repository):
+def publish(ctx, workspace_dir, skip:str, remote_repository):
     """Add a remote Git repository as the origin for the workspace and
     do the initial push of the workspace and any other resources.
     """
@@ -372,7 +378,7 @@ def publish(ctx, workspace_dir, skip, remote_repository):
                                          type=WORKSPACE_PARAM)
     workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
     publish_command(workspace, remote_repository)
-    push_command(workspace, only=None, skip=skip, only_workspace=False)
+    push_command(workspace, only=None, skip=skip.split(',') if skip else None, only_workspace=False)
 
 cli.add_command(publish)
 
@@ -388,13 +394,14 @@ cli.add_command(publish)
 @click.option('--only-workspace', is_flag=True, default=False,
               help="Only push the workspace's metadata, skipping the individual resources")
 @click.pass_context
-def push(ctx, workspace_dir, only, skip, only_workspace):
+def push(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_workspace:bool):
     """Push the state of the workspace and its resources to their origins."""
     ns = ctx.obj
     option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
                  (1 if only_workspace else 0)
     if option_cnt>1:
-        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace",
+                                   option_name='--only')
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
@@ -402,7 +409,9 @@ def push(ctx, workspace_dir, only, skip, only_workspace):
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
     workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
-    push_command(workspace, only=only, skip=skip,
+    push_command(workspace,
+                 only=only.split(',') if only else None,
+                 skip=skip.split(',') if skip else None,
                  only_workspace=only_workspace)
 
 cli.add_command(push)
@@ -419,13 +428,14 @@ cli.add_command(push)
 @click.option('--only-workspace', is_flag=True, default=False,
               help="Only pull the workspace's metadata, skipping the individual resources")
 @click.pass_context
-def pull(ctx, workspace_dir, only, skip, only_workspace):
+def pull(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_workspace:bool):
     """Pull the latest state of the workspace and its resources from their origins."""
     ns = ctx.obj
     option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
                  (1 if only_workspace else 0)
     if option_cnt>1:
-        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace")
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace",
+                                   option_name='--only')
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
@@ -433,7 +443,9 @@ def pull(ctx, workspace_dir, only, skip, only_workspace):
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
     workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
-    pull_command(workspace, only=only, skip=skip,
+    pull_command(workspace,
+                 only=only.split(',') if only else None,
+                 skip=skip.split(',') if skip else None,
                  only_workspace=only_workspace)
 
 cli.add_command(pull)

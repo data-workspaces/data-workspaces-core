@@ -191,11 +191,11 @@ class RcloneFactory(ResourceFactory):
         copy from the remote origin.
         """
         local_path = params['local_path']
-        remote_path = params['remote_path']
+        remote_origin = params['remote_origin']
         config = params['config']
-        rclone = self._add_prechecks(local_path, remote_path, config)
-        self._copy_from_remote(local_path, remote_path, rclone)
-        return RcloneResource(params['name'], params['role'], workspace, remote_path, local_path, config,
+        rclone = self._add_prechecks(local_path, remote_origin, config)
+        self._copy_from_remote(local_path, remote_origin, rclone)
+        return RcloneResource(params['name'], params['role'], workspace, remote_origin, local_path, config,
                               params['compute_hash'])
 
 

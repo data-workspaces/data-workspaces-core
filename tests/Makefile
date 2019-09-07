@@ -11,7 +11,7 @@ UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_l
 MYPY_KITS=scikit_learn.py jupyter.py
 
 test: clean mypy pyflakes
-	#	./testcli.sh --batch
+	./testcli.sh --batch
 	python -m unittest $(UNIT_TESTS)
 
 mypy:
