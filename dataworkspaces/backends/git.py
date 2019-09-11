@@ -8,6 +8,7 @@ import shutil
 import json
 import re
 import uuid
+from urllib.parse import ParseResult, urlparse
 from typing import Any, Iterable, Optional, List, Dict, Tuple, cast
 assert Dict # make pyflakes happy
 
@@ -454,8 +455,16 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
 
 class WorkspaceFactory(ws.WorkspaceFactory):
     @staticmethod
-    def load_workspace(batch:bool, verbose:bool, workspace_dir:str) -> ws.Workspace: # type: ignore
-        return Workspace(workspace_dir, batch, verbose)
+    def load_workspace(batch:bool, verbose:bool, parsed_uri:ParseResult) -> ws.Workspace: # type: ignore
+        path = parsed_uri.path
+        if not isabs(path):
+            path = abspath(expanduser(path))
+        if not isdir(path):
+            raise ConfigurationError("Workspace directory %s does not exist" % path)
+        metadata_path = join(path, '.dataworkspace')
+        if not isdir(metadata_path):
+            raise ConfigurationError("Workspace directory %s does not correspond to an initialized git-backend workspace" % path)
+        return Workspace(path, batch, verbose)
 
     @staticmethod
     def init_workspace(workspace_name:str, dws_version:str, # type: ignore
@@ -593,6 +602,6 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 shutil.rmtree(directory)
             raise
 
-        return WorkspaceFactory.load_workspace(batch, verbose, directory)
+        return WorkspaceFactory.load_workspace(batch, verbose, urlparse(directory))
 
 FACTORY=WorkspaceFactory()

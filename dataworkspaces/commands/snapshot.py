@@ -43,7 +43,7 @@ def merge_snapshot_metadata(old, new, batch):
 
 
 
-def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''):
+def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str='') -> str:
     if (tag is not None) and (is_a_git_hash(tag) or is_a_shortened_git_hash(tag)):
         raise ConfigurationError("Tag '%s' looks like a git hash. Please pick something else." % tag)
 

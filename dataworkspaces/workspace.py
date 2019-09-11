@@ -49,10 +49,12 @@ from typing import Dict, Any, Iterable, Optional, List, Tuple, Set, cast, Patter
 from abc import ABCMeta, abstractmethod
 import importlib
 import os.path
+import os
 import datetime
 import getpass
 import json
 import re
+from urllib.parse import ParseResult, urlparse
 
 from dataworkspaces.errors import ConfigurationError, PathNotAResourceError, InternalError
 from dataworkspaces.utils.hash_utils import \
@@ -422,7 +424,7 @@ class WorkspaceFactory(metaclass=ABCMeta):
     """
     @staticmethod
     @abstractmethod
-    def load_workspace(batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
+    def load_workspace(batch:bool, verbose:bool, parsed_uri:ParseResult) -> Workspace:
         """Instantiate and return a workspace.
         """
         pass
@@ -449,30 +451,73 @@ class WorkspaceFactory(metaclass=ABCMeta):
         pass
 
 
-def _get_factory(backend_name:str) -> WorkspaceFactory:
+def _get_factory(backend_mod_name:str) -> WorkspaceFactory:
     try:
-        m = importlib.import_module(backend_name)
+        m = importlib.import_module(backend_mod_name)
     except ImportError as e:
         raise ConfigurationError("Unable to load workspace backend '%s'"%
-                                 backend_name) from e
+                                 backend_mod_name) from e
     if not hasattr(m, 'FACTORY'):
         raise InternalError("Workspace backend %s does not provide a FACTORY attribute"%
-                            backend_name)
+                            backend_mod_name)
     factory = m.FACTORY # type: ignore
     if not isinstance(factory, WorkspaceFactory):
-        raise InternalError("Workspace backend factory has type '%s', "%backend_name +
+        raise InternalError("Workspace backend factory has type '%s', "%backend_mod_name +
                             "not a subclass of WorkspaceFactory")
     return factory
 
 
-def load_workspace(backend_name:str, batch:bool, verbose:bool, *args, **kwargs) -> Workspace:
+def load_workspace(uri:str, batch:bool, verbose:bool) -> Workspace:
     """Given a requested workspace backend, and backend-specific
-    parameters, instantiate and return a workspace.
+    parameters, instantiate and return a workspace. The workspace
+    is specified by a uri, where the backend-type is the scheme and
+    rest is interpreted by the backend.
 
-    A backend name is a module name. The module should have a
-    load_workspace() function defined.
+    The backend name / scheme is used to load a backend module
+    whose name is dataworkspaces.backends.SCHEME.
     """
-    return _get_factory(backend_name).load_workspace(batch, verbose, *args, **kwargs)
+    parsed_uri = urlparse(uri)
+    return _get_factory('dataworkspaces.backends.'+parsed_uri.scheme).load_workspace(batch, verbose, parsed_uri)
+
+
+def _find_containing_workspace() -> Optional[str]:
+    """For commands that execute in the context of a containing
+    workspace, find the nearest containging workspace and return
+    its absolute path. If none is found, return None.
+    """
+    curr_base = os.path.abspath(os.path.expanduser(os.path.curdir))
+    while curr_base != '/':
+        if os.path.isdir(os.path.join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
+            return curr_base
+        else:
+            curr_base = os.path.dirname(curr_base)
+    return None
+
+def find_and_load_workspace(batch:bool, verbose:bool, uri_or_local_path:Optional[str]=None) -> Workspace:
+    """This tries to find the workspace and load it. There are three cases:
+
+    1. If uri_or_local_path is a uri, we call load_workspace() directly
+    2. If uri_or_local_path is specified, but not a uri, we interpret it as a local path
+       and try to instantitate a git-backend workspace at that location in the loca filesystem.
+    3. If uri_or_local_path is not specified, we start at the current directory
+       and search up the directory tree until we find something that looks like a
+       git backend workspace.
+
+    TODO: In the future, this should also look for a config file that might specify the
+    workspace or list workspaces by name.
+    """
+    if uri_or_local_path is not None:
+        if ':' not in uri_or_local_path:
+            return load_workspace('git:'+uri_or_local_path, batch, verbose)
+        else:
+            return load_workspace(uri_or_local_path, batch, verbose)
+    else:
+        ws_dir = _find_containing_workspace()
+        if ws_dir is not None:
+            return load_workspace('git:'+ws_dir, batch, verbose)
+        else:
+            raise ConfigurationError("Did not find a data workspace enclosing the diretory %s" %
+                                     os.path.abspath(os.path.expanduser(os.path.curdir)))
 
 
 def init_workspace(backend_name:str, workspace_name:str, hostname:str,

@@ -8,13 +8,11 @@ __all__ = ['cli']
 import sys
 import click
 import re
-import os
-from os.path import isdir, join, dirname, abspath, expanduser, basename, curdir
+from os.path import isdir, join, abspath, expanduser, basename, curdir
 from typing import Optional
 from argparse import Namespace
 from collections.abc import Sequence
 
-import dataworkspaces.workspace as ws
 from dataworkspaces.commands.init import init_command
 from dataworkspaces.commands.add import add_command
 from dataworkspaces.commands.snapshot import snapshot_command
@@ -26,13 +24,16 @@ from dataworkspaces.commands.pull import pull_command
 from dataworkspaces.commands.clone import clone_command
 #from dataworkspaces.commands.run import run_command
 from dataworkspaces.commands.diff import diff_command
-from dataworkspaces.workspace import RESOURCE_ROLE_CHOICES, ResourceRoles
+from dataworkspaces.workspace import \
+    RESOURCE_ROLE_CHOICES, ResourceRoles,\
+    find_and_load_workspace, _find_containing_workspace
 from dataworkspaces.errors import BatchModeError
 from dataworkspaces.utils.param_utils import DEFAULT_HOSTNAME
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
+DWS_PATHDIR=_find_containing_workspace()
 
 # we are going to store the verbose mode
 # in a global here and wrap it in a function
@@ -42,24 +43,6 @@ def is_verbose_mode():
     global VERBOSE_MODE
     return VERBOSE_MODE
 
-def _find_containing_workspace():
-    """For commands that execute in the context of a containing
-    workspace, find the nearest containging workspace and return
-    its absolute path. If none is found, return None.
-    """
-    curr_base = CURR_DIR
-    while curr_base != '/':
-        if isdir(join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
-            return curr_base
-        else:
-            curr_base = dirname(curr_base)
-    return None
-
-DWS_PATHDIR=_find_containing_workspace()
-
-def _load_workspace(workspace_dir, batch, verbose):
-    return ws.load_workspace('dataworkspaces.backends.git', batch, verbose,
-                             workspace_dir)
 
 
 class WorkspaceDirParamType(click.ParamType):
@@ -245,7 +228,7 @@ def local_files(ctx, role, name, path, compute_hash):
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     path = abspath(expanduser(path))
-    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command('file', role, name, workspace, path, compute_hash)
 
 add.add_command(local_files)
@@ -274,7 +257,7 @@ def rclone(ctx, role, name, config, compute_hash, source, dest):
         raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath",
                                    option_name='source')
     dest = abspath(expanduser(dest))
-    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command('rclone', role, name, workspace, source, dest, config, compute_hash)
 
 add.add_command(rclone)
@@ -298,7 +281,7 @@ def git(ctx, role, name, branch, read_only, path):
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     path = abspath(expanduser(path))
-    workspace = _load_workspace(ns.workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command('git', role, name, workspace, path, branch, read_only)
 
 add.add_command(git)
@@ -319,7 +302,7 @@ def snapshot(ctx, workspace_dir, message, tag):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     snapshot_command(workspace, tag, message)
 
 cli.add_command(snapshot)
@@ -349,7 +332,7 @@ def restore(ctx, workspace_dir:str, only:Optional[str], leave:Optional[str], str
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     restore_command(workspace, tag_or_hash,
                     only=only.split(',') if only else None,
                     leave=leave.split(',') if leave else None,
@@ -376,7 +359,7 @@ def publish(ctx, workspace_dir, skip:str, remote_repository):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     publish_command(workspace, remote_repository)
     push_command(workspace, only=None, skip=skip.split(',') if skip else None, only_workspace=False)
 
@@ -408,7 +391,7 @@ def push(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_wo
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     push_command(workspace,
                  only=only.split(',') if only else None,
                  skip=skip.split(',') if skip else None,
@@ -442,7 +425,7 @@ def pull(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_wo
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     pull_command(workspace,
                  only=only.split(',') if only else None,
                  skip=skip.split(',') if skip else None,
@@ -487,7 +470,7 @@ def status(ctx, workspace_dir, history, limit):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     status_command(workspace, history, limit)
 
 cli.add_command(status)
@@ -533,7 +516,7 @@ def diff(ctx, workspace_dir, snapshot_or_tag1, snapshot_or_tag2):
         else:
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
-    workspace = _load_workspace(workspace_dir, ns.batch, ns.verbose)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
     diff_command(workspace, snapshot_or_tag1, snapshot_or_tag2)
 
 cli.add_command(diff)

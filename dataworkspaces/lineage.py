@@ -469,8 +469,7 @@ class LineageBuilder:
         if self.workspace_dir is None:
             self.workspace_dir = get_workspace()
         # TODO: need to make this handle other backends as well.
-        workspace = load_workspace('dataworkspaces.backends.git', False, False,
-                                   self.workspace_dir)
+        workspace = load_workspace('git:'+self.workspace_dir, False, False)
         if self.results_dir is not None:
             return ResultsLineage(self.step_name, datetime.datetime.now(),
                                   self.parameters, inputs, self.code,

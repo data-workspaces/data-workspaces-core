@@ -70,11 +70,11 @@ class TestApi(unittest.TestCase):
         self.assertEqual(2, len(rinfo))
         self.assertEqual('data', rinfo[0].name)
         self.assertEqual('source-data', rinfo[0].role)
-        self.assertEqual('git-subdirectory', rinfo[0].type)
+        self.assertEqual('git-subdirectory', rinfo[0].resource_type)
         self.assertTrue(rinfo[0].local_path.endswith('tests/test_api_data/data'))
         self.assertEqual('code', rinfo[1].name)
         self.assertEqual('code', rinfo[1].role)
-        self.assertEqual('git-subdirectory', rinfo[1].type)
+        self.assertEqual('git-subdirectory', rinfo[1].resource_type)
         self.assertTrue(rinfo[1].local_path.endswith('tests/test_api_data/code'))
 
     def test_snapshots(self):
@@ -82,7 +82,7 @@ class TestApi(unittest.TestCase):
         history = get_snapshot_history(TEMPDIR)
         self.assertEqual(1, len(history))
         self.assertEqual(1, history[0].snapshot_number)
-        self.assertEqual(hash1, history[0].hash)
+        self.assertEqual(hash1, history[0].hashval)
         self.assertEqual(['V1'], history[0].tags)
         self.assertEqual('first snapshot', history[0].message)
         with open(join(TEMPDIR, 'code/test.py'), 'a') as f:
@@ -91,7 +91,7 @@ class TestApi(unittest.TestCase):
         history = get_snapshot_history(TEMPDIR)
         self.assertEqual(2, len(history))
         self.assertEqual(2, history[1].snapshot_number)
-        self.assertEqual(hash2, history[1].hash)
+        self.assertEqual(hash2, history[1].hashval)
         self.assertEqual(['V2'], history[1].tags)
         self.assertEqual('second snapshot', history[1].message)
         restore('V1', TEMPDIR)

@@ -5,8 +5,7 @@ DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 help:
 	@echo targets are: test clean mypy help install-rclone-deb
 
-#UNIT_TESTS=test_git_utils test_move_results test_api test_git_fat_integration test_lineage_utils test_lineage test_snapshots test_jupyter_kit test_push_pull test_file_utils
-UNIT_TESTS=test_git_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_file_utils test_hashtree test_lineage_utils test_git_fat_integration test_lineage test_jupyter_kit
+UNIT_TESTS=test_git_utils test_file_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_hashtree test_lineage_utils test_git_fat_integration test_lineage test_jupyter_kit test_api
 
 MYPY_KITS=scikit_learn.py jupyter.py
 
@@ -15,7 +14,7 @@ test: clean mypy pyflakes
 	python -m unittest $(UNIT_TESTS)
 
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py lineage.py
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py lineage.py api.py
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy utils/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy resources/
@@ -23,12 +22,11 @@ mypy:
 	cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
-	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py
+	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py api.py
 	cd $(DATAWORKSPACES)/utils; pyflakes *.py
 	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes *.py
 	cd $(DATAWORKSPACES)/commands; pyflakes *.py
-	#cd $(DATAWORKSPACES); pyflakes $(MYPY_APIS)
 
 RCLONE_VERSION=v1.46
 RCLONE_FILE=rclone-$(RCLONE_VERSION)-linux-amd64.deb
