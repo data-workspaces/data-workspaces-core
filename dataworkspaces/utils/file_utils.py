@@ -82,8 +82,10 @@ class LocalPathType(click.Path):
     where we are going to put a resource. The path does not necessarily exist yet, but
     we need to validate that the parent directory exists and is writable.
     """
-    def __init__(self):
-        super().__init__(exists=False, file_okay=False, dir_okay=True, writable=True)
+    def __init__(self, exists=False):
+        super().__init__(exists=exists, file_okay=False, dir_okay=True, writable=True,
+                         # always use unicode, not bytes
+                         path_type=str)
 
     def convert(self, value, param, ctx):
         rv = super().convert(value, param, ctx)

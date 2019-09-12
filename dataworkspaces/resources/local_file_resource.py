@@ -5,12 +5,14 @@ Resource for files living in a local directory
 from errno import EEXIST
 import os
 from os.path import join, exists
-from typing import List, Pattern, Tuple, Optional, Set, Union
+from typing import List, Pattern, Tuple, Optional, Set, Union, cast
 import json
+
+import click
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
-from dataworkspaces.utils.file_utils import does_subpath_exist
+from dataworkspaces.utils.file_utils import does_subpath_exist, LocalPathType
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
     FileResourceMixin, SnapshotResourceMixin, JSONDict, JSONList,\
@@ -29,9 +31,13 @@ def _relative_rsrc_dir_for_git_workspace(role, name):
 
 class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
     def __init__(self, name:str, role:str, workspace:Workspace,
-                 local_path:str, ignore:List[str]=[], compute_hash:bool=False):
+                 global_local_path:str, my_local_path:Optional[str],
+                 ignore:List[str]=[], compute_hash:bool=False):
         super().__init__(LOCAL_FILE, name, role, workspace)
-        self.local_path = local_path
+        self.local_path = my_local_path if my_local_path is not None \
+                          else global_local_path
+        self.global_local_path = global_local_path
+        self.my_local_path = my_local_path
         self.ignore = ignore
         self.compute_hash = compute_hash
         if isinstance(workspace, git_backend.Workspace):
@@ -55,7 +61,7 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
             'resource_type':self.resource_type,
             'name':self.name,
             'role':self.role,
-            'local_path':self.local_path,
+            'local_path':self.global_local_path,
             'compute_hash':self.compute_hash
         }
 
@@ -102,7 +108,7 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
                                          %(subpath, self.name)) from e
 
     def get_local_params(self) -> JSONDict:
-        return {} # TODO: local filepath can override global path
+        return {'local_path':self.my_local_path}
 
     def pull_precheck(self) -> None:
         """Nothing to do, since we donot support sync.
@@ -203,12 +209,16 @@ class LocalFileFactory(ResourceFactory):
             non_git_hashes = join(local_path, '.hashes')
             if not exists(non_git_hashes):
                 os.mkdir(non_git_hashes)
-        return LocalFileResource(name, role, workspace, local_path, compute_hash=compute_hash)
+        return LocalFileResource(name, role, workspace, local_path, None,
+                                 compute_hash=compute_hash)
 
     def from_json(self, params:JSONDict, local_params:JSONDict,
                   workspace:Workspace) -> LocalFileResource:
         """Instantiate a resource object from saved params and local params"""
-        return LocalFileResource(params['name'], params['role'], workspace, params['local_path'],
+        return LocalFileResource(params['name'], params['role'], workspace,
+                                 params['local_path'],
+                                 local_params['local_path'] if 'local_path' in local_params
+                                 else None,
                                  compute_hash=params['compute_hash'])
 
     def has_local_state(self) -> bool:
@@ -222,10 +232,19 @@ class LocalFileFactory(ResourceFactory):
         then we should ask the user for the local location and store it in local_params.
         """
         name = params['name']
-        local_path = params['local_path']
+        global_local_path = params['local_path'] # type: str
         local_params = {} # type: JSONDict
-        if not exists(local_path):
-            raise ConfigurationError("Local files resource %s is missing from %s." % (name, local_path))
+        if exists(global_local_path):
+            local_path = global_local_path
+        else:
+            if workspace.batch:
+                local_path = \
+                    cast(str,
+                         click.prompt("Local files resource '%s' was located at '%s' on the original system, which directory contains the files on this system?",
+                                      type=LocalPathType(exists=True)))
+                local_params['local_path'] = local_path
+            else:
+                raise ConfigurationError("Local files resource %s is missing from %s." % (name, global_local_path))
         if not isinstance(workspace, git_backend.Workspace):
             non_git_hashes = join(local_path, '.hashes')
             if not exists(non_git_hashes):
