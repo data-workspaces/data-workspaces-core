@@ -43,6 +43,14 @@ class BaseCase(unittest.TestCase):
         r = subprocess.run(command, cwd=cwd, shell=True, env=env)
         r.check_returncode()
 
+    def _run_dws_with_input(self, dws_args, dws_input, cwd=WS_DIR, env=None):
+        command = self.dws + ' --verbose '+ ' '.join(dws_args)
+        print(command + (' [%s]' % cwd))
+        print(" Input will be %s" % repr(dws_input))
+        r = subprocess.run(command, cwd=cwd, input=dws_input, shell=True, env=env,
+                           encoding='utf-8')
+        r.check_returncode()
+
     def _run_git(self, git_args, cwd=WS_DIR):
         args = [GIT_EXE_PATH]+git_args
         print(' '.join(args) + (' [%s]' % cwd))
