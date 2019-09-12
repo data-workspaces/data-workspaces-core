@@ -27,9 +27,9 @@ from dataworkspaces.utils.git_fat_utils import \
     validate_git_fat_in_path_if_needed
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
-    SnapshotResourceMixin, JSONDict, JSONList
+    SnapshotResourceMixin, JSONDict, JSONList, Workspace
 import dataworkspaces.backends.git as git_backend
-from dataworkspaces.utils.file_utils import LocalPathType
+from dataworkspaces.utils.file_utils import LocalPathType, does_subpath_exist
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
@@ -61,6 +61,12 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
                     cwd=git_root, verbose=verbose)
 
 class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
+    def __init__(self, resource_type:str, name:str, role:str, workspace:Workspace,
+                 local_path:str):
+        super().__init__(resource_type, name, role, workspace)
+        self.local_path = local_path # always points to the root of this resource
+                                     # (not necessarily the root of the repo)
+
     def get_local_path_if_any(self):
         return self.local_path
 
@@ -76,11 +82,33 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                         relative_path:str) -> None:
         pass # nothing to do unless we actually tag the resources
 
+    def does_subpath_exist(self, subpath:str, must_be_file:bool=False,
+                           must_be_directory:bool=False) -> bool:
+        return does_subpath_exist(self.local_path, subpath, must_be_file,
+                                  must_be_directory)
+
+    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+        """Read and parse json results data from the specified path
+        in the resource. If the path does not exist or is not a file
+        throw a ConfigurationError.
+        """
+        path = os.path.join(self.local_path, subpath)
+        if not os.path.isfile(path):
+            raise ConfigurationError("subpath %s does not exist or is not a file in resource %s"%
+                                     (subpath, self.name))
+        with open(path, 'r') as f:
+            try:
+                return json.load(f)
+            except Exception as e:
+                raise ConfigurationError("Parse error when reading %s in resource %s"
+                                         %(subpath, self.name)) from e
+
+
 class GitRepoResource(GitResourceBase):
-    def __init__(self, name, role, workspace, remote_origin_url,
-                 local_path, branch, read_only):
-        super().__init__('git', name, role, workspace)
-        self.local_path = local_path
+    def __init__(self, name:str, role:str, workspace:Workspace,
+                 remote_origin_url:str,
+                 local_path:str, branch:str, read_only:bool):
+        super().__init__('git', name, role, workspace, local_path)
         self.remote_origin_url = remote_origin_url
         self.branch = branch
         self.read_only = read_only
@@ -403,13 +431,13 @@ class GitRepoResultsSubdirResource(GitResourceBase):
     """Resource for a subdirectory of the workspace for when it is
     in the results role.
     """
-    def __init__(self, name, workspace, relative_path):
-        super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace)
-        self.relative_path = relative_path
+    def __init__(self, name:str, workspace:Workspace, relative_path:str):
         # only valid when workspace has git backend
-        self.workspace_dir = _get_workspace_dir_for_git_backend(workspace)
-        self.local_path = join(self.workspace_dir,
-                               relative_path)
+        workspace_dir = _get_workspace_dir_for_git_backend(workspace)
+        super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace,
+                         join(workspace_dir, relative_path))
+        self.workspace_dir = workspace_dir
+        self.relative_path = relative_path
 
     def get_params(self):
         return {
@@ -508,12 +536,13 @@ class GitRepoSubdirResource(GitResourceBase):
     """Resource for a subdirectory of the workspace for when it is NOT
     in the results role.
     """
-    def __init__(self, name, role, workspace, relative_path):
+    def __init__(self, name:str, role:str, workspace:Workspace, relative_path:str):
         assert role != ResourceRoles.RESULTS
-        super().__init__('git-subdirectory', name, role, workspace)
+        workspace_dir = _get_workspace_dir_for_git_backend(workspace)
+        super().__init__('git-subdirectory', name, role, workspace,
+                         join(workspace_dir, relative_path))
+        self.workspace_dir = workspace_dir
         self.relative_path = relative_path
-        self.workspace_dir = _get_workspace_dir_for_git_backend(workspace)
-        self.local_path = join(self.workspace_dir, relative_path)
 
     def get_params(self):
         return {

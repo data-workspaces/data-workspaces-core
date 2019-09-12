@@ -118,10 +118,9 @@ from argparse import ArgumentParser, Namespace
 from copy import copy
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.utils.workspace_utils import get_workspace
 from dataworkspaces.workspace import Workspace, load_workspace, FileResourceMixin,\
                                      PathNotAResourceError, SnapshotWorkspaceMixin,\
-                                     ResourceRoles
+                                     ResourceRoles, _find_containing_workspace
 from dataworkspaces.utils.lineage_utils import \
     ResourceRef, StepLineage, infer_step_name, infer_script_path
 
@@ -445,7 +444,8 @@ class LineageBuilder:
         return self
 
     def with_workspace_directory(self, workspace_dir:str) -> 'LineageBuilder':
-        self.workspace_dir = get_workspace(workspace_dir) # does validation
+        load_workspace('git:'+workspace_dir, False, False)
+        self.workspace_dir = workspace_dir # does validation
         return self
 
     def as_results_step(self, results_dir:str, run_description:Optional[str]=None)\
@@ -467,7 +467,9 @@ class LineageBuilder:
             'Need to specify either inputs or no inputs'
         inputs = self.inputs if self.inputs is not None else [] # type: List[Union[str, Any]]
         if self.workspace_dir is None:
-            self.workspace_dir = get_workspace()
+            self.workspace_dir = _find_containing_workspace()
+        if self.workspace_dir is None:
+            raise ConfigurationError("Could not find a workspace, starting at %s" % curdir)
         # TODO: need to make this handle other backends as well.
         workspace = load_workspace('git:'+self.workspace_dir, False, False)
         if self.results_dir is not None:

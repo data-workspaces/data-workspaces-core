@@ -23,9 +23,8 @@ import json
 import glob
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.utils.workspace_utils import get_workspace
-from dataworkspaces.resources.resource import CurrentResources
 from dataworkspaces.lineage import LineageBuilder
+from dataworkspaces.workspace import find_and_load_workspace, LocalStateResourceMixin
 from dataworkspaces.utils.lineage_utils import ResourceRef
 from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
 
@@ -109,19 +108,18 @@ def load_dataset_from_resource(resource_name:str, subpath:Optional[str]=None,
       It is loaded using ``numpy.load()``.
     """
   
-    workspace_dir = get_workspace(workspace_dir)
-    resources = CurrentResources.read_current_resources(workspace_dir, batch=True,
-                                                        verbose=False)
-    resources.validate_resource_name(resource_name, subpath)
+    workspace = find_and_load_workspace(True, False, workspace_dir)
+    workspace.validate_resource_name(resource_name, subpath)
     dataset_name = 'Resource ' + resource_name + ' subpath ' + subpath \
                    if subpath is not None \
                    else 'Resource ' + resource_name
-    r = resources.by_name[resource_name]
-    local_path = r.get_local_path_if_any()
-    if local_path is None:
+    r = workspace.get_resource(resource_name)
+    if not isinstance(r, LocalStateResourceMixin) or \
+       (r.get_local_path_if_any() is None):
         # TODO: Support a data access api
         raise ConfigurationError("Unable to instantiate a data set for resource '%s': currently not supported for non-local resources"%
                                  resource_name)
+    local_path = r.get_local_path_if_any()
     dataset_path = join(local_path, subpath) if subpath is not None else local_path
     result = {} # this will be the args to the result Bunch
     # First load data and target files, which are required
@@ -346,10 +344,13 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
     lb = LineageBuilder().with_parameters(lineage_params)\
                          .as_results_step(results_dir, run_description)\
                          .with_input_ref(dataset.resource)
-    lb = lb.with_step_name(get_step_name_for_notebook())\
-           .with_code_path(get_notebook_directory()) \
-         if is_notebook() \
-         else lb.as_script_step()
+    if is_notebook():
+        lb = lb.with_code_path(get_notebook_directory())
+        step_name = get_step_name_for_notebook()
+        if step_name is not None:
+            lb = lb.with_step_name(step_name) # not always able to determine this
+    else:
+        lb = lb.as_script_step()
 
     with lb.eval() as lineage:
         # Instantiate a classifier with the best parameters and train

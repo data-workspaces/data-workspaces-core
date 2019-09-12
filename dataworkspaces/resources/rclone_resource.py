@@ -13,6 +13,7 @@ from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixi
     FileResourceMixin, SnapshotResourceMixin, JSONDict, JSONList,\
     ResourceRoles, ResourceFactory
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
+from dataworkspaces.utils.file_utils import does_subpath_exist
 from dataworkspaces.third_party.rclone import RClone
 
 RCLONE_RESOURCE_TYPE = 'rclone'
@@ -72,6 +73,27 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             os.makedirs(parent_dir)
         with open(abs_dest_path, 'w') as f:
             json.dump(data, f, indent=2)
+
+    def does_subpath_exist(self, subpath:str, must_be_file:bool=False,
+                           must_be_directory:bool=False) -> bool:
+        return does_subpath_exist(self.local_path, subpath, must_be_file,
+                                  must_be_directory)
+
+    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+        """Read and parse json results data from the specified path
+        in the resource. If the path does not exist or is not a file
+        throw a ConfigurationError.
+        """
+        path = os.path.join(self.local_path, subpath)
+        if not os.path.isfile(path):
+            raise ConfigurationError("subpath %s does not exist or is not a file in resource %s"%
+                                     (subpath, self.name))
+        with open(path, 'r') as f:
+            try:
+                return json.load(f)
+            except Exception as e:
+                raise ConfigurationError("Parse error when reading %s in resource %s"
+                                         %(subpath, self.name)) from e
 
     def get_local_params(self) -> JSONDict:
         return {} # TODO: local filepath can override global path

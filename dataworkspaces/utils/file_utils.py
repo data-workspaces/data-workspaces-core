@@ -4,7 +4,8 @@ File-related utilities
 """
 
 import os
-from os.path import dirname, isdir, abspath, expanduser, exists, isabs, commonpath
+from os.path import dirname, isdir, abspath, expanduser, exists, isabs, commonpath,\
+                    isfile, join
 import shutil
 import click
 from typing import Optional
@@ -65,6 +66,16 @@ def get_subpath_from_absolute(absolute_parent_path:str, absolute_child_path:str)
     else:
         return absolute_child_path[len(absolute_parent_path)+1:]
 
+
+def does_subpath_exist(base_dir:str, subpath:str, must_be_file:bool=False,
+                       must_be_directory:bool=False) -> bool:
+    path = join(base_dir, subpath)
+    if isfile(path) and (not must_be_directory):
+        return True # includes links
+    elif isdir(path) and not (must_be_file):
+        return True
+    else:
+        return False # does not exist, but a special file
 
 class LocalPathType(click.Path):
     """A subclass of click's Path input parameter type used to validate a local path

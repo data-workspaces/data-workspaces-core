@@ -19,7 +19,8 @@ mypy:
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy resources/
 	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy commands/
-	cd $(DATAWORKSPACES)/kits; mypy --ignore-missing-imports $(MYPY_KITS)
+	cd $(DATAWORKSPACES)/kits; export MYPYPATH=$(MYPYPATH); \
+        mypy --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py api.py

@@ -30,12 +30,16 @@ def print_snapshot_history(workspace:SnapshotWorkspaceMixin, reverse:bool=True, 
             return ('%.1f'%val).ljust(METRIC_VAL_WIDTH)
     returned = 0
     for md in history:
+        metric_name = None # type: Optional[str]
+        metric_value = None # type: Any
+        if md.metrics and len(md.metrics)>0:
+            (metric_name, metric_value) = next(md.metrics.items().__iter__())
         click.echo('%s %s %s %s %s %s' %
                    (md.hashval[0:7]+' ',
                     (', '.join(md.tags) if md.tags is not None and len(md.tags)>0 else 'N/A').ljust(20),
                     md.timestamp[0:-7],
-                    (md.metric_name if md.metric_name is not None else 'N/A').ljust(METRIC_NAME_WIDTH),
-                    format_metric_val(md.metric_value),
+                    (metric_name if metric_name is not None else 'N/A').ljust(METRIC_NAME_WIDTH),
+                    format_metric_val(metric_value),
                     md.message if md.message is not None and
                                     md.message!='' else 'N/A'))
         returned += 1

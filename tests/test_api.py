@@ -10,6 +10,7 @@ import os.path
 from os.path import join
 import shutil
 import subprocess
+import json
 
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 
@@ -38,9 +39,12 @@ class TestApi(unittest.TestCase):
         makefile('data/data.csv', 'x,y,z\n1,2,3\n')
         os.mkdir(join(TEMPDIR, 'code'))
         makefile('code/test.py', 'print("This is a test")\n')
+        results_dir = join(TEMPDIR, 'results')
+        os.mkdir(results_dir)
         self._run_git(['add', 'data/data.csv', 'code/test.py'])
         self._run_dws('add git --role=source-data ./data')
         self._run_dws('add git --role=code ./code')
+        self._run_dws('add git --role=results ./results')
 
     def tearDown(self):
         if os.path.exists(TEMPDIR):
@@ -64,10 +68,15 @@ class TestApi(unittest.TestCase):
         self.assertEqual(contents, data,
                          "File contents do not match for %s" % relpath)
 
+    def _write_metrics(self, metrics):
+        results_dir = join(TEMPDIR, 'results')
+        with open(join(results_dir, 'results.json'), 'w') as f:
+            json.dump({'metrics':metrics}, f)
+
     def test_get_resource_info(self):
         rinfo = get_resource_info(TEMPDIR)
         print(rinfo)
-        self.assertEqual(2, len(rinfo))
+        self.assertEqual(3, len(rinfo))
         self.assertEqual('data', rinfo[0].name)
         self.assertEqual('source-data', rinfo[0].role)
         self.assertEqual('git-subdirectory', rinfo[0].resource_type)
@@ -76,8 +85,14 @@ class TestApi(unittest.TestCase):
         self.assertEqual('code', rinfo[1].role)
         self.assertEqual('git-subdirectory', rinfo[1].resource_type)
         self.assertTrue(rinfo[1].local_path.endswith('tests/test_api_data/code'))
+        self.assertEqual('results', rinfo[2].name)
+        self.assertEqual('results', rinfo[2].role)
+        self.assertEqual('git-subdirectory', rinfo[2].resource_type)
+        self.assertTrue(rinfo[2].local_path.endswith('tests/test_api_data/results'))
+
 
     def test_snapshots(self):
+        self._write_metrics({'accuracy':0.95, 'precision':0.8, 'roc':0.8})
         hash1 = take_snapshot(TEMPDIR, tag='V1', message='first snapshot')
         history = get_snapshot_history(TEMPDIR)
         self.assertEqual(1, len(history))
@@ -85,8 +100,10 @@ class TestApi(unittest.TestCase):
         self.assertEqual(hash1, history[0].hashval)
         self.assertEqual(['V1'], history[0].tags)
         self.assertEqual('first snapshot', history[0].message)
+        self.assertEqual(0.95, history[0].metrics['accuracy'])
         with open(join(TEMPDIR, 'code/test.py'), 'a') as f:
             f.write('print("Version 2")\n')
+        self._write_metrics({'accuracy':0.99})
         hash2 = take_snapshot(TEMPDIR, tag='V2', message='second snapshot')
         history = get_snapshot_history(TEMPDIR)
         self.assertEqual(2, len(history))
@@ -94,6 +111,7 @@ class TestApi(unittest.TestCase):
         self.assertEqual(hash2, history[1].hashval)
         self.assertEqual(['V2'], history[1].tags)
         self.assertEqual('second snapshot', history[1].message)
+        self.assertEqual(0.99, history[1].metrics['accuracy'])
         restore('V1', TEMPDIR)
         history = get_snapshot_history(TEMPDIR)
         self.assertEqual(2, len(history))

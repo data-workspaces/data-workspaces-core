@@ -617,6 +617,26 @@ class FileResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+        """Read and parse json results data from the specified path
+        in the resource. If the path does not exist or is not a file
+        throw a ConfigurationError.
+        """
+        pass
+
+    @abstractmethod
+    def does_subpath_exist(self, subpath:str, must_be_file:bool=False,
+                           must_be_directory:bool=False) -> bool:
+        """Return True the subpath is valid within this
+        resource, False otherwise. If must_be_file is True,
+        return True only if the subpath corresponds to content.
+        If must_be_directory is True, return True only if the subpath
+        corresponds to a directory.
+        """
+        pass
+
+
 class LocalStateResourceMixin(metaclass=ABCMeta):
     """Mixin for the resource api for resources with local state
     that need to be "cloned"
@@ -866,8 +886,7 @@ class SnapshotMetadata:
                  timestamp:str,
                  relative_destination_path:str,
                  restore_hashes:Dict[str,Optional[str]],
-                 metric_name:Optional[str]=None,
-                 metric_value:Optional[Any]=None,
+                 metrics:Optional[JSONDict]=None,
                  updated_timestamp:Optional[str]=None):
         self.hashval = hashval.lower() # always normalize to lower case
         self.tags = tags
@@ -876,8 +895,7 @@ class SnapshotMetadata:
         self.timestamp = timestamp
         self.relative_destination_path = relative_destination_path
         self.restore_hashes = restore_hashes
-        self.metric_name = metric_name
-        self.metric_value = metric_value
+        self.metrics = metrics
         self.updated_timestamp=updated_timestamp
 
     def has_tag(self, tag):
@@ -898,8 +916,7 @@ class SnapshotMetadata:
             'timestamp':self.timestamp,
             'relative_destination_path':self.relative_destination_path,
             'restore_hashes':self.restore_hashes,
-            'metric_name':self.metric_name,
-            'metric_value':self.metric_value
+            'metrics':self.metrics
         }
         if self.updated_timestamp is not None:
             v['updated_timestamp'] = self.updated_timestamp
@@ -914,8 +931,7 @@ class SnapshotMetadata:
                                 data['timestamp'],
                                 data['relative_destination_path'],
                                 data['restore_hashes'],
-                                data.get('metric_name'),
-                                data.get('metric_value'),
+                                data.get('metrics'),
                                 data.get('updated_timestamp'))
 
     def __str__(self):
@@ -953,8 +969,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """
         pass
 
-    def snapshot(self, tag:Optional[str]=None, message:str='', metric_name:Optional[str]=None,
-                 metric_value:Optional[Any]=None) -> Tuple[SnapshotMetadata, bytes]:
+    def snapshot(self, tag:Optional[str]=None, message:str='') -> Tuple[SnapshotMetadata, bytes]:
         """Take snapshot of the resources in the workspace, and metadata
         for the snapshot and a manifest in the workspace.
         We assume that the tag does not already exist
@@ -990,10 +1005,16 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
 
         # now, move the files for result resources
         resources_with_moved_files = [] # type: List[str]
+        metrics = None
         for r in current_resources:
             if r.has_results_role() and isinstance(r, FileResourceMixin):
-                cast(FileResourceMixin, r).results_move_current_files(rel_dest_root, exclude_files,
-                                                                      exclude_dirs_re)
+                file_mixin = cast(FileResourceMixin, r)
+                if (metrics is None) and file_mixin.does_subpath_exist('results.json'):
+                    data = file_mixin.read_results_file('results.json')
+                    if isinstance(data, dict) and 'metrics' in data:
+                        metrics = data['metrics']
+                file_mixin.results_move_current_files(rel_dest_root, exclude_files,
+                                                      exclude_dirs_re)
                 resources_with_moved_files.append(r.name)
 
         manifest = []
@@ -1019,7 +1040,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                                     hostname, snapshot_timestamp.isoformat(),
                                     rel_dest_root,
                                     map_of_restore_hashes,
-                                    metric_name, metric_value)
+                                    metrics)
 
         if self.supports_lineage():
             instance = workspace.get_instance()

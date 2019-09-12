@@ -6,7 +6,7 @@ from typing import Optional, NamedTuple, List, Iterable, cast
 
 from dataworkspaces import __version__
 from dataworkspaces.workspace import find_and_load_workspace,\
-    LocalStateResourceMixin, SnapshotWorkspaceMixin
+    LocalStateResourceMixin, SnapshotWorkspaceMixin, JSONDict
 from dataworkspaces.commands.snapshot import snapshot_command
 from dataworkspaces.commands.restore import restore_command
 
@@ -48,6 +48,7 @@ class SnapshotInfo(NamedTuple):
     tags : List[str]
     timestamp: str
     message: str
+    metrics: Optional[JSONDict]
 
 
 def take_snapshot(workspace_uri_or_path:Optional[str]=None, tag:Optional[str]=None, message:str='',
@@ -73,14 +74,14 @@ def get_snapshot_history(workspace_uri_or_path:Optional[str]=None,
     if not reverse:
         return [
             SnapshotInfo(snapshot_idx+1, md.hashval, md.tags, md.timestamp,
-                         md.message) for (snapshot_idx, md) in
+                         md.message, md.metrics) for (snapshot_idx, md) in
             enumerate(workspace.list_snapshots(reverse=False, max_count=max_count))
         ]
     else:
         last_snapshot_no = workspace.get_next_snapshot_number() - 1
         return [
             SnapshotInfo(last_snapshot_no-i, md.hashval, md.tags, md.timestamp,
-                         md.message) for (i, md) in
+                         md.message, md.metrics) for (i, md) in
             enumerate(workspace.list_snapshots(reverse=True, max_count=max_count))
         ]
 
