@@ -228,8 +228,6 @@ class LocalFileFactory(ResourceFactory):
         """Instantiate a resource that was created remotely. We need to verify that
         the local copy of the data exists -- we are not responsible for making certain
         it is in th correct place.
-        TODO: if the local copy does not exist, and we are in interactive (not batch) mode,
-        then we should ask the user for the local location and store it in local_params.
         """
         name = params['name']
         global_local_path = params['local_path'] # type: str
@@ -240,7 +238,8 @@ class LocalFileFactory(ResourceFactory):
             if not workspace.batch:
                 local_path = \
                     cast(str,
-                         click.prompt("Local files resource '%s' was located at '%s' on the original system, which directory contains the files on this system?",
+                         click.prompt("Local files resource '%s' was located at '%s' on the original system. Where is it located on this system?"%
+                                      (name, global_local_path),
                                       type=LocalPathType(exists=True)))
                 local_params['local_path'] = local_path
             else:
