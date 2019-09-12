@@ -237,7 +237,7 @@ class LocalFileFactory(ResourceFactory):
         if exists(global_local_path):
             local_path = global_local_path
         else:
-            if workspace.batch:
+            if not workspace.batch:
                 local_path = \
                     cast(str,
                          click.prompt("Local files resource '%s' was located at '%s' on the original system, which directory contains the files on this system?",
