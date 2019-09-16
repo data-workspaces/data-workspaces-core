@@ -24,9 +24,9 @@ copyright = '2019, Max Planck Institute for Software Systems and Data-ken Resear
 author = 'Max Planck Institute for Software Systems and Data-ken Research'
 
 # The short X.Y version
-version = ''
+version = '1.1'
 # The full version, including alpha/beta/rc tags
-release = ''
+release = '1.1.0'
 
 
 # -- General configuration ---------------------------------------------------

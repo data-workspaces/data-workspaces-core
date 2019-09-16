@@ -241,6 +241,7 @@ Here is a summary of the key commands:
   to the current workspace
 * ``snapshot`` - take a snapshot of the current state of the workspace
 * ``restore`` - restore the state to a prior snapshot
+* ``publish`` - associate a workspace with a remote git repository (e.g. on GitHub)
 * ``push`` - push a workspace and all resources to their (remote) origins
 * ``pull`` - pull the workspace and all resources from their (remote) origins
 * ``clone`` - clone a workspace and all the associated resources to the local machine
@@ -284,8 +285,9 @@ facilitated by Data Workspaces:
 .. image:: _static/collaboration-workflow.png
 
 First, the data scientist creates an empty git repository
-on the remote ``origin`` (e.g. GitHub, GitLab, or BitBucket) and then runs the ``push`` command to update
-the ``origin`` with the full history of the workspace.
+on the remote ``origin`` (e.g. GitHub, GitLab, or BitBucket) and then runs the
+``publish`` command to associate the ``origin`` with the workspace and update the
+``origin`` with the full history of the workspace.
 
 A new collaborator can use the ``clone`` command to copy the workspace down to
 their local machine. They can then run experiments and take snapshots, just

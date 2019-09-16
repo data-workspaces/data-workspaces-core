@@ -252,14 +252,15 @@ Core Classes
 ~~~~~~~~~~~~
 .. autoclass:: Workspace
    :members:
-   :no-undoc-members:
+   :undoc-members:
 
 .. autoclass:: ResourceRoles
    :members:
+   :undoc-members:
 
 .. autoclass:: Resource
    :members:
-   :no-undoc-members:
+   :undoc-members:
 
 .. autodata:: RESOURCE_ROLE_CHOICES
 

@@ -85,9 +85,13 @@ class Workspace(metaclass=ABCMeta):
         and the version of dws that created it.
         batch and verbose are for the command line interface.
         """
+        #: attribute: A short name for this workspace (str)
         self.name = name
-        self.dws_version = dws_version
+        #: attribute: Version of dataworkspaces that was used to create the workspace (str)
+        self.dws_version = dws_version #
+        #: attribute: True if input from user should be avoided (bool)
         self.batch = batch
+        #: attribute: Print detailed logging (bool)
         self.verbose = verbose
 
     @abstractmethod
@@ -548,8 +552,7 @@ def clone_workspace(backend_name:str, hostname:str, batch:bool, verbose:bool, *a
 
 class ResourceRoles:
     """This class defines constants for the four
-    resource roles: `SOURCE_DATA_SET`,
-    `INTERMEDIATE_DATA`, `CODE`, and `RESULTS`.
+    resource roles.
     """
     SOURCE_DATA_SET='source-data'
     INTERMEDIATE_DATA='intermediate-data'
@@ -575,9 +578,13 @@ RESOURCE_ROLE_PURPOSES = {
 class Resource(metaclass=ABCMeta):
     """Base class for all resources"""
     def __init__(self, resource_type:str, name:str, role:str, workspace:Workspace):
+        #: attribute: name for this resource's type (e.g. git, local-files, etc.) (str)
         self.resource_type = resource_type
+        #: attribute: unique name for this resource within the workspace (str)
         self.name = name
+        #: Role of the resource, one of :class:`~ResourceRoles`
         self.role = role
+        #: attribute: The workspace that contains this resource (Workspace)
         self.workspace = workspace
 
     def has_results_role(self):
