@@ -1476,58 +1476,62 @@ def make_lineage_graph_for_visualization(instance:str, store:LineageStore, outpu
                              WIDTH=str(width),
                              HEIGHT=str(height)))
 
-def make_lineage_graph_for_resource(instance:str, store:LineageStore,
-                                    resource_name:str, output_file:str,
-                                    snapshot_hash:Optional[str],
-                                    width=1024, height=800) -> None:
+def make_simplified_lineage_graph_for_resource(instance:str, store:LineageStore,
+                                               resource_name:str, output_file:str,
+                                               snapshot_hash:Optional[str],
+                                               width=1024, height=800) -> None:
     nodes = [] # type: List[Dict[str, Any]]
     links = [] # type: List[Dict[str, Any]]
     def ref_name(ref):
         return ref.name if ref.subpath is None else ref.name + ":/" + ref.subpath
-    def cert_name(cert):
-        return ref_name(cert.ref) + ":" + \
-                (cert.hashval if isinstance(cert, HashCertificate) \
-                 else "version=%d"%cast(PlaceholderCertificate, cert).version)
     def cert_short_name(cert):
-        return cert.hashval if isinstance(cert, HashCertificate) \
-            else "placeholder version=%d" % cast(PlaceholderCertificate, cert).version
-    def lineage_to_names(lineage):
-        if isinstance(lineage, StepLineage):
-            sname = "%s at %s" % (lineage.step_name, lineage.start_time)
-            return (sname, sname)
-        elif isinstance(lineage, SourceDataLineage):
-            return (cert_short_name(lineage.cert), cert_name(lineage.cert))
-        elif isinstance(lineage, CodeLineage):
-            return (cert_short_name(lineage.cert), cert_name(lineage.cert))
-    class LineageNodes:
+        return cert.hashval[0:7] if isinstance(cert, HashCertificate) \
+            else "placeholder=%d" % cast(PlaceholderCertificate, cert).version
+    def step_lineage_to_name(lineage):
+        assert isinstance(lineage, StepLineage)
+        return "%s at %s" % (lineage.step_name, str(lineage.start_time)[0:16])
+    class CertNodes:
         def __init__(self):
             self.next_node_id = 1
-            self.lineage_nodes = {} # type: Dict[str, int]
-        def get_lineage_node(self, ref:ResourceRef) -> \
-            Tuple[bool, int, ResourceLineage]:
-            if snapshot_hash is not None:
-                lineage = store.retrieve_entry_as_of_snapshot(instance, ref,
-                                                              snapshot_hash)
-            else:
-                lineage = store.retrieve_entry(instance, ref)
-            (short_name, long_name) = lineage_to_names(lineage)
-            if long_name in self.lineage_nodes:
-                return (False, self.lineage_nodes[long_name], lineage)
+            self.cert_nodes = {} # type: Dict[Certificate, int]
+        def get_cert_node(self, cert:Certificate) -> Tuple[int, bool]:
+            if cert in self.cert_nodes:
+                return (self.cert_nodes[cert], False)
             else:
                 node_id = self.next_node_id
-                l_node = {
-                    "name":short_name,
-                    "label":'Step' if isinstance(lineage, StepLineage)
-                                   else ('SourceData' if isinstance(lineage, SourceDataLineage)
-                                         else 'Code'),
-                    "id":node_id
-                }
-                nodes.append(l_node)
-                self.lineage_nodes[long_name] = node_id
+                nodes.append({
+                    'name':ref_name(cert.ref),
+                    'label':cert_short_name(cert),
+                    'id':node_id
+                })
+                self.cert_nodes[cert] = node_id
                 self.next_node_id += 1
-                return (True, node_id, lineage)
-
-    ln = LineageNodes()
+                return (node_id, True)
+    def get_cert_and_lineage(ref:ResourceRef) -> \
+          Tuple[Certificate, ResourceLineage]:
+        if snapshot_hash is not None:
+            lineage = store.retrieve_entry_as_of_snapshot(instance, ref,
+                                                          snapshot_hash)
+        else:
+            lineage = store.retrieve_entry(instance, ref)
+        cert = lineage.get_cert_for_ref(ref)
+        assert cert is not None
+        return (cert, lineage)
+    def cert_in_lineage(cert:Certificate) -> bool:
+        if snapshot_hash is not None:
+            lineage = store.retrieve_entry_as_of_snapshot(instance, cert.ref,
+                                                          snapshot_hash)
+        else:
+            lineage = store.retrieve_entry(instance, cert.ref)
+        other_cert = lineage.get_cert_for_ref(cert.ref)
+        if other_cert==cert:
+            return True
+        else:
+            print("Warning: Certificate %s not found in store, was overwritten by %s"%
+                  (cert, other_cert))
+            return False
+    
+    cn = CertNodes()
     if snapshot_hash is not None:
         worklist = [ref for ref in
                     store.get_refs_for_resource_as_of_snapshot(instance,
@@ -1541,16 +1545,16 @@ def make_lineage_graph_for_resource(instance:str, store:LineageStore,
     while len(worklist) > 0:
         next_worklist = []
         for ref in worklist:
-            (is_new, node_id, lineage) = ln.get_lineage_node(ref)
-            if isinstance(lineage, StepLineage):
-                for cert in lineage.get_input_certs():
-                    (input_is_new, input_node_id, input_lineage) = \
-                        ln.get_lineage_node(cert.ref)
+            (cert, lineage) = get_cert_and_lineage(ref)
+            (node_id, is_new) = cn.get_cert_node(cert)
+            if lineage is not None and isinstance(lineage, StepLineage):
+                for input_cert in lineage.get_input_certs():
+                    (input_node_id, input_is_new) = cn.get_cert_node(input_cert)
                     links.append({'source':input_node_id,
                                   'target':node_id,
-                                  'type':ref_name(ref)})
-                    if input_is_new:
-                        next_worklist.append(cert.ref)
+                                  'type':step_lineage_to_name(lineage)})
+                    if input_is_new and cert_in_lineage(input_cert):
+                        next_worklist.append(input_cert.ref)
         worklist = next_worklist
     if not exists(GRAPH_TEMPLATE_FILE):
         raise InternalError("Could not find lineage graph template")
