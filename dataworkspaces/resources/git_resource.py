@@ -20,7 +20,7 @@ from dataworkspaces.utils.git_utils import \
     checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, get_subdirectory_hash,\
-    is_pull_needed_from_remote
+    is_pull_needed_from_remote, git_remove_subtree, git_commit
 from dataworkspaces.utils.git_fat_utils import \
     is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
@@ -29,7 +29,9 @@ from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
     SnapshotResourceMixin, JSONDict, JSONList, Workspace
 import dataworkspaces.backends.git as git_backend
-from dataworkspaces.utils.file_utils import LocalPathType, does_subpath_exist
+from dataworkspaces.utils.file_utils \
+    import LocalPathType, does_subpath_exist, get_subpath_from_absolute
+
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
 
@@ -62,10 +64,11 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
 
 class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
     def __init__(self, resource_type:str, name:str, role:str, workspace:Workspace,
-                 local_path:str):
+                 local_path:str, repo_dir:str):
         super().__init__(resource_type, name, role, workspace)
         self.local_path = local_path # always points to the root of this resource
                                      # (not necessarily the root of the repo)
+        self.repo_dir = repo_dir # The root of the repo.
 
     def get_local_path_if_any(self):
         return self.local_path
@@ -80,7 +83,18 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
 
     def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
                         relative_path:str) -> None:
-        pass # nothing to do unless we actually tag the resources
+        snapshot_dir_path = join(self.local_path, relative_path)
+        if isdir(snapshot_dir_path):
+            if self.workspace.verbose:
+                print("Deleting snapshot directory %s from resource %s" %
+                      (relative_path, self.name))
+            subpath_relative_to_repo = get_subpath_from_absolute(self.repo_dir,
+                                                                 snapshot_dir_path)
+            assert subpath_relative_to_repo is not None
+            git_remove_subtree(self.repo_dir, subpath_relative_to_repo,
+                               verbose=self.workspace.verbose)
+            git_commit(self.repo_dir, "Deleted %s"%snapshot_dir_path,
+                       verbose=self.workspace.verbose)
 
     def does_subpath_exist(self, subpath:str, must_be_file:bool=False,
                            must_be_directory:bool=False) -> bool:
@@ -108,7 +122,7 @@ class GitRepoResource(GitResourceBase):
     def __init__(self, name:str, role:str, workspace:Workspace,
                  remote_origin_url:str,
                  local_path:str, branch:str, read_only:bool):
-        super().__init__('git', name, role, workspace, local_path)
+        super().__init__('git', name, role, workspace, local_path, repo_dir=local_path)
         self.remote_origin_url = remote_origin_url
         self.branch = branch
         self.read_only = read_only
@@ -435,7 +449,8 @@ class GitRepoResultsSubdirResource(GitResourceBase):
         # only valid when workspace has git backend
         workspace_dir = _get_workspace_dir_for_git_backend(workspace)
         super().__init__('git-subdirectory', name, ResourceRoles.RESULTS, workspace,
-                         join(workspace_dir, relative_path))
+                         join(workspace_dir, relative_path),
+                         repo_dir=workspace_dir)
         self.workspace_dir = workspace_dir
         self.relative_path = relative_path
 
@@ -540,7 +555,8 @@ class GitRepoSubdirResource(GitResourceBase):
         assert role != ResourceRoles.RESULTS
         workspace_dir = _get_workspace_dir_for_git_backend(workspace)
         super().__init__('git-subdirectory', name, role, workspace,
-                         join(workspace_dir, relative_path))
+                         join(workspace_dir, relative_path),
+                         repo_dir=workspace_dir)
         self.workspace_dir = workspace_dir
         self.relative_path = relative_path
 

@@ -7,6 +7,7 @@ import os.path
 import stat
 from typing import Tuple, List, Set, Pattern, Optional, Union
 import json
+import shutil
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
@@ -152,7 +153,12 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
 
     def delete_snapshot(self, workspace_snapshot_hash:str, resource_restore_hash:str,
                         relative_path:str) -> None:
-        pass
+        snapshot_dir_path = os.path.join(self.local_path, relative_path)
+        if os.path.isdir(snapshot_dir_path):
+            if self.workspace.verbose:
+                print("Deleting snapshot directory %s from resource %s" %
+                      (relative_path, self.name))
+            shutil.rmtree(snapshot_dir_path)
 
     def validate_subpath_exists(self, subpath:str) -> None:
         super().validate_subpath_exists(subpath)

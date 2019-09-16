@@ -1206,7 +1206,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                                       md.relative_destination_path)
         self._delete_snapshot_metadata_and_manifest(hash_val)
         if self.supports_lineage():
-            instance = cast(Workspace, set).get_instance()
+            instance = cast(Workspace, self).get_instance()
             self.get_lineage_store().delete_snapshot_lineage(instance,
                                                              hash_val)
 

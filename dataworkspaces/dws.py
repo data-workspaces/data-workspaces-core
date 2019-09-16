@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataworkspaces.commands.init import init_command
 from dataworkspaces.commands.add import add_command
 from dataworkspaces.commands.snapshot import snapshot_command
+from dataworkspaces.commands.delete_snapshot import delete_snapshot_command
 from dataworkspaces.commands.restore import restore_command
 from dataworkspaces.commands.status import status_command
 from dataworkspaces.commands.publish import publish_command
@@ -306,6 +307,27 @@ def snapshot(ctx, workspace_dir, message, tag):
     snapshot_command(workspace, tag, message)
 
 cli.add_command(snapshot)
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--no-include-resources', is_flag=True, default=False,
+              help="If specified, do NOT include deleting an snapshot-specific content from resources.")
+@click.argument('tag_or_hash', type=HOST_PARAM, default=None, required=True)
+@click.pass_context
+def delete_snapshot(ctx, workspace_dir:str, no_include_resources:bool,
+                    tag_or_hash:str):
+    """Delete the specified snapshot"""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
+    delete_snapshot_command(workspace, tag_or_hash, no_include_resources)
+
+cli.add_command(delete_snapshot)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)

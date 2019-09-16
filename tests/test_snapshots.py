@@ -7,9 +7,10 @@ import unittest
 import sys
 import os
 import os.path
-from os.path import join
+from os.path import join, exists, isdir
 import shutil
 import subprocess
+import json
 
 
 # If set to True, by --keep-outputs option, leave the output data
@@ -18,6 +19,7 @@ KEEP_OUTPUTS=False
 TEMPDIR=os.path.abspath(os.path.expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR,'workspace')
 CODE_DIR=join(WS_DIR, 'code')
+RESULTS_DIR=join(WS_DIR, 'results')
 
 try:
     import dataworkspaces
@@ -62,15 +64,30 @@ class BaseCase(unittest.TestCase):
             data = f.read()
         self.assertEqual(expected_contents, data, "File %s does not contain expected data"%filepath)
 
+    def _write_results(self, metrics):
+        with open(join(RESULTS_DIR, 'results.json'), 'w') as f:
+            json.dump({'metrics':metrics}, f)
+
+    def _assert_results(self, snapshot_reldir, metrics):
+        results_file = join(join(RESULTS_DIR, 'snapshots/'+snapshot_reldir),
+                            'results.json')
+        self.assertTrue(exists(results_file))
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+            self.assertEqual(metrics, data['metrics'])
+
 class TestSnapshots(BaseCase):
     def test_snapshot_no_tag(self):
         """Just a minimal test case without any tag. It turns out we
         were not testing this case!
         """
-        self._run_dws(['init', '--create-resources=code,results'])
+        self._run_dws(['init', '--hostname=test', '--create-resources=code,results'])
         with open(join(CODE_DIR, 'test.py'), 'w') as f:
             f.write("print('this is a test')\n")
+        metrics={'accuracy':0.95}
+        self._write_results(metrics)
         self._run_dws(['snapshot', '-m', "'test of snapshot with no tag'"])
+        self._assert_results('test-001', metrics)
 
     def test_restore_short_hash(self):
         HASH='cdce6a5'
@@ -102,6 +119,21 @@ class TestSnapshots(BaseCase):
             got_error = True
         if not got_error:
             self.fail("Did not get an error when calling snapshot for tag S1 a second time")
+
+class TestDeleteSnapshot(BaseCase):
+    def test_delete_snapshot(self):
+        self._run_dws(['init', '--hostname=test', '--create-resources=code,results'])
+        with open(join(CODE_DIR, 'test.py'), 'w') as f:
+            f.write("print('this is a test')\n")
+        metrics={'accuracy':0.95}
+        self._write_results(metrics)
+        self._run_dws(['snapshot', '-m', "'test of snapshot to be deleted'",
+                       'snapshot-tag'])
+        self._assert_results('test-snapshot-tag', metrics)
+        snapshot_dir = join(join(RESULTS_DIR, 'snapshots'), 'test-snapshot-tag')
+        self.assertTrue(isdir(snapshot_dir))
+        self._run_dws(['delete-snapshot', 'snapshot-tag'])
+        self.assertFalse(isdir(snapshot_dir))
 
 if __name__ == '__main__':
     if len(sys.argv)>1 and sys.argv[1]=='--keep-outputs':

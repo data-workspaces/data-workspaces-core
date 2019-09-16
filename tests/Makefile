@@ -3,7 +3,7 @@ MYPYPATH:=$(shell cd ..; pwd)
 DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 
 help:
-	@echo targets are: test clean mypy help install-rclone-deb
+	@echo targets are: test clean mypy pyflakes check help install-rclone-deb
 
 UNIT_TESTS=test_git_utils test_file_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_hashtree test_lineage_utils test_git_fat_integration test_lineage test_jupyter_kit test_api
 
@@ -29,6 +29,9 @@ pyflakes:
 	cd $(DATAWORKSPACES)/resources; pyflakes *.py
 	cd $(DATAWORKSPACES)/commands; pyflakes *.py
 
+# shortcut for static checks
+check: mypy pyflakes
+
 RCLONE_VERSION=v1.46
 RCLONE_FILE=rclone-$(RCLONE_VERSION)-linux-amd64.deb
 RCLONE_CONFIG=~/.config/rclone/rclone.conf
@@ -48,4 +51,4 @@ $(RCLONE_CONFIG):
 clean:
 	rm -rf ./test ./remotes ./clones rclone*.deb
 
-.PHONY: test help clean mypy pyflakes install-rclone-deb
+.PHONY: test help clean mypy pyflakes check install-rclone-deb
