@@ -531,6 +531,7 @@ def init_workspace(backend_name:str, workspace_name:str, hostname:str,
 
     TODO: the hostname should be generalized as an "instance name", but we
     also need backward compatibility.
+    TODO: is this function now redundant? Compare to :func:`~load_workspace()`.
     """
     import dataworkspaces
     return _get_factory(backend_name)\
@@ -546,6 +547,10 @@ def clone_workspace(backend_name:str, hostname:str, batch:bool, verbose:bool, *a
 
 
 class ResourceRoles:
+    """This class defines constants for the four
+    resource roles: `SOURCE_DATA_SET`,
+    `INTERMEDIATE_DATA`, `CODE`, and `RESULTS`.
+    """
     SOURCE_DATA_SET='source-data'
     INTERMEDIATE_DATA='intermediate-data'
     CODE='code'
@@ -652,7 +657,7 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
     def get_local_path_if_any(self) -> Optional[str]:
         """If the resource has an associated local path on the system,
         return it. Othewise, return None. Even if it has local state,
-         this might not be a file-based resource. Thus, the return
+        this might not be a file-based resource. Thus, the return
         value is an Optional string.
         """
         pass

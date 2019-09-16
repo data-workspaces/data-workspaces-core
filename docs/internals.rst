@@ -46,12 +46,12 @@ as follows::
 
 Next, clone the Data Workspaces main source tree::
 
-  git clone git@github.com:jfischer/data-workspaces-python.git
+  git clone git@github.com:data-workspaces/data-workspaces-core.git
 
 Now, we install the data workspaces library, via ``pip``, using an editable
 mode so that our source tree changes are immediately visible::
 
-  cd data-workspaces-python
+  cd data-workspaces-core
   pip install --editable `pwd`
 
 With this setup, you should not have to configure ``PYTHONPATH``.
@@ -78,16 +78,66 @@ end with something like this::
 
 Overall Design
 --------------
-A data workspace is contained within a Git repository. The metadata about resources,
+Here is a block diagram of the system architecture:
+
+.. image:: _static/system-architecture.png
+
+The core of the system is the Workspaces API, which is located in
+``dataworkspaces/workspace.py``. This API provides a base ``Workspace`` classes for
+the workspace and a base ``Resource`` class for resources. There are also several
+mixin classes which define extensions to the basic functionality. See
+:ref:`Core Workspace and Resource API <workspace_api>` for details.
+
+The ``Workspace`` class has one or more *backends* which implement the
+storage and management of the workspace metadata. Currently, there is only
+one complete backend, the *git* backend, which stores its metadata in
+a git repository.
+
+Independent of the workspace backend are *resource types*, which provide
+concrete implementations of the the ``Resource`` base class. These currently include
+resource types for git, git subdirectories, rclone, and local files.
+
+Above the workspace API sits the *Command API*, which implements command functions
+for operations like init, clone, push, pull, snapshot and restore. There is a thin layer above this for programmatic access (``dataworkspaces.api``) as well as a full
+command line interface, implmented using the
+`click <https://click.palletsprojects.com/en/7.x/>`_ package
+(see ``dataworkspaces.dws``).
+
+The *Lineage API* is also implemented on top of the basic workspace interface and
+provides a way for pipeline steps to record their inputs, outputs, and code
+dependencies.
+
+Finally, *kits* provide integration with user-facing libraries and applications,
+such as Scikit-learn and Jupyter notebooks.
+
+Code Layout
+~~~~~~~~~~~
+The code is organized as follows:
+
+  * ``dataworkspaces/``
+
+    * ``api.py`` - API to run a subset of the workspace commands from Python.
+      This is useful for building integrations.
+    * ``dws.py`` - the command line interface
+    * ``errors.py`` - common exception class definitions
+    * ``lineage.py`` - the generic lineage api
+    * ``workspace.py`` - the core api for workspaces and resources
+    * ``backends/`` - implementations of workspace backends
+    * ``utils/`` - lower level utilities used by the upper layers
+    * ``resources/`` - implementations of the resource types
+    * ``commands/`` - implementations of the individual dws commands
+    * ``third_party/`` - third-party code (e.g. git-fat)
+    * ``kits/`` - adapters to specific external technologies
+
+
+Git Database Layout
+~~~~~~~~~~~~~~~~~~~
+When using the *git backend*, a data workspace is contained within a Git repository.
+The metadata about resources,
 snapshots and lineage is stored in the subdirectory ``.dataworkspace``. The various
 resources can be other subdirectories of the workspace's repository or may be
 external to the main Git repo.
 
-The `click <https://click.palletsprojects.com/en/7.x/>`_ package is used to
-structure the command line interface.
-
-Database Layout
-~~~~~~~~~~~~~~~
 The layout for the files under the ``.dataworkspace`` directory is as follows:
 
   * ``.dataworkspace/``
@@ -127,65 +177,13 @@ guidelines:
 4. Use git's design as an inspiration. It provides an efficient and flexible
    representation.
 
-Code Layout
-~~~~~~~~~~~
-The code is organized as follows:
-
-  * ``dataworkspaces/``
-
-    * ``api.py`` - API to run a subset of the workspace commands from Python.
-      This is useful for building integrations.
-    * ``dws.py`` - the command line interface
-    * ``errors.py`` - common exception class definitions
-    * ``lineage.py`` - the generic lineage api
-    * ``utils/`` - lower level utilities used by the upper layers
-    * ``resources/`` - base class for resources and implementations of the resource types
-    * ``commands/`` - implementations of the individual dws commands
-    * ``third_party/`` - third-party code (e.g. git-fat)
-    * ``kits/`` - adapters to specific external technologies
     
 Command Design
 --------------
-Each command has a *validation* phase and an *execution* phase. The goal is to
-do all the checks up front before making any changes to the state of the
-resources or the workspace. This is supported by the ``Action`` class
-and associated infrastructure.
-
-Actions
-~~~~~~~
-We wish to perform all the
-checks of a command up front and then only run the steps when we know they
-will succeed. This is done through *actions*, as defined in ``commands/actions.py``.
-Each ``Action`` subclass performs any necesary checks in its ``__init__()`` method.
-The actual execution of the action is in the ``run()`` method. Commands instantiate
-the actions they need, add them to a list (called the *plan*), and when all
-checks have been performed, execute the actions via the function
-``actions.run_plan()``. When running in verbose mode, we also print the
-list of actions to perform and ask the user for confirmation.
-
-Snapshot
-~~~~~~~~
-Taking a snapshot involves instantiating resource objects for each resource
-in resources.json and calling ``snapshot_prechecks()`` and ``snapshot()``.
-
-Restore
-~~~~~~~
-Restore has some options to let you specify which resources to restore
-and which to leave in their current state (``--only`` and ``--leave``). Restore may
-create a new snapshot if the state of the resources does not exactly match
-the original snapshot's state. If ``--no-new-snapshot`` is
-specified, we adjust the individual resource
-states without taking a new snapshot.
-
-To implement restore for a new resource type, you just need to implement the
-``restore_prechecks()`` and ``restore()`` methods. Both take a hashval parameter. In the
-``restore_prechecks()`` call, you should validate that there is a state corresponding
-to that hash.
-
-There are a few edge cases that may need further thought:
-
-* It is possible for the restore command to create a snapshot matching a previous one. We detect this situation, but don't do anything about it. It should be fine - there will just be an extra snapshot_history entry, but only one snapshot file.
-* The restore for the git resource does a hard reset, which resets both the current workspace of the repo and the HEAD. I'm not sure whether we want that behavior or just to reset the workspace.
+The bulk of the work for each command is done by the core Workspace API
+and its backends. The command fuction itself (``dataworkspaces.commands.COMMAND_NAME``)
+performs parameter-checking, calls the associated parts of Workspace API,
+and handles user interactions when needed.
 
 Resource Design
 ---------------
@@ -239,3 +237,96 @@ be kept at the latest version. This is done by always putting results
 resources into the leave set, as if specified in the ``--leave`` option.
 If the user puts a results resource in the ``--only`` set, we will error
 out for now.
+
+.. _workspace_api:
+
+Core Workspace API
+------------------
+Here is the detailed documentation for the Core Workspace API, found in
+``dataworkspaces.workspace``.
+
+.. automodule:: dataworkspaces.workspace
+   :no-undoc-members:
+
+Core Classes
+~~~~~~~~~~~~
+.. autoclass:: Workspace
+   :members:
+   :no-undoc-members:
+
+.. autoclass:: ResourceRoles
+   :members:
+
+.. autoclass:: Resource
+   :members:
+   :no-undoc-members:
+
+.. autodata:: RESOURCE_ROLE_CHOICES
+
+
+Factory Classes and Functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: WorkspaceFactory
+   :members:
+   :no-undoc-members:
+
+.. autofunction:: load_workspace
+
+.. autofunction:: find_and_load_workspace
+
+.. autofunction:: init_workspace
+
+.. autoclass:: ResourceFactory
+   :members:
+   :no-undoc-members:
+
+
+Mixins for Files and Local State
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: FileResourceMixin
+   :members:
+   :undoc-members:
+
+.. autoclass:: LocalStateResourceMixin
+   :members:
+   :undoc-members:
+
+Mixins for Synchronized and Centralized Workspaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Workspace backends should inherit from one of either
+:class:`SyncedWorkspaceMixin` or :class:`CentralWorkspaceMixin`.
+
+.. autoclass:: SyncedWorkspaceMixin
+   :members:
+   :undoc-members:
+
+.. autoclass:: CentralWorkspaceMixin
+   :members:
+   :undoc-members:
+
+Mixins for Snapshot Functionality
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+To support snapshots, the interfaces defined by
+:class:`SnapshotWorkspaceMixin` and :class:`SnapshotResourceMixin` should
+be implmented by workspace backends and resources, respectively.
+:class:`SnapshotMetadata` defines the metadata to be stored for each
+snapshot.
+
+.. autoclass:: SnapshotMetadata
+   :members:
+   :undoc-members:
+
+.. autoclass:: SnapshotWorkspaceMixin
+   :members:
+   :undoc-members:
+
+.. autoclass:: SnapshotResourceMixin
+   :members:
+   :undoc-members:
+
+
+
+
+
