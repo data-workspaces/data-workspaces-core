@@ -158,7 +158,21 @@ class TestLineage(unittest.TestCase):
         self.assertEqual("this is a test", results['run_description'])
         self.assertEqual(45, results['metrics']['size_filtered'])
         self.assertEqual(334, results['metrics']['size_raw'])
-    
+
+    def test_lineage_graph_command(self):
+        self._run_step('lineage_step1.py', ['test_lineage1'])
+        self._run_step('lineage_step2.py', ['test_lineage1'])
+        self._validate_test_case_file('test_lineage1', 'intermediate-data/s1')
+        self._validate_test_case_file('test_lineage1', 'results')
+        graph_file = join(TEMPDIR, 'lineage.html')
+        self._run_dws(['lineage', 'graph', graph_file])
+        self.assertTrue(exists(graph_file))
+        self._run_dws(['snapshot', 'S1'])
+        graph_file2 = join(TEMPDIR, 'lineage2.html')
+        self._run_dws(['lineage', 'graph', '--snapshot=S1', graph_file2])
+        self.assertTrue(exists(graph_file2))
+
+
 
 
 if __name__ == '__main__':
