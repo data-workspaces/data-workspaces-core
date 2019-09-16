@@ -316,7 +316,10 @@ cli.add_command(snapshot)
 @click.pass_context
 def delete_snapshot(ctx, workspace_dir:str, no_include_resources:bool,
                     tag_or_hash:str):
-    """Delete the specified snapshot"""
+    """Delete the specified snapshot. This includes the metadata and lineage
+    data for the snapshot. Unless --no-include-resources is specified, this
+    also deletes any results data saved for the snapshot (under the
+    snapshots subdirectory of a results resource)."""
     ns = ctx.obj
     if workspace_dir is None:
         if ns.batch:
