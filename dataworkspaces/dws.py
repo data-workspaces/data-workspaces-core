@@ -25,6 +25,7 @@ from dataworkspaces.commands.pull import pull_command
 from dataworkspaces.commands.clone import clone_command
 #from dataworkspaces.commands.run import run_command
 from dataworkspaces.commands.diff import diff_command
+from dataworkspaces.commands.lineage import lineage_graph_command
 from dataworkspaces.workspace import \
     RESOURCE_ROLE_CHOICES, ResourceRoles,\
     find_and_load_workspace, _find_containing_workspace
@@ -558,8 +559,43 @@ cli.add_command(diff)
 # cli.add_command(show)
 
 
+# The lineage command has subcommands for specific tasks
+# with the linage.
+@click.group()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.pass_context
+def lineage(ctx, workspace_dir):
+    """Lineage-related commands"""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+        
+    ns.workspace_dir = workspace_dir
+
+cli.add_command(lineage)
+
+@click.command(name='graph')
+@click.option('--resource', type=str, default=None,
+              help="name of the resource to graph the lineage for (default to the first results resource)")
+@click.option('--snapshot', type=str, default=None,
+              help="Snapshot hash or tag to use for lineage. If not specified, use current lineage.")
+@click.argument('output_file',
+                type=click.Path(exists=False, file_okay=True, dir_okay=False,
+                                readable=True, writable=True, resolve_path=True))
+@click.pass_context
+def graph(ctx, resource:Optional[str], snapshot:Optional[str], output_file:str):
+    """Graph the lineage of a resource, writing the graph to an HTML file. Subcommand of ``lineage``"""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    lineage_graph_command(workspace, resource, snapshot, output_file)
+
+lineage.add_command(graph)
+
+
 if __name__=='__main__':
     cli()
     sys.exit(0)
-
-cli.add_command(snapshot)

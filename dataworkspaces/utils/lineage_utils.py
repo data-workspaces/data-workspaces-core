@@ -888,6 +888,34 @@ class LineageStore(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def retrieve_entry_as_of_snapshot(self, instance:str, ref:ResourceRef,
+                                      snapshot_hash:str) -> ResourceLineage:
+        """Retrieve the specified entry as of the specified snapshot hash. If an exact
+        match is not found, return an entry that covers the specified ref. If still
+        not match is found, raise a LineageNotFoundError.
+        """
+        pass
+
+    @abstractmethod
+    def has_entry_as_of_snapshot(self, instance:str, ref:ResourceRef,
+                                 snapshot_hash:str, include_covers:bool=True) -> bool:
+        """Return True if the specified lineage exists in the specified snapshot.
+        If include_covers is True and there isn't an exact match,
+        also return True if there exists a cover for this reference in the store.
+        """
+        pass
+
+    @abstractmethod
+    def get_refs_for_resource_as_of_snapshot(self, instance:str, resource_name:str,
+                                             snapshot_hash:str) -> Iterable[ResourceRef]:
+        """Iterate through all the refs in the snapshot belonging to this resource.
+        This can be an empty list, if the resource is not in the lineage store,
+        a one-element list if the resource name with no subpath is in the store, or
+        a multi-element list of multiple subpaths for the resource are in the store
+        """
+        pass
+
     def get_or_create_cert(self, instance:str, ref:ResourceRef,
                            comment:str, for_code:bool=False) -> Certificate:
         """If there is a lineage at the specified ref, then return the associated certificate.
@@ -1026,11 +1054,12 @@ class FileLineageStore(LineageStore):
         rfile_path = join(self.current_lineage_path, resource_name+'.json')
         with open(rfile_path, 'r') as f:
             data = json.load(f)
-        assert isinstance(data, list)
+        assert isinstance(data, dict), \
+            "Resource lineage file %s is not in correct format"%rfile_path
         # For backward compatibility, the resource file is a list of lineages rather than a map from
         # refs to lineages. We need to recreate the map.
         # TODO: support reading/writing a new format that uses the map directly
-        lineages = [ResourceLineage.from_json(r, rfile_path) for r in data]
+        lineages = [ResourceLineage.from_json(r, rfile_path) for r in data['lineages']]
         mapping = {} # type: Dict[ResourceRef, ResourceLineage]
         for l in lineages:
             for rc in l.get_certs():
@@ -1058,7 +1087,9 @@ class FileLineageStore(LineageStore):
         rfile_path = join(self.current_lineage_path, resource_name+'.json')
         # for backward compability, we just save the lineage values
         with open(rfile_path, 'w') as f:
-            json.dump([r.to_json() for r in lineage_map.values()], f, indent=2)
+            json.dump({'resource_name':resource_name,
+                       'lineages':[r.to_json() for r in lineage_map.values()]},
+                      f, indent=2)
         return rfile_path
 
     def _get_snapshot_path(self, resource_name:str, snapshot_hash:str) -> str:
@@ -1073,6 +1104,26 @@ class FileLineageStore(LineageStore):
         if not exists(snapshot_dir):
             os.makedirs(snapshot_dir)
 
+    def _parse_snapshot_rfile(self, resource_name:str, snapshot_hash:str) \
+        -> Dict[ResourceRef, ResourceLineage]:
+        """Since this is for a snapshot, it does not use the cache.
+        """
+        rfile_path = self._get_snapshot_path(resource_name, snapshot_hash)
+        with open(rfile_path, 'r') as f:
+            data = json.load(f)
+        assert isinstance(data, dict), "Lineage file %s is not in expected format"%\
+            rfile_path
+        # For backward compatibility, the resource file is a list of lineages rather than a map from
+        # refs to lineages. We need to recreate the map.
+        # TODO: support reading/writing a new format that uses the map directly
+        lineages = [ResourceLineage.from_json(r, rfile_path) for r in data['lineages']]
+        mapping = {} # type: Dict[ResourceRef, ResourceLineage]
+        for l in lineages:
+            for rc in l.get_certs():
+                if rc.ref.name==resource_name:
+                    mapping[rc.ref] = l
+        return mapping
+
     def _save_rfile_to_snapshot(self, resource_name:str,
                                 lineage_map:Dict[ResourceRef, ResourceLineage],
                                 snapshot_hash:str) -> str:
@@ -1082,7 +1133,9 @@ class FileLineageStore(LineageStore):
         snapshot_path = self._get_snapshot_path(resource_name, snapshot_hash)
         # for backward compability, we just save the lineage values
         with open(snapshot_path, 'w') as f:
-            json.dump([r.to_json() for r in lineage_map.values()], f, indent=2)
+            json.dump({'resource_name':resource_name,
+                       'lineages':[r.to_json() for r in lineage_map.values()]},
+                      f, indent=2)
         return snapshot_path
 
     def _copy_rfile_to_snapshot(self, resource_name:str, snapshot_hash:str) -> Tuple[str, str]:
@@ -1270,11 +1323,60 @@ class FileLineageStore(LineageStore):
                 _indent(json.dumps(lineage.to_json(), indent=2), 8)
         print()
 
+    def retrieve_entry_as_of_snapshot(self, instance:str, ref:ResourceRef,
+                                      snapshot_hash:str) -> ResourceLineage:
+        """Retrieve the specified entry as of the specified snapshot hash. If an exact
+        match is not found, return an entry that covers the specified ref. If still
+        not match is found, raise a LineageNotFoundError.
+        """
+        if not self._snapshot_rfile_exists(ref.name, snapshot_hash):
+            raise LineageNotFoundError('%s as of snapshot %s'%
+                                       (ref.name, snapshot_hash))
+        mapping = self._parse_snapshot_rfile(ref.name, snapshot_hash)
+        for (other_ref, lineage) in mapping.items():
+            if ref==other_ref or other_ref.covers(ref):
+                return lineage
+        raise LineageNotFoundError("No lineage exists for %s as of %s" %
+                                   (str(ref), snapshot_hash))
+
+
+    def has_entry_as_of_snapshot(self, instance:str, ref:ResourceRef,
+                                 snapshot_hash:str, include_covers:bool=True) -> bool:
+        """Return True if the specified lineage exists in the specified snapshot.
+        If include_covers is True and there isn't an exact match,
+        also return True if there exists a cover for this reference in the store.
+        """
+        if not self._snapshot_rfile_exists(ref.name, snapshot_hash):
+            raise LineageNotFoundError('%s as of snapshot %s'%
+                                       (ref.name, snapshot_hash))
+        mapping = self._parse_snapshot_rfile(ref.name, snapshot_hash)
+        for (other_ref, lineage) in mapping.items():
+            if ref==other_ref or (include_covers and other_ref.covers(ref)):
+                return True
+        return False
+
+    def get_refs_for_resource_as_of_snapshot(self, instance:str, resource_name:str,
+                                             snapshot_hash:str) -> Iterable[ResourceRef]:
+        """Iterate through all the refs in the snapshot belonging to this resource.
+        This can be an empty list, if the resource is not in the lineage store,
+        a one-element list if the resource name with no subpath is in the store, or
+        a multi-element list of multiple subpaths for the resource are in the store
+        """
+        if not self._snapshot_rfile_exists(resource_name, snapshot_hash):
+            return []
+        mapping = self._parse_snapshot_rfile(resource_name, snapshot_hash)
+        return mapping.keys()
+
+
+
 GRAPH_TEMPLATE_FILE=abspath(join(dirname(__file__),
                                  '../third_party/lineage_graph_template.html'))
 
 def make_lineage_graph_for_visualization(instance:str, store:LineageStore, output_file:str,
                                          width=1024, height=800) -> None:
+    """This builds a lineage graph of the entire repo, mostly for debugging
+    purposes.
+    """
     next_node_id = 1
     ref_nodes = {} # type: Dict[ResourceRef, int]
     cert_nodes = {} # type: Dict[Certificate, int]
@@ -1364,6 +1466,92 @@ def make_lineage_graph_for_visualization(instance:str, store:LineageStore, outpu
                     "target":cert_nodes[icert],
                     "type": "INPUT"
                 })
+    if not exists(GRAPH_TEMPLATE_FILE):
+        raise InternalError("Could not find lineage graph template")
+    graph_str = json.dumps({"nodes":nodes, "links":links}, indent=2)
+    with open(GRAPH_TEMPLATE_FILE, 'r') as f, open(output_file, 'w') as g:
+        data = f.read()
+        t = Template(data)
+        g.write(t.substitute(LINEAGE_GRAPH=graph_str,
+                             WIDTH=str(width),
+                             HEIGHT=str(height)))
+
+def make_lineage_graph_for_resource(instance:str, store:LineageStore,
+                                    resource_name:str, output_file:str,
+                                    snapshot_hash:Optional[str],
+                                    width=1024, height=800) -> None:
+    nodes = [] # type: List[Dict[str, Any]]
+    links = [] # type: List[Dict[str, Any]]
+    def ref_name(ref):
+        return ref.name if ref.subpath is None else ref.name + ":/" + ref.subpath
+    def cert_name(cert):
+        return ref_name(cert.ref) + ":" + \
+                (cert.hashval if isinstance(cert, HashCertificate) \
+                 else "version=%d"%cast(PlaceholderCertificate, cert).version)
+    def cert_short_name(cert):
+        return cert.hashval if isinstance(cert, HashCertificate) \
+            else "placeholder version=%d" % cast(PlaceholderCertificate, cert).version
+    def lineage_to_names(lineage):
+        if isinstance(lineage, StepLineage):
+            sname = "%s at %s" % (lineage.step_name, lineage.start_time)
+            return (sname, sname)
+        elif isinstance(lineage, SourceDataLineage):
+            return (cert_short_name(lineage.cert), cert_name(lineage.cert))
+        elif isinstance(lineage, CodeLineage):
+            return (cert_short_name(lineage.cert), cert_name(lineage.cert))
+    class LineageNodes:
+        def __init__(self):
+            self.next_node_id = 1
+            self.lineage_nodes = {} # type: Dict[str, int]
+        def get_lineage_node(self, ref:ResourceRef) -> \
+            Tuple[bool, int, ResourceLineage]:
+            if snapshot_hash is not None:
+                lineage = store.retrieve_entry_as_of_snapshot(instance, ref,
+                                                              snapshot_hash)
+            else:
+                lineage = store.retrieve_entry(instance, ref)
+            (short_name, long_name) = lineage_to_names(lineage)
+            if long_name in self.lineage_nodes:
+                return (False, self.lineage_nodes[long_name], lineage)
+            else:
+                node_id = self.next_node_id
+                l_node = {
+                    "name":short_name,
+                    "label":'Step' if isinstance(lineage, StepLineage)
+                                   else ('SourceData' if isinstance(lineage, SourceDataLineage)
+                                         else 'Code'),
+                    "id":node_id
+                }
+                nodes.append(l_node)
+                self.lineage_nodes[long_name] = node_id
+                self.next_node_id += 1
+                return (True, node_id, lineage)
+
+    ln = LineageNodes()
+    if snapshot_hash is not None:
+        worklist = [ref for ref in
+                    store.get_refs_for_resource_as_of_snapshot(instance,
+                                                               resource_name,
+                                                               snapshot_hash)]
+    else:
+        worklist = [ref for ref in
+                    store.get_refs_for_resource(instance, resource_name)]
+    if len(worklist)==0:
+        raise LineageError("No lineage found for resource %s" % resource_name)
+    while len(worklist) > 0:
+        next_worklist = []
+        for ref in worklist:
+            (is_new, node_id, lineage) = ln.get_lineage_node(ref)
+            if isinstance(lineage, StepLineage):
+                for cert in lineage.get_input_certs():
+                    (input_is_new, input_node_id, input_lineage) = \
+                        ln.get_lineage_node(cert.ref)
+                    links.append({'source':input_node_id,
+                                  'target':node_id,
+                                  'type':ref_name(ref)})
+                    if input_is_new:
+                        next_worklist.append(cert.ref)
+        worklist = next_worklist
     if not exists(GRAPH_TEMPLATE_FILE):
         raise InternalError("Could not find lineage graph template")
     graph_str = json.dumps({"nodes":nodes, "links":links}, indent=2)
