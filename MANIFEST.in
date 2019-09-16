@@ -1,2 +1,2 @@
 include dataworkspaces/third_party/git-fat
-dataworkspaces/third_party/lineage_graph_template.html
+include dataworkspaces/third_party/lineage_graph_template.html
