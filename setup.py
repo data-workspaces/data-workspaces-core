@@ -17,7 +17,7 @@ setup(
     long_description_content_type="text/x-rst",
     url="https://github.com/data-workspaces/data-workspaces-core",
     packages=find_packages(),
-    #py_modules=['dataworkspaces'],
+    include_package_data=True, # needed for copying data files at install time
     install_requires=[
         'click',
         'requests'
