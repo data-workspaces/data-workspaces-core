@@ -26,6 +26,8 @@ from dataworkspaces.commands.clone import clone_command
 #from dataworkspaces.commands.run import run_command
 from dataworkspaces.commands.diff import diff_command
 from dataworkspaces.commands.lineage import lineage_graph_command
+from dataworkspaces.commands.deploy import deploy_build_command,\
+                                           deploy_run_command
 from dataworkspaces.workspace import \
     RESOURCE_ROLE_CHOICES, ResourceRoles,\
     find_and_load_workspace, _find_containing_workspace
@@ -599,6 +601,61 @@ def graph(ctx, resource:Optional[str], snapshot:Optional[str], width:int,
     lineage_graph_command(workspace, output_file, resource, snapshot, width, height)
 
 lineage.add_command(graph)
+
+
+# The deploy command has subcommands for specific tasks related to deployment
+@click.group()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.pass_context
+def deploy(ctx, workspace_dir):
+    """Lineage-related commands"""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    ns.workspace_dir = workspace_dir
+
+cli.add_command(deploy)
+
+
+@click.command(name='build')
+@click.option('--image-name', type=str, default=None,
+              help="Name of docker image, defaults to name of workspace")
+@click.option('--force-rebuild', '-f', is_flag=True, default=False,
+              help="If specified, always rebuild image (force deletes the image from docker)")
+@click.option('--git-user-email', type=str, default=None,
+              help="Email address used by git inside the container. Defaults to value of user.email for this workspace.")
+@click.option('--git-user-name', type=str, default=None,
+              help="Username used by git inside the container. Defualts to value of user.name for this workspace.")
+@click.pass_context
+def deploy_build(ctx, image_name:Optional[str], force_rebuild:bool,
+          git_user_email:Optional[str], git_user_name:Optional[str]):
+    """Build a docker image containing this workspace. This command is EXERIMENTAL
+    and subject to change."""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    deploy_build_command(workspace, image_name, force_rebuild, git_user_email,
+                         git_user_name)
+
+deploy.add_command(deploy_build)
+
+@click.command(name='run')
+@click.option('--image-name', type=str, default=None,
+              help="Name of docker image, defaults to name of workspace")
+@click.option('--no-mount-ssh-keys', is_flag=True, default=False,
+              help="If specified, do not mount the host's ~/.ssh directory into the container. This directory is need for git authentication.")
+@click.pass_context
+def deploy_run(ctx, image_name:Optional[str], no_mount_ssh_keys:bool):
+    """Build a docker image containing this workspace. This command is EXERIMENTAL
+    and subject to change."""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    deploy_run_command(workspace, image_name, no_mount_ssh_keys)
+
+deploy.add_command(deploy_run)
 
 
 if __name__=='__main__':

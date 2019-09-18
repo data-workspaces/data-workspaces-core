@@ -393,3 +393,8 @@ def get_json_file_from_remote(relpath:str, repo_dir:str, verbose:bool) -> Any:
 def set_remote_origin(repo_dir, remote_url, verbose):
     call_subprocess([GIT_EXE_PATH, 'remote', 'add', 'origin', remote_url],
                     cwd=repo_dir, verbose=verbose)
+
+def get_git_config_param(repo_dir, param_name, verbose):
+    param_val = call_subprocess([GIT_EXE_PATH, 'config', param_name],
+                                cwd=repo_dir, verbose=verbose)
+    return param_val.strip()
