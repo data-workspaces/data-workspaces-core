@@ -5,11 +5,11 @@ Resource for git repositories
 import subprocess
 import os
 from os.path import realpath, basename, isdir, join, dirname, exists,\
-                    abspath, expanduser
+                    abspath, expanduser, commonpath, isabs
 import stat
 import click
 import json
-from typing import Set, Pattern, Union
+from typing import Set, Pattern, Union, Optional
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -117,13 +117,19 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                 raise ConfigurationError("Parse error when reading %s in resource %s"
                                          %(subpath, self.name)) from e
 
+def get_workspace_dir(workspace:Workspace) -> str:
+    workspace_local_path = workspace.get_workspace_local_path_if_any()
+    return workspace_local_path if workspace_local_path is not None \
+             else abspath(expanduser('~'))
+
 
 class GitRepoResource(GitResourceBase):
     def __init__(self, name:str, role:str, workspace:Workspace,
-                 remote_origin_url:str,
+                 remote_origin_url:str, relative_local_path:Optional[str],
                  local_path:str, branch:str, read_only:bool):
         super().__init__('git', name, role, workspace, local_path, repo_dir=local_path)
         self.remote_origin_url = remote_origin_url
+        self.relative_local_path = relative_local_path
         self.branch = branch
         self.read_only = read_only
 
@@ -133,8 +139,17 @@ class GitRepoResource(GitResourceBase):
             'name':self.name,
             'role':self.role,
             'remote_origin_url':self.remote_origin_url,
+            'relative_local_path':self.relative_local_path,
             'branch':self.branch,
             'read_only':self.read_only
+        }
+
+    def get_local_params(self):
+        use_relative = True if self.relative_local_path and \
+                       join(get_workspace_dir(self.workspace), self.relative_local_path)==self.local_path\
+                       else False
+        return {
+            'local_path':self.relative_local_path if use_relative else self.local_path
         }
 
     def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
@@ -356,6 +371,13 @@ class GitRepoFactory(ResourceFactory):
                                                                 workspace, local_path)
             else:
                 raise ConfigurationError(local_path + ' is not a git repository')
+        # The local path is a git repo. Double-check that it isn't already part
+        # of the workspace's repo. If it is, you will get an error when cloning.
+        if isinstance(workspace, git_backend.Workspace) and \
+           lpr.startswith(realpath(workspace.get_workspace_local_path_if_any())) and \
+           is_file_tracked_by_git(local_path, workspace.get_workspace_local_path_if_any(),
+                                  verbose=workspace.verbose):
+            raise ConfigurationError("%s is a git repository, but also part of the parent workspace's repo"%(local_path))
         validate_git_fat_in_path_if_needed(local_path)
         remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
         (current, others) = get_branch_info(local_path, workspace.verbose)
@@ -366,15 +388,24 @@ class GitRepoFactory(ResourceFactory):
             click.echo("WARNING: Git repo is currently on branch %s and branch %s was requested. However, the current branch has uncommitted changes. Will skip changing the branch after adding the repo to workspace." % (current, branch))
         else:
             switch_git_branch(local_path, branch, workspace.verbose)
+        workspace_dir = get_workspace_dir(workspace)
+        relative_local_path = None # type: Optional[str]
+        if commonpath([workspace_dir, local_path])==workspace_dir:
+            relative_local_path = get_subpath_from_absolute(workspace_dir, local_path)
         return GitRepoResource(name, role, workspace,
-                               remote_origin, local_path, branch, read_only)
+                               remote_origin, relative_local_path,
+                               local_path, branch, read_only)
 
     def from_json(self, params, local_params, workspace):
         """Instantiate a resource object from the parsed resources.json file"""
         assert params['resource_type']=='git'
+        local_path = local_params['local_path']
+        if not isabs(local_path):
+            local_path = join(get_workspace_dir(workspace), local_path)
         return GitRepoResource(params['name'], params['role'],
                                workspace, params['remote_origin_url'],
-                               local_params['local_path'], params['branch'],
+                               params.get('relative_local_path', None),
+                               local_path, params['branch'],
                                params.get('read_only'))
 
     def has_local_state(self):
@@ -384,9 +415,10 @@ class GitRepoFactory(ResourceFactory):
         assert params['resource_type']=='git'
         rname = params['name']
         remote_origin_url = params['remote_origin_url']
-        default_local_path = join(workspace.get_workspace_local_path_if_any(), rname) \
-                             if workspace.get_workspace_local_path_if_any() is not None \
-                             else abspath(expanduser('~'))
+        relative_local_path = params.get('relative_local_path', None)
+        workspace_dir = get_workspace_dir(workspace)
+        default_local_path = join(workspace_dir, relative_local_path) \
+                             if relative_local_path else join(workspace_dir, rname)
         branch = params['branch']
         read_only = params.get('read_only')
         if not workspace.batch:
@@ -425,7 +457,8 @@ class GitRepoFactory(ResourceFactory):
 
         return GitRepoResource(rname, params['role'],
                                workspace, remote_origin_url,
-                               local_path, branch, read_only)
+                               relative_local_path, local_path,
+                               branch, read_only)
 
     def suggest_name(self, workspace, local_path, branch, read_only):
         return basename(local_path)
@@ -686,7 +719,8 @@ class GitRepoSubdirFactory(ResourceFactory):
                 create_results_subdir(workspace_dir, local_path, relative_path,
                                       role, workspace.verbose)
             else:
-                raise ConfigurationError("Cannot create a resource from a git subdirectory if the directory does not already exist.")
+                raise ConfigurationError("Did not find '%s'. Cannot create a resource from a git subdirectory if the directory does not already exist."%
+                                         local_path)
         if role==ResourceRoles.RESULTS:
             return GitRepoResultsSubdirResource(name, workspace, relative_path)
         else:

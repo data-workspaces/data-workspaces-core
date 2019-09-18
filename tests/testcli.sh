@@ -55,21 +55,6 @@ debug "REMOTE=$REMOTE"
 debug "CLONES=$CLONES"
 debug
 
-# create a small git repo
-cd $REMOTE
-git init --bare code.git
-cd $WORKDIR
-mkdir code
-cd code
-git init
-echo "print('test')" >test.py
-git add test.py
-cp $TESTSDIR/transform_data1.py .
-cp $TESTSDIR/transform_data2.py .
-git add transform_data1.py transform_data2.py
-git commit -m "initial version"
-git remote add origin $REMOTE/code.git
-
 function assert_file_exists {
     if [ ! -f $1 ]; then
         echo "ERROR: file $1 does not exist"
@@ -139,6 +124,32 @@ cd $WORKDIR
 mkdir hashed_workspace
 echo "FILE DATA" > hashed_workspace/f1
 
+
+# create a git repo to serve as the origin for our data workspace
+cd $REMOTE
+git init --bare test.git
+
+run cd $WORKDIR
+run dws $ARGS init
+run git remote add origin $REMOTE/test.git
+
+# create a small git repo that's a code resource
+cd $REMOTE
+git init --bare code.git
+cd $WORKDIR
+mkdir code
+cd code
+git init
+echo "print('test')" >test.py
+git add test.py
+cp $TESTSDIR/transform_data1.py .
+cp $TESTSDIR/transform_data2.py .
+git add transform_data1.py transform_data2.py
+git commit -m "initial version"
+git remote add origin $REMOTE/code.git
+cd $WORKDIR
+run dws $ARGS add git --role=code --name=code-git ./code
+
 # create a git repo for storing results
 cd $REMOTE
 git init --bare results_git.git
@@ -151,21 +162,14 @@ echo "File 2" >f2
 git add f1 f2
 git commit -m "initial version"
 git remote add origin $REMOTE/results_git.git
+cd $WORKDIR
+run dws $ARGS add git --role=results --name=results-git ./results_git
 
-# create a git repo to serve as the origin for our data workspace
-cd $REMOTE
-git init --bare test.git
-
-run cd $WORKDIR
-run dws $ARGS init
-run git remote add origin $REMOTE/test.git
-run dws $ARGS add git --role=code --name=code-git ./code
 # run dws $ARGS add local-files --role=source-data --name=code-local ./local_files
 run dws $ARGS add rclone --role=source-data --name=code-local localfs:./local_files my_local_files
 echo "local_files/" >> .gitignore
 run dws $ARGS add local-files --role=intermediate-data --name=workspace ./workspace
 run dws $ARGS add local-files --role=results --compute-hash --name=hspace ./hashed_workspace
-run dws $ARGS add git --role=results --name=results-git ./results_git
 
 # Add a git subdirectory resource
 cd $WORKDIR
