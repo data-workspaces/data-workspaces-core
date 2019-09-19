@@ -1,6 +1,6 @@
 
 import os
-from os.path import curdir
+from os.path import curdir, abspath, expanduser
 from typing import Optional
 import click
 
@@ -43,7 +43,7 @@ def deploy_build_command(workspace:Workspace,
 
     if force_rebuild:
         click.echo("Forcing remove of image %s." % image_name)
-        call_subprocess(['docker', 'image', 'rm', '-f', image_name],
+        call_subprocess(['docker', 'image', 'rm', '-f', '--no-prune', image_name],
                         cwd=curdir, verbose=workspace.verbose)
     if workspace.verbose:
         click.echo("Command args for repo2docker: %s" % repr(argv))
@@ -61,8 +61,9 @@ def deploy_run_command(workspace:Workspace,
     argv = ['--target-repo-dir', target_repo_dir,
             '--image-name', image_name,]
     if not no_mount_ssh_keys:
+        dot_ssh = abspath(expanduser('~/.ssh'))
         argv.append('-v')
-        argv.append('~/.ssh:/home/%s/.ssh'% os.environ['USER'])
+        argv.append('%s:/home/%s/.ssh'% (dot_ssh, os.environ['USER']))
     if isinstance(workspace, git_backend.Workspace):
         workspace_dir = workspace.get_workspace_local_path_if_any()
         assert workspace_dir is not None
