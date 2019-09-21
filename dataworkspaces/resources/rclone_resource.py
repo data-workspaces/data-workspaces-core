@@ -228,6 +228,6 @@ class RcloneFactory(ResourceFactory):
 
 
 
-    def suggest_name(self, local_path, compute_hash):
+    def suggest_name(self, role, local_path, compute_hash):
         return os.path.basename(local_path)
 

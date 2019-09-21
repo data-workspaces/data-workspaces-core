@@ -29,3 +29,4 @@ def add_command(scheme:str, role:str, name:str, workspace:Workspace, *args):
 
     workspace.add_resource(name, scheme, role, *args)
     workspace.save("add of %s" % name)
+    click.echo("Successful added resource '%s' to workspace."% name)

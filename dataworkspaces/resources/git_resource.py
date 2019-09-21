@@ -460,7 +460,8 @@ class GitRepoFactory(ResourceFactory):
                                relative_local_path, local_path,
                                branch, read_only)
 
-    def suggest_name(self, workspace, local_path, branch, read_only):
+    def suggest_name(self, workspace, role, local_path, branch,
+                     read_only):
         return basename(local_path)
 
 

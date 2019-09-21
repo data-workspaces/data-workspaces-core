@@ -257,6 +257,6 @@ class LocalFileFactory(ResourceFactory):
                 os.mkdir(non_git_hashes)
         return self.from_json(params, local_params, workspace)
 
-    def suggest_name(self, workspace, local_path, compute_hash):
+    def suggest_name(self, workspace, role, local_path, compute_hash):
         return os.path.basename(local_path)
 

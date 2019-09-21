@@ -2,7 +2,7 @@
 """
 Utility functions related to interacting with git
 """
-from os.path import isdir, join, dirname
+from os.path import isdir, join, dirname, exists
 from subprocess import run, PIPE
 import shutil
 import re
@@ -398,3 +398,59 @@ def get_git_config_param(repo_dir, param_name, verbose):
     param_val = call_subprocess([GIT_EXE_PATH, 'config', param_name],
                                 cwd=repo_dir, verbose=verbose)
     return param_val.strip()
+
+def ensure_entry_in_gitignore(repo_dir:str, gitignore_rel_path:str, entry:str,
+                              match_independent_of_slashes=False,
+                              commit:bool=False, verbose=False) -> bool:
+    """Ensure that the specified entry is in the specified .gitignore file.
+
+    Entries can have a leading slash (refers to an absolute path within the repo)
+    and a trailing slash (matches only a directory, not a file).
+    If match_independent_of_slashes is True, we match an existing
+    entry, even if it differs on leading and/or trailing slashes. Otherwise,
+    it must be an exact match.
+
+    If a change was made, and commit is specified, commit the change. Otherwise,
+    just add the file to the staging.
+
+    Returns True if a change was made, False otherwise.
+    """
+    def strip_slashes(e):
+        if e.startswith('/'):
+            e = e[1:]
+        if e.endswith('/'):
+            e = e[:-1]
+        assert len(e)>0
+        return e
+
+    entry_wo_slashes = strip_slashes(entry)
+    abs_file_path = join(repo_dir, gitignore_rel_path)
+    if exists(abs_file_path):
+        last_has_newline = True
+        with open(abs_file_path, 'r') as f:
+            for line in f:
+                if line.endswith('\n'):
+                    last_has_newline = True
+                else:
+                    last_has_newline = False
+                line = line.rstrip()
+                if line==entry or \
+                   (match_independent_of_slashes and
+                    strip_slashes(line)==entry_wo_slashes):
+                    return False # entry already present, nothing to do
+        with open(abs_file_path, 'a') as f:
+            if not last_has_newline:
+                f.write('\n')
+            f.write(entry+'\n')
+    else:
+        with open(abs_file_path, 'a') as f:
+            f.write(entry+'\n')
+    call_subprocess([GIT_EXE_PATH, 'add', gitignore_rel_path],
+                    cwd=repo_dir, verbose=verbose)
+    if commit:
+        call_subprocess([GIT_EXE_PATH, 'commit', '-m',
+                         'Add .gitignore entry for %s' % entry],
+                        cwd=repo_dir, verbose=verbose)
+    return True
+
+

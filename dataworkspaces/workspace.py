@@ -381,13 +381,11 @@ class Workspace(metaclass=ABCMeta):
         raise PathNotAResourceError("Path '%s' does not correspond to a resource in this workspace"%
                                     path)
 
-    def suggest_resource_name(self, resource_type:str,
-                              role:str, *args):
+    def suggest_resource_name(self, resource_type:str, role:str, *args):
         """Given the arguments passed in for creating a resource, suggest
         a (unique) name for the resource.
         """
-        name = _get_resource_factory_by_resource_type(resource_type).suggest_name(self,
-                                                                                  *args)
+        name = _get_resource_factory_by_resource_type(resource_type).suggest_name(self, role, *args)
         existing_resource_names = frozenset(self.get_resource_names())
         if name not in existing_resource_names:
             return name
@@ -409,6 +407,21 @@ class Workspace(metaclass=ABCMeta):
         This is useful for things like providing defaults for resource
         local paths or providing special handling for resources enclosed
         in the workspace (e.g. GitRepoResource vs. GitSubdirResource)
+        """
+        pass
+
+    @abstractmethod
+    def _get_local_scratch_space_for_resource(self, resource_name:str,
+                                              create_if_not_present:bool=False) -> str:
+        """Return a local directory path that can be used by the resource as a local
+        scratch or caching space.
+
+        If create_if_not_present is specified, and the directory does not exist,
+        it should create the directory and do
+        any related work (e.g. add to the workspace's gitignore). If
+        create_if_not_present is not specified and the directory does not exist,
+        it should raise an InternalError. It is expected that create_if_not_present
+        is specified when adding or cloning a resource, but not otherwise.
         """
         pass
 
@@ -745,7 +758,7 @@ class ResourceFactory(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def suggest_name(self, workspace:Workspace, *args) -> str:
+    def suggest_name(self, workspace:Workspace, role:str, *args) -> str:
         """Given the arguments passed in to create a resource,
         suggest a name for the case where the user did not provide one
         via --name. This will be used by suggest_resource_name() to

@@ -19,3 +19,7 @@ register_resource_type('file', LocalFileFactory)
 
 from dataworkspaces.resources.rclone_resource import RcloneFactory
 register_resource_type('rclone', RcloneFactory)
+
+from dataworkspaces.resources.api_resource import ApiResourceFactory,\
+                                                   API_RESOURCE_TYPE
+register_resource_type(API_RESOURCE_TYPE, ApiResourceFactory)

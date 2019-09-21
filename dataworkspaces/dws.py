@@ -95,6 +95,23 @@ class RoleParamType(click.ParamType):
             self.fail("Invalid resource role. Must be one of: %s" %
                       ', '.join(RESOURCE_ROLE_CHOICES))
 ROLE_PARAM = RoleParamType()
+ROLE_DATA_CHOICES=[ResourceRoles.SOURCE_DATA_SET,
+                   ResourceRoles.INTERMEDIATE_DATA]
+class DataRoleParamType(click.ParamType):
+    """A role parameter limited to source and intermediate data."""
+    name = 'role (one of %s)' % ', '.join(ROLE_DATA_CHOICES)
+
+    def convert(self, value, param, ctx):
+        value = value.lower()
+        if value in (ResourceRoles.SOURCE_DATA_SET, 's'):
+            return ResourceRoles.SOURCE_DATA_SET
+        elif value in (ResourceRoles.INTERMEDIATE_DATA, 'i'):
+            return ResourceRoles.INTERMEDIATE_DATA
+        else:
+            self.fail("Invalid resource role. Must be one of: %s" %
+                      ', '.join(ROLE_DATA_CHOICES))
+DATA_ROLE_PARAM = DataRoleParamType()
+
 
 @click.group()
 @click.option('-b', '--batch', default=False, is_flag=True,
@@ -289,6 +306,26 @@ def git(ctx, role, name, branch, read_only, path):
     add_command('git', role, name, workspace, path, branch, read_only)
 
 add.add_command(git)
+
+@click.command(name='api-resource')
+@click.option('--role', type=DATA_ROLE_PARAM)
+@click.option('--name', type=str, default=None,
+              help="Short name for this resource")
+@click.pass_context
+def api_resource(ctx, role, name):
+    """Resource to represent data obtained via an API. Use this when there is
+    no file-based representation of your data that can be versioned and captured
+    more directly. Subcommand of ``add``"""
+    ns = ctx.obj
+    if role is None:
+        if ns.batch:
+            raise BatchModeError("--role")
+        else:
+            role = click.prompt("Please enter a role for this resource, either [s]ource-data or [i]ntermediate-data", type=DATA_ROLE_PARAM)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    add_command('api-resource', role, name, workspace)
+
+add.add_command(api_resource)
 
 
 @click.command()

@@ -3,7 +3,8 @@ Git backend for storing a workspace
 """
 
 import os
-from os.path import exists, join, isdir, basename, isabs, abspath, expanduser, dirname, curdir
+from os.path import exists, join, isdir, basename, isabs, abspath, expanduser,\
+    dirname, curdir, commonpath
 import shutil
 import json
 import re
@@ -23,7 +24,7 @@ from dataworkspaces.utils.git_utils import \
     is_git_dirty,\
     is_pull_needed_from_remote, GIT_EXE_PATH,\
     set_remote_origin, \
-    git_remove_file, git_remove_subtree
+    git_remove_file, git_remove_subtree, ensure_entry_in_gitignore
 from dataworkspaces.utils.git_fat_utils import \
     validate_git_fat_in_path_if_needed, \
     run_git_fat_pull_if_needed, validate_git_fat_in_path, run_git_fat_push_if_needed,\
@@ -208,30 +209,17 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         if local_path is None:
             return
         assert isabs(local_path), "Resource local path should be absolute"
-        if not local_path.startswith(self.workspace_dir):
+        if commonpath([local_path, self.workspace_dir])!=self.workspace_dir:
             return None
         local_relpath = local_path[len(self.workspace_dir)+1:]
         if not local_relpath.endswith('/'):
-            local_relpath_noslash = local_relpath
-            local_relpath = local_relpath + '/'
-        else:
-            local_relpath_noslash = local_relpath[:-1]
+            local_relpath = local_relpath + '/' # matches only directories
         # Add a / as the start to indicate that the path starts at the root of the repo.
         # Otherwise, we'll hit cases where the path could match other directories (e.g. issue #11)
         local_relpath = '/'+local_relpath if not local_relpath.startswith('/') else local_relpath
-        local_relpath_noslash = '/'+local_relpath_noslash \
-                                if not local_relpath_noslash.startswith('/') \
-                                else local_relpath_noslash
-        gitignore_path = join(self.workspace_dir, '.gitignore')
-        # read the gitignore file to see if relpath is already there
-        if exists(gitignore_path):
-            with open(gitignore_path, 'r') as f:
-                for line in f:
-                    line = line.rstrip()
-                    if line==local_relpath or line==local_relpath_noslash:
-                        return # no need to add
-        with open(gitignore_path, 'a') as f:
-            f.write(local_relpath+ '\n')
+        ensure_entry_in_gitignore(self.workspace_dir, '.gitignore',
+                                  local_relpath, match_independent_of_slashes=True,
+                                  verbose=self.verbose)
 
     def add_resource(self, name:str, resource_type:str, role:str, *args, **kwargs)\
         -> ws.Resource:
@@ -245,7 +233,22 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         r = super().clone_resource(name)
         self._add_local_dir_to_gitignore_if_needed(r)
         return r
-    
+
+    def _get_local_scratch_space_for_resource(self, resource_name:str,
+                                              create_if_not_present:bool=False) \
+          -> str:
+        scratch_path = join(self.workspace_dir,
+                            '.dataworkspace/scratch/%s'%resource_name)
+        if not isdir(scratch_path):
+            if create_if_not_present is False:
+                raise InternalError("Scratch path '%s' for resource %s is missing"%
+                                    (scratch_path, resource_name))
+            os.makedirs(scratch_path)
+            ensure_entry_in_gitignore(self.workspace_dir, '.dataworkspace/.gitignore',
+                                      '/scratch/%s/'%resource_name,
+                                      commit=True)
+        return scratch_path
+
     def save(self, message:str) -> None:
         """Save the current state of the workspace"""
         commit_changes_in_repo(self.workspace_dir, message, verbose=self.verbose)
