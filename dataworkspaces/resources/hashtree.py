@@ -4,6 +4,7 @@ import tempfile
 import hashlib
 
 from typing import Dict, Optional, List, Tuple, Iterable, Callable
+assert Dict
 
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH

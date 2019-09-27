@@ -271,14 +271,17 @@ class ResultsLineage(Lineage):
                  parameters:Dict[str,Any],
                  inputs:List[Union[str, ResourceRef]],
                  code:List[Union[str, ResourceRef]],
-                 results_dir:str,
+                 results_dir_or_ref:Union[str, ResourceRef],
                  workspace:Workspace,
                  run_description:Optional[str]=None,
                  command_line:Optional[List[str]]=None,
                  current_directory:Optional[str]=None):
         super().__init__(step_name, start_time, parameters,
                          inputs, code, workspace, command_line, current_directory)
-        self.results_ref = self.workspace.map_local_path_to_resource(results_dir)
+        if isinstance(results_dir_or_ref, str):
+            self.results_ref = self.workspace.map_local_path_to_resource(results_dir_or_ref)
+        else:
+            self.results_ref = cast(ResourceRef, results_dir_or_ref)
         self.results_resource = self.workspace.get_resource(self.results_ref.name)
         self.add_output_ref(self.results_ref)
         self.run_description = run_description

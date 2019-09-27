@@ -44,7 +44,7 @@ extensions = [
     'sphinx_click.ext'
 ]
 
-autodoc_mock_imports=['click']
+autodoc_mock_imports=['click', 'tensorflow']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

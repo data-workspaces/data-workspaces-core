@@ -4,6 +4,8 @@ Definition of configuration parameters
 """
 import socket
 from typing import Dict, Callable, Any, Optional
+assert Dict
+assert Callable
 
 from dataworkspaces.utils.snapshot_utils import \
     validate_template

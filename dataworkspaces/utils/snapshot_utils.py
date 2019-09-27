@@ -117,7 +117,7 @@ def expand_dir_template(template, username, hostname, timestamp, snapshot_no,
 
 def move_file_and_set_readonly(src:str, dest:str)->None:
     os.rename(src, dest)
-    mode = os.stat(dest)[stat.ST_MODE]
+    mode = os.stat(dest).st_mode
     os.chmod(dest, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
 DOT_GIT_RE = re.compile('^'+re.escape('.git')+'$')

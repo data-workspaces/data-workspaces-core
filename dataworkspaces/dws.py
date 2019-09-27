@@ -389,8 +389,7 @@ def restore(ctx, workspace_dir:str, only:Optional[str], leave:Optional[str], str
     """Restore the workspace to a prior state"""
     ns = ctx.obj
     if (only is not None) and (leave is not None):
-        raise click.BadOptionUsage(message="Please specify either --only or --leave, but not both",
-                                   option_name='--only')
+        raise click.BadOptionUsage(option_name='--only', message="Please specify either --only or --leave, but not both") # type: ignore
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
@@ -448,8 +447,7 @@ def push(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_wo
     option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
                  (1 if only_workspace else 0)
     if option_cnt>1:
-        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace",
-                                   option_name='--only')
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace", option_name='--only') # type: ignore
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
@@ -482,8 +480,7 @@ def pull(ctx, workspace_dir:str, only:Optional[str], skip:Optional[str], only_wo
     option_cnt = (1 if only is not None else 0) + (1 if skip is not None else 0) + \
                  (1 if only_workspace else 0)
     if option_cnt>1:
-        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace",
-                                   option_name='--only')
+        raise click.BadOptionUsage(message="Please specify at most one of --only, --skip, or --only-workspace", option_name='--only') # type: ignore
     if workspace_dir is None:
         if ns.batch:
             raise BatchModeError("--workspace-dir")
