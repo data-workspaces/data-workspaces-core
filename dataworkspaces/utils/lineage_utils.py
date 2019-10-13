@@ -485,6 +485,21 @@ class StepLineage(ResourceLineage):
         s += ')'
         return s
 
+    def add_input(self, instance:str, store:'LineageStore',
+                  ref:ResourceRef) -> None:
+        """Add an input resource after the step has been created.
+        This can be called more than once with the same ref - a given ref
+        will only be added once.
+        """
+        for c in self.input_resources:
+            if c.ref==ref:
+                return # nothing to add
+        self.input_resources.append(
+            store.get_or_create_cert(instance, ref,
+                                     "Step %s at %s" % (self.step_name,
+                                                        self.start_time),
+                                     for_code=False))
+
     @staticmethod
     def make_step_lineage(instance:str, step_name:str, start_time:datetime.datetime,
                           parameters:Dict[str, Any],
@@ -514,6 +529,7 @@ class StepLineage(ResourceLineage):
                                              "Step %s at %s"% (step_name, start_time),
                                              for_code=False)
                        for ref in input_resource_refs] # List[ResourceCert]
+        print("input_certs: %s" % repr(input_certs)) # XXX
         code_certs = [
             lineage_store.get_or_create_cert(instance, ref,
                                              "Step %s at %s"% (step_name, start_time),

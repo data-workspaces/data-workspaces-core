@@ -97,66 +97,21 @@ If you subclass from a Keras Model class, you can just use
 **API**
 
 """
-import hashlib
-from typing import Optional, Union
-import numpy as np
-import datetime
+from typing import Optional, Union, List
+assert List
 
 import tensorflow.keras.optimizers as optimizers
 import tensorflow.losses as losses
 
-from dataworkspaces.workspace import find_and_load_workspace, ResourceRef, \
-                                     ResourceRoles, JSONDict, Workspace
-assert JSONDict # make pyflakes happy
-from dataworkspaces.lineage import ResultsLineage
-from dataworkspaces.utils.lineage_utils import LineageError, infer_step_name
-from dataworkspaces.resources.api_resource import API_RESOURCE_TYPE, ApiResource
-assert ApiResource # make pyflakes happy
-from dataworkspaces.kits.jupyter import get_step_name_for_notebook
+from dataworkspaces.workspace import find_and_load_workspace, ResourceRef
+from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
 
-
-def _find_resource(workspace:Workspace, role:str,
-                   name_or_ref:Optional[Union[str, ResourceRef]]=None) -> ResourceRef:
-    if isinstance(name_or_ref, str):
-        return workspace.map_local_path_to_resource(name_or_ref, expecting_a_code_resource=False)
-    elif isinstance(name_or_ref, ResourceRef):
-        workspace.validate_resource_name(name_or_ref.name, name_or_ref.subpath)
-        return name_or_ref
-    else:
-        for rname in workspace.get_resource_names():
-            if workspace.get_resource_role(rname)==role:
-                return ResourceRef(rname, subpath=None)
-        raise LineageError("Could not find a %s resource in your workspace" % role)
-
-
-def _infer_step_name() -> str:
-    """Come up with a step name by looking at whether this is a notebook
-    and then the command line arguments.
-    """
-    # TODO: this should be moved to a utility module (e.g. lineage_utils)
-    try:
-        notebook_name = get_step_name_for_notebook()
-        if notebook_name is not None:
-            return notebook_name
-    except:
-        pass # not a notebook
-    return infer_step_name()
-
-
-def _metric_val_to_json(v):
-    if isinstance(v, int) or isinstance(v, str):
-        return v
-    elif isinstance(v, np.int64) or isinstance(v, np.int32):
-        return int(v)
-    elif isinstance(v, np.float64) or isinstance(v, np.float32):
-        return float(v)
-    else:
-        return v
 
 
 def add_lineage_to_keras_model_class(Cls:type,
                                      input_resource:Optional[Union[str, ResourceRef]]=None,
-                                     results_resource:Optional[Union[str, ResourceRef]]=None):
+                                     results_resource:Optional[Union[str, ResourceRef]]=None,
+                                     verbose=False):
     """This function wraps a Keras model class with a subclass that overwrites
     key methods to make calls to the data lineage API.
 
@@ -175,20 +130,14 @@ def add_lineage_to_keras_model_class(Cls:type,
     if hasattr(Cls, '_dws_model_wrap') and Cls._dws_model_wrap is True: # type: ignore
         print("%s or a superclass is already wrapped" % Cls.__name__)
         return Cls # already wrapped
-    workspace = find_and_load_workspace(batch=True, verbose=False)
-    results_ref = _find_resource(workspace, ResourceRoles.RESULTS, results_resource)
+    workspace = find_and_load_workspace(batch=True, verbose=verbose)
 
     class WrappedModel(Cls): # type: ignore
         _dws_model_wrap = True
         def __init__(self,*args,**kwargs):
             super().__init__(*args, **kwargs)
-            print("In wrapped init")
-            self._dws_workspace = workspace
-            self._dws_results_ref = results_ref
-            self._dws_input_resource = input_resource
-            self._dws_hash_state = hashlib.sha1()
-            self._dws_api_resource = None # type: Optional[ApiResource]
-            self._dws_params = {} # type: JSONDict
+            print("In wrapped init") # XXX
+            self._dws_state = _DwsModelState(workspace, input_resource, results_resource)
         def compile(self, optimizer,
                     loss=None,
                     metrics=None,
@@ -199,64 +148,47 @@ def add_lineage_to_keras_model_class(Cls:type,
                     distribute=None,
                     **kwargs):
             if isinstance(optimizer, str):
-                self._dws_params['optimizer'] = optimizer
+                self._dws_state.lineage.add_param('optimizer', optimizer)
             elif isinstance(optimizer, optimizers.Optimizer):
-                self._dws_params['optimizer'] = optimizer.__class__.__name__
+                self._dws_state.lineage.add_param('optimizer', optimizer.__class__.__name__)
             if isinstance(loss, str):
-                self._dws_params['loss_function'] = loss
+                self._dws_state.lineage.add_param('loss_function', loss)
             elif isinstance(loss, losses.Loss):
-                self._dws_params['loss_function'] = loss.__class__.__name__
+                self._dws_state.lineage.add_param('loss_function', loss.__class__.__name__)
             return super().compile(optimizer, loss, metrics, loss_weights,
                                    sample_weight_mode, weighted_metrics,
                                    target_tensors, distribute, **kwargs)
         def fit(self, x, y, **kwargs):
-            print("fit: in wrap of %s" % Cls.__name__)
+            print("fit: in wrap of %s" % Cls.__name__) # XXX
             if 'epochs' in kwargs:
-                self._dws_params['epochs'] = kwargs['epochs']
+                self._dws_state.lineage.add_param('epochs', kwargs['epochs'])
             else:
-                self._dws_params['epochs'] = 1
+                self._dws_state.lineage.add_param('epochs', 1)
             if 'batch_size' in kwargs:
-                self._dws_params['fit_batch_size'] = kwargs['batch_size']
+                self._dws_state.lineage.add_param('fit_batch_size', kwargs['batch_size'])
             else:
-                self._dws_params['fit_batch_size'] = None
-            if isinstance(x, np.ndarray):
-                input_ref = _find_resource(self._dws_workspace, ResourceRoles.SOURCE_DATA_SET,
-                                                self._dws_input_resource)
-                if self._dws_workspace.get_resource_type(input_ref.name)==API_RESOURCE_TYPE:
-                    # capture the hash of the data coming in...
-                    self._dws_api_resource = self._dws_workspace.get_resource(input_ref.name)
-                    self._dws_hash_state.update(x.data.tobytes())
-                    self._dws_hash_state.update(y.data.tobytes())
-                    hashval = self._dws_hash_state.hexdigest()
-                    self._dws_api_resource.save_current_hash(hashval)
-                    print("captured hash of training data: %s" % hashval)
-            elif hasattr(x, 'resource'):
-                input_ref = x.resource
-                if self._dws_workspace.get_resource_type(input_ref.name)==API_RESOURCE_TYPE:
-                    assert 0, "Need to implement obtaining of hash from dataset"
-            else:
-                raise LineageError("No way to determine resource associated with model input. Please specify in model wrapping function or use a wapped data set.")
-            self._dws_lineage = ResultsLineage(_infer_step_name(), datetime.datetime.now(),
-                                          self._dws_params, [input_ref], [], self._dws_results_ref,
-                                          self._dws_workspace)
+                self._dws_state.lineage.add_param('fit_batch_size', None)
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
+            if api_resource is not None:
+                api_resource.init_hash_state()
+                _add_to_hash(x, api_resource.get_hash_state())
+                _add_to_hash(y, api_resource.get_hash_state())
             return super().fit(x, y, **kwargs)
         def evaluate(self, x, y, **kwargs):
             if 'batch_size' in kwargs:
-                self._dws_params['evaluate_batch_size'] = kwargs['batch_size']
+                self._dws_state.lineage.add_param('evaluate_batch_size', kwargs['batch_size'])
             else:
-                self._dws_params['evaluate_batch_size'] = None
-            if self._dws_api_resource is not None:
-                h = self._dws_hash_state.copy()
-                h.update(x.data.tobytes())
-                h.update(y.data.tobytes())
-                hashval = h.hexdigest()
-                print("hash of input data is %s" % hashval)
-                self._dws_api_resource.save_current_hash(hashval)
+                self._dws_state.lineage.add_param('evaluate_batch_size', None)
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
+            if api_resource is not None:
+                api_resource.dup_hash_state()
+                _add_to_hash(x, api_resource.get_hash_state())
+                _add_to_hash(y, api_resource.get_hash_state())
+                api_resource.save_current_hash()
+                api_resource.pop_hash_state()
             results = super().evaluate(x, y, **kwargs)
             assert len(results)==len(self.metrics_names)
-            metrics = {n:_metric_val_to_json(v) for (n, v) in zip(self.metrics_names, results)}
-            print("Metrics: %s" % repr(metrics))
-            self._dws_lineage.write_results(metrics)
-            self._dws_lineage.complete()
+            self._dws_state.write_metrics_and_complete({n:v for (n, v) in
+                                                        zip(self.metrics_names, results)})
             return results
     return WrappedModel

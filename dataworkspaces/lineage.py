@@ -113,7 +113,7 @@ import contextlib
 from collections import OrderedDict
 import datetime
 from typing import List, Union, Any, Type, Iterable, Dict, Optional, cast
-from os.path import curdir, join, isabs, abspath, expanduser
+from os.path import curdir, join, isabs, abspath, expanduser, exists
 from argparse import ArgumentParser, Namespace
 from copy import copy
 
@@ -122,7 +122,7 @@ from dataworkspaces.workspace import Workspace, load_workspace, FileResourceMixi
                                      PathNotAResourceError, SnapshotWorkspaceMixin,\
                                      ResourceRoles, _find_containing_workspace
 from dataworkspaces.utils.lineage_utils import \
-    ResourceRef, StepLineage, infer_step_name, infer_script_path
+    ResourceRef, StepLineage, infer_step_name, infer_script_path, LineageError
 
 
 
@@ -192,6 +192,15 @@ class Lineage(contextlib.AbstractContextManager):
                                                   run_from_directory=run_from_directory)
         self.in_progress = True
 
+    def add_input_path(self, path:str) -> None:
+        if not exists(path):
+            raise LineageError("Path %s does not exist" % path)
+        ref = self.workspace.map_local_path_to_resource(path) # mypy: ignore
+        self.step.add_input(self.workspace.get_instance(), self.store, ref) # mypy: ignore
+
+    def add_input_ref(self, ref:ResourceRef) -> None:
+        self.step.add_input(self.workspace.get_instance(), self.store, ref)
+
     def add_output_path(self, path:str) -> None:
         """Resolve the path to a resource name and subpath. Add
         that to the lineage as an output of the step. From this point on,
@@ -208,6 +217,13 @@ class Lineage(contextlib.AbstractContextManager):
         "unknown" state.
         """
         self.step.add_output(self.workspace.get_instance(), self.store, ref)
+
+    def add_param(self, name:str, value) -> None:
+        """Add or update one of the step's parameters.
+        """
+        assert self.in_progress # should only do while step running
+        self.step.parameters[name] = value
+
 
     def abort(self):
         """The step has failed, so we mark its outputs in an unknown state.

@@ -1,7 +1,8 @@
 
 import os
 from os.path import join, exists
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Any
+import hashlib
 
 import click
 
@@ -11,6 +12,7 @@ from dataworkspaces.workspace import \
     LocalStateResourceMixin, ResourceFactory, JSONDict
 
 API_RESOURCE_TYPE='api-resource'
+
 
 class ApiResource(Resource, LocalStateResourceMixin, SnapshotResourceMixin):
     """This is a resource type for an API that has to be called to get data.
@@ -27,6 +29,7 @@ class ApiResource(Resource, LocalStateResourceMixin, SnapshotResourceMixin):
     """
     def __init__(self, name:str, role:str, workspace:Workspace):
         super().__init__(API_RESOURCE_TYPE, name, role, workspace)
+        self.hash_states = [] # type: List[Any]
 
     def get_params(self) -> JSONDict:
         return {
@@ -83,14 +86,39 @@ class ApiResource(Resource, LocalStateResourceMixin, SnapshotResourceMixin):
                         relative_path:str) -> None:
         pass
 
-    def save_current_hash(self, hashval:str, comment:Optional[str]=None) -> None:
-        """Save the specified hash value to the scratch space. If a
+    def init_hash_state(self) -> None:
+        """Drop whatever was there before and init with a fresh hash object.
+        Use this when starting training.
+        """
+        self.hash_states = [hashlib.sha1()]
+
+    def dup_hash_state(self) -> None:
+        """Push a copy of current TOS. Used when we want to start
+        testing. It should already have the training state. We'll
+        add a new hash for test data and then pop it when done testing.
+        """
+        assert len(self.hash_states)>0
+        self.hash_states.append(self.hash_states[-1].copy())
+
+    def pop_hash_state(self) -> None:
+        assert len(self.hash_states)>0
+        del self.hash_states[-1]
+
+    def get_hash_state(self):
+        assert len(self.hash_states)>0
+        return self.hash_states[-1]
+    
+    def save_current_hash(self,comment:Optional[str]=None) -> None:
+        """Save the current hash state to the scratch space. If a
         comment is provided, it is written to a separate file.
         """
+        assert len(self.hash_states)>0
+        hashval = self.hash_states[-1].hexdigest()
         scratch = self.workspace._get_local_scratch_space_for_resource(self.name)
         hashfile = join(scratch, 'hashval.txt')
         with open(hashfile, 'w') as f:
             f.write(hashval)
+        print("wrote hashval of '%s' to %s'" % (hashval, hashfile)) # XXX
         commentfile = join(scratch, 'comment.txt')
         if comment is not None:
             with open(commentfile, 'w') as f:

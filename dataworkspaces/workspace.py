@@ -360,6 +360,8 @@ class Workspace(metaclass=ABCMeta):
         """Given a path on the local filesystem, map it to
            a resource and the path within the resource.
            Raises PathNotAResourceError if no match is found.
+
+           Note: this does not check whether the path already exists.
         """
         if not os.path.isabs(path):
             path = os.path.normpath(os.path.join(os.path.abspath(os.path.expanduser(os.path.curdir)), path))
