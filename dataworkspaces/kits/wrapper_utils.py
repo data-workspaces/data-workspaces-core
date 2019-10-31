@@ -56,12 +56,12 @@ def _metric_obj_to_json(v):
 
 def _add_to_hash(array_data, hash_state):
     if isinstance(array_data, np.ndarray):
-        hash_state.update(array_data.data.tobytes())
+        hash_state.update(array_data.data)
     elif (pandas is not None) and isinstance(array_data, pandas.DataFrame):
         for c in array_data.columns:
-            hash_state.update(array_data[c].to_numpy(copy=False).data.to_bytes())
+            hash_state.update(array_data[c].to_numpy(copy=False).data)
     elif (pandas is not None) and isinstance(array_data, pandas.Series):
-        hash_state.update(array_data.to_numpy(copy=False).data.to_bytes())
+        hash_state.update(array_data.to_numpy(copy=False).data)
     else:
         raise Exception("Unable to hash data type %s, data was: %s"%
                         (type(array_data), array_data))
@@ -69,17 +69,23 @@ def _add_to_hash(array_data, hash_state):
 
 def _find_resource(workspace:Workspace, role:str,
                    name_or_ref:Optional[Union[str, ResourceRef]]=None) -> ResourceRef:
+    resource_names = [n for n in workspace.get_resource_names()]
     if isinstance(name_or_ref, str):
         if (not name_or_ref.startswith('./')) and (not name_or_ref.startswith('/')) and \
-           (name_or_ref in workspace.get_resource_names()):
+           (name_or_ref in resource_names):
                 return ResourceRef(name_or_ref)
         elif exists(name_or_ref):
             return workspace.map_local_path_to_resource(name_or_ref,
                                                         expecting_a_code_resource=False)
         else:
             raise LineageError("Could not find a resource for '" + name_or_ref +
-                               " in your workspace. Please create a resource"+
-                               " using the dws add command or correct the name.")
+                               "' with role '" + role +
+                               "' in your workspace. Please create a resource"+
+                               " using the 'dws add' command or correct the name. "+
+                               "Currently defined resources are: " +
+                               ', '.join(["%s (role %s)" %
+                                          (n, workspace.get_resource_role(n))
+                                          for n in resource_names]) + '.')
     elif isinstance(name_or_ref, ResourceRef):
         workspace.validate_resource_name(name_or_ref.name, name_or_ref.subpath)
         return name_or_ref
@@ -117,8 +123,6 @@ class _DwsModelState:
 
     def find_input_resources_and_return_if_api(self, data, target_data=None) \
       -> Optional[ApiResource]:
-        print("default_input_resource: %s, input_resources=%s" % (self.default_input_resource,
-                                                                  self.lineage.step.input_resources)) # XXX
         if hasattr(data, 'resource'):
             ref = data.resource
         else:
@@ -144,6 +148,7 @@ class _DwsModelState:
 
     def write_metrics_and_complete(self, metrics):
         metrics = _metric_obj_to_json(metrics)
-        print("Metrics: %s" % repr(metrics))
+        if self.workspace.verbose:
+            print("dws>> Metrics: %s" % repr(metrics))
         self.lineage.write_results(metrics)
         self.lineage.complete()

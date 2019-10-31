@@ -18,9 +18,10 @@ Scikit-learn
    :no-undoc-members:
    :members: load_dataset_from_resource,train_and_predict_with_cv,Metrics,BinaryClassificationMetrics,MulticlassClassificationMetrics
 
-TensorFlow 1.x
---------------
-.. automodule:: dataworkspaces.kits.tensorflow1
+TensorFlow
+----------
+
+.. automodule:: dataworkspaces.kits.tensorflow
    :no-undoc-members:
    :members: add_lineage_to_keras_model_class
   

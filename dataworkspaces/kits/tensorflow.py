@@ -1,4 +1,4 @@
-"""Integration with Tensorflow 1.x
+"""Integration with Tensorflow 1.x and 2.0
 
 This is an experimental API and subject to change.
 
@@ -100,8 +100,16 @@ If you subclass from a Keras Model class, you can just use
 from typing import Optional, Union, List
 assert List
 
+import tensorflow
+if tensorflow.__version__.startswith('2.'): # type: ignore
+    USING_TENSORFLOW2=True
+else:
+    USING_TENSORFLOW2=False
 import tensorflow.keras.optimizers as optimizers
-import tensorflow.losses as losses
+if USING_TENSORFLOW2:
+    import tensorflow.keras.losses as losses
+else:
+    import tensorflow.losses as losses
 
 from dataworkspaces.workspace import find_and_load_workspace, ResourceRef
 from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
@@ -111,6 +119,7 @@ from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
 def add_lineage_to_keras_model_class(Cls:type,
                                      input_resource:Optional[Union[str, ResourceRef]]=None,
                                      results_resource:Optional[Union[str, ResourceRef]]=None,
+                                     workspace_dir=None,
                                      verbose=False):
     """This function wraps a Keras model class with a subclass that overwrites
     key methods to make calls to the data lineage API.
@@ -128,15 +137,15 @@ def add_lineage_to_keras_model_class(Cls:type,
 
     """
     if hasattr(Cls, '_dws_model_wrap') and Cls._dws_model_wrap is True: # type: ignore
-        print("%s or a superclass is already wrapped" % Cls.__name__)
+        print("dws>> %s or a superclass is already wrapped" % Cls.__name__)
         return Cls # already wrapped
-    workspace = find_and_load_workspace(batch=True, verbose=verbose)
+    workspace = find_and_load_workspace(batch=True, verbose=verbose,
+                                        uri_or_local_path=workspace_dir)
 
     class WrappedModel(Cls): # type: ignore
         _dws_model_wrap = True
         def __init__(self,*args,**kwargs):
             super().__init__(*args, **kwargs)
-            print("In wrapped init") # XXX
             self._dws_state = _DwsModelState(workspace, input_resource, results_resource)
         def compile(self, optimizer,
                     loss=None,
@@ -159,7 +168,6 @@ def add_lineage_to_keras_model_class(Cls:type,
                                    sample_weight_mode, weighted_metrics,
                                    target_tensors, distribute, **kwargs)
         def fit(self, x, y, **kwargs):
-            print("fit: in wrap of %s" % Cls.__name__) # XXX
             if 'epochs' in kwargs:
                 self._dws_state.lineage.add_param('epochs', kwargs['epochs'])
             else:
@@ -191,4 +199,7 @@ def add_lineage_to_keras_model_class(Cls:type,
             self._dws_state.write_metrics_and_complete({n:v for (n, v) in
                                                         zip(self.metrics_names, results)})
             return results
+    WrappedModel.__name__ = Cls.__name__ # this is to fake things out for the reporting
+    if workspace.verbose:
+        print("dws>> Wrapped model class %s" % Cls.__name__)
     return WrappedModel

@@ -118,7 +118,8 @@ class ApiResource(Resource, LocalStateResourceMixin, SnapshotResourceMixin):
         hashfile = join(scratch, 'hashval.txt')
         with open(hashfile, 'w') as f:
             f.write(hashval)
-        print("wrote hashval of '%s' to %s'" % (hashval, hashfile)) # XXX
+        if self.workspace.verbose:
+            print("dws>> %s: wrote hashval of '%s' to %s'" % (self.name, hashval, hashfile))
         commentfile = join(scratch, 'comment.txt')
         if comment is not None:
             with open(commentfile, 'w') as f:

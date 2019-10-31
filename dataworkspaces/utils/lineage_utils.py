@@ -529,7 +529,6 @@ class StepLineage(ResourceLineage):
                                              "Step %s at %s"% (step_name, start_time),
                                              for_code=False)
                        for ref in input_resource_refs] # List[ResourceCert]
-        print("input_certs: %s" % repr(input_certs)) # XXX
         code_certs = [
             lineage_store.get_or_create_cert(instance, ref,
                                              "Step %s at %s"% (step_name, start_time),
