@@ -2,7 +2,7 @@
 Common utils for wrapping objects with the Lineage API.
 """
 import datetime
-from typing import Optional, Union, cast
+from typing import Optional, Union, cast, Dict
 from os.path import exists
 
 from dataworkspaces.workspace import Workspace, ResourceRoles, ResourceRef
@@ -10,6 +10,7 @@ from dataworkspaces.utils.lineage_utils import LineageError, infer_step_name
 from dataworkspaces.kits.jupyter import get_step_name_for_notebook
 from dataworkspaces.lineage import ResultsLineage
 from dataworkspaces.resources.api_resource import API_RESOURCE_TYPE, ApiResource
+from dataworkspaces.errors import ConfigurationError
 
 import numpy as np
 
@@ -17,6 +18,16 @@ try:
     import pandas
 except ImportError:
     pandas = None
+
+try:
+    import tensorflow
+except ImportError:
+    tensorflow = None # type: ignore
+
+class NotSupportedError(ConfigurationError):
+    """Thrown when a wrapper encounters an unsupported configuration.
+    """
+    pass
 
 
 def _infer_step_name() -> str:
@@ -62,6 +73,26 @@ def _add_to_hash(array_data, hash_state):
             hash_state.update(array_data[c].to_numpy(copy=False).data)
     elif (pandas is not None) and isinstance(array_data, pandas.Series):
         hash_state.update(array_data.to_numpy(copy=False).data)
+    elif isinstance(array_data, tuple) or isinstance(array_data, list):
+        # Tensorflow frequently puts the parts of a dataset in a tuple.
+        # For example: (features, labels)
+        for element in array_data:
+            _add_to_hash(element, hash_state)
+    elif isinstance(array_data, dict):
+        # Tensorflow uses a dict (specifically OrderedDict) to store
+        # the columns of a CSV.
+        for column in array_data.values():
+            _add_to_hash(column, hash_state)
+    elif (tensorflow is not None) and isinstance(array_data, tensorflow.data.Dataset):
+        # We need to iterate through the dataset, to force an eager evaluation
+        for t in array_data:
+            _add_to_hash(t, hash_state)
+    elif (tensorflow is not None) and isinstance(array_data, tensorflow.Tensor):
+        if hasattr(array_data, 'numpy'):
+            _add_to_hash(array_data.numpy(), hash_state)
+        else:
+            raise Exception("Tensor type %s is not in eager mode, cannot convert to numpy, value was: %s"%
+                            (type(array_data), repr(array_data)))
     else:
         raise Exception("Unable to hash data type %s, data was: %s"%
                         (type(array_data), array_data))
@@ -135,7 +166,7 @@ class _DwsModelState:
             if target_ref!=ref: # only can happen if resource is specified on data
                 if data_resource_type==API_RESOURCE_TYPE or \
                    self.workspace.get_resource_type(target_ref.name)==API_RESOURCE_TYPE:
-                    raise LineageError("Currently, we do not support API Resources where the feature and target data are from different resources (%s and %s)."%
+                    raise NotSupportedError("Currently, we do not support API Resources where the feature and target data are from different resources (%s and %s)."%
                                        (ref, target_ref))
                 self.lineage.add_input_ref(target_ref)
         if data_resource_type==API_RESOURCE_TYPE:

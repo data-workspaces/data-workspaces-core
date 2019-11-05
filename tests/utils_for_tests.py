@@ -123,5 +123,6 @@ class SimpleCase(HelperMethods, unittest.TestCase):
         if api_resources is not None:
             for rname in api_resources.split(','):
                 self._add_api_resource(rname, cwd=WS_DIR)
+        self._run_dws(['status'])
 
 

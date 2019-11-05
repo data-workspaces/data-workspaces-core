@@ -112,8 +112,21 @@ else:
     import tensorflow.losses as losses
 
 from dataworkspaces.workspace import find_and_load_workspace, ResourceRef
-from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
+from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash,\
+                                              NotSupportedError
 
+
+def _verify_eager_if_dataset(x, y, api_resource):
+    """If this is tensorflow 1.x and non-eager mode, there's no way
+    to evaluate the dataset outside the tensor graph.
+    """
+    if (not USING_TENSORFLOW2) and \
+       (isinstance(x, tensorflow.data.Dataset) or
+        isinstance(y, tensorflow.data.Dataset)) and \
+       (not tensorflow.executing_eagerly()):
+        raise NotSupportedError("Using an API resource ("+ api_resource.name+
+                                ") with non-eager datasets is not "+
+                                "supported with TensorFlow 1.x.")
 
 
 def add_lineage_to_keras_model_class(Cls:type,
@@ -167,7 +180,7 @@ def add_lineage_to_keras_model_class(Cls:type,
             return super().compile(optimizer, loss, metrics, loss_weights,
                                    sample_weight_mode, weighted_metrics,
                                    target_tensors, distribute, **kwargs)
-        def fit(self, x, y, **kwargs):
+        def fit(self, x,y=None,  **kwargs):
             if 'epochs' in kwargs:
                 self._dws_state.lineage.add_param('epochs', kwargs['epochs'])
             else:
@@ -178,20 +191,27 @@ def add_lineage_to_keras_model_class(Cls:type,
                 self._dws_state.lineage.add_param('fit_batch_size', None)
             api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
             if api_resource is not None:
+                _verify_eager_if_dataset(x, y, api_resource)
                 api_resource.init_hash_state()
-                _add_to_hash(x, api_resource.get_hash_state())
-                _add_to_hash(y, api_resource.get_hash_state())
+                hash_state = api_resource.get_hash_state()
+                _add_to_hash(x, hash_state)
+                if y is not None:
+                    _add_to_hash(y, hash_state)
             return super().fit(x, y, **kwargs)
-        def evaluate(self, x, y, **kwargs):
+
+        def evaluate(self, x, y=None, **kwargs):
             if 'batch_size' in kwargs:
                 self._dws_state.lineage.add_param('evaluate_batch_size', kwargs['batch_size'])
             else:
                 self._dws_state.lineage.add_param('evaluate_batch_size', None)
             api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
             if api_resource is not None:
+                _verify_eager_if_dataset(x, y, api_resource)
                 api_resource.dup_hash_state()
-                _add_to_hash(x, api_resource.get_hash_state())
-                _add_to_hash(y, api_resource.get_hash_state())
+                hash_state = api_resource.get_hash_state()
+                _add_to_hash(x, hash_state)
+                if y is not None:
+                    _add_to_hash(y, hash_state)
                 api_resource.save_current_hash()
                 api_resource.pop_hash_state()
             results = super().evaluate(x, y, **kwargs)

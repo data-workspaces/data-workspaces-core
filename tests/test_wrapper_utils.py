@@ -21,6 +21,16 @@ try:
 except ImportError:
     numpy = None
 
+try:
+    import tensorflow
+    if tensorflow.__version__.startswith('2.'):
+        TF_VERSION=2
+    else:
+        TF_VERSION=1
+except ImportError:
+    tensorflow = None
+    TF_VERSION=-1
+
 
 class TestAddToHash(unittest.TestCase):
     def setUp(self):
@@ -45,6 +55,15 @@ class TestAddToHash(unittest.TestCase):
         a = numpy.arange(45)
         _add_to_hash(a, self.hash_state)
         print(self.hash_state.hexdigest())
+
+    @unittest.skipUnless(tensorflow is not None and TF_VERSION==2, "Rensorflow 2 not availabile")
+    @unittest.skipUnless(numpy is not None, "Numpy is not available")
+    def test_tensorflow_tensor(self):
+        dataset = tensorflow.data.Dataset.from_tensor_slices(numpy.arange(100).reshape((10,10)))
+        for i in dataset:
+            _add_to_hash(i, self.hash_state)
+        print(self.hash_state.hexdigest())
+
 
 if __name__ == '__main__':
     unittest.main()
