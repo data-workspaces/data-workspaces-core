@@ -64,6 +64,9 @@ look like this::
       }
     }
 
+
+**Subclassing from a Keras Model**
+
 If you subclass from a Keras Model class, you can just use
 :func:`~add_lineage_to-keras_model_class` as a decorator. Here is an example::
     
@@ -93,6 +96,29 @@ If you subclass from a Keras Model class, you can just use
     test_loss, test_acc = model.evaluate(np.zeros(16).reshape(4,4), np.ones(4))
     
     print('Test accuracy:', test_acc)
+
+
+**Supported datatypes for API Resources**
+
+If you are using the *API Resource Type* for your input resource,
+the model wrapper will hash the incoming data parameters and include
+the hash values in the data lineage. To compute the hashes, Data
+Workspaces must access the underlying data representation. The following data
+types are currently supported:
+
+* NumPy ``ndarray``
+* Pandas ``DataFrame`` and ``Series``
+* Tensorflow ``Tensor`` and ``Dataset``, as well as tuples and dictionaries
+  containing these types. These types supported if you are either running
+  Tensorflow 2.x (graph or eager mode) or 1.x only in eager mode. This restriction is
+  due to the inability to access the underlying tensor representation when Tensorflow
+  is running in graph mode in version 1.x
+
+If you are using another data representation, or running Tensorflow 1.x in graph
+mode, you can always use a resource type that stores the data in files
+(e.g. git or local-files) and pass in the input resource name to the
+wrapper function.
+
 
 **API**
 
@@ -137,6 +163,20 @@ def add_lineage_to_keras_model_class(Cls:type,
     """This function wraps a Keras model class with a subclass that overwrites
     key methods to make calls to the data lineage API.
 
+    **Parameters:**
+
+    * ``Cls`` -- the class being wrapped
+    * ``input_resources`` -- optional list of input resources to this model.
+      Each resource may be specified by name, by a local file path, or via a
+      ``ResourceRef``. If no inputs are specified, will try to infer from the
+      workspace.
+    * ``results_resource`` -- optional resource where the results are to be stored.
+      My be specified by name, by a local file path, or via a ``ResourceRef``.
+      if not specified, will try to infer from the workspace.
+    * ``workspace-dir`` -- Optional directory specifying the workspace. Usually can be
+      inferred from the current directory.
+    * ``verbose`` -- If True, print extra debugging information.
+
     The following methods are wrapped:
 
     * :func:`~__init__` - loads the workspace and adds dws-specific class members
@@ -147,7 +187,6 @@ def add_lineage_to_keras_model_class(Cls:type,
     * :func:`~evaluate` - captures the ``batch_size`` paramerter value; if input is an
       API resource, capture hash values of test data, otherwise capture input resource
       name; capture metrics and write them to results resource.
-
     """
     if hasattr(Cls, '_dws_model_wrap') and Cls._dws_model_wrap is True: # type: ignore
         print("dws>> %s or a superclass is already wrapped" % Cls.__name__)
