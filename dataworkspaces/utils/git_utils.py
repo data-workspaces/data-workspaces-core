@@ -416,6 +416,8 @@ def ensure_entry_in_gitignore(repo_dir:str, gitignore_rel_path:str, entry:str,
     Returns True if a change was made, False otherwise.
     """
     def strip_slashes(e):
+        if len(e)==0:
+            return ''
         if e.startswith('/'):
             e = e[1:]
         if e.endswith('/'):
