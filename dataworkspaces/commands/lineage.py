@@ -12,6 +12,7 @@ def lineage_graph_command(workspace:Workspace,
                           output_file:str,
                           resource_name:Optional[str],
                           snapshot:Optional[str],
+                          format='html',
                           width:int=1024,
                           height:int=800) -> None:
     if not isinstance(workspace, SnapshotWorkspaceMixin):
@@ -37,7 +38,7 @@ def lineage_graph_command(workspace:Workspace,
             raise ConfigurationError("Did not find a results resource in workspace. If you want to graph the lineage of a non-results resource, use the --resource option.")
     make_simplified_lineage_graph_for_resource(workspace.get_instance(),
                                                store, resource_name, output_file,
-                                               snapshot_hash=snapshot_hash,
+                                               snapshot_hash=snapshot_hash, format=format,
                                                width=width, height=height)
     if snapshot is None:
         click.echo("Wrote lineage for %s to %s" % (resource_name, output_file))

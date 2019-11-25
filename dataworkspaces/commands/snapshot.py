@@ -58,8 +58,8 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
             existing_tag_md = None
         if existing_tag_md is not None:
             msg = "Tag '%s' already exists for snapshot %s taken %s"%\
-                                         (tag, existing_tag_md['hash'],
-                                          existing_tag_md['timestamp'])
+                                         (tag, existing_tag_md.hashval,
+                                          existing_tag_md.timestamp)
             if workspace.batch:
                 raise ConfigurationError(msg)
             elif not click.confirm(msg + ". Remove this tag so we can add it to the new snapshot?"):

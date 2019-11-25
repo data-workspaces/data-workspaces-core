@@ -4,22 +4,30 @@ Integration with Jupyter notebooks. This module provides a
 """
 
 import ipykernel
+from IPython.core.getipython import get_ipython
+from IPython.core.magic import (Magics, magics_class, line_magic)
+
 import requests
 import json
 #from requests.compat import urljoin
 from urllib.parse import urljoin
 import re
-from os.path import join, basename, dirname, abspath, curdir
+from os.path import join, basename, dirname, abspath, expanduser, curdir, isabs
 from notebook.notebookapp import list_running_servers
-from typing import Dict, Any, List, Optional
-import datetime
-import sys
+from typing import Optional
+import shlex
+import argparse
+
+from collections import namedtuple
+
 
 from dataworkspaces.lineage import LineageBuilder
-from dataworkspaces.utils.lineage_utils import infer_script_path, ResourceRef
+from dataworkspaces.workspace import _find_containing_workspace
+from dataworkspaces.api import take_snapshot, get_snapshot_history
+from dataworkspaces.errors import ConfigurationError
 
 
-def _get_notebook_name() -> Optional[str]:
+def _get_notebook_name(verbose=False) -> Optional[str]:
     """
     Return the full path of the jupyter notebook.
     See https://github.com/jupyter/notebook/issues/1000
@@ -29,22 +37,33 @@ def _get_notebook_name() -> Optional[str]:
     """
     # kernel_id = re.search('kernel-(.*).json',
     #                       ipykernel.connect.get_connection_file()).group(1)
-    connection_file = ipykernel.connect.get_connection_file()
-    mo=re.search('kernel-(.*).json', connection_file)
-    if mo is not None:
-        kernel_id = mo.group(1)
-        servers = list_running_servers()
-        for ss in servers:
-            response = requests.get(urljoin(ss['url'], 'api/sessions'),
-                                    params={'token': ss.get('token', '')})
-            for nn in json.loads(response.text):
-                if nn['kernel']['id'] == kernel_id:
-                    relative_path = nn['notebook']['path']
-                    return join(ss['notebook_dir'], relative_path)
-        print("Did not find a matching notebook server for %s" % connection_file)
-        return None
-    else:
-        return None  # not running in the server
+    try:
+        ipy = get_ipython()
+        info = ipy.ev("DWS_JUPYTER_INFO")
+        return info.notebook_path
+    except Exception as e:
+        if verbose:
+            print("DWS Jupyter extension was not loaded: %s" % e)
+    try:
+        connection_file = ipykernel.connect.get_connection_file()
+        mo=re.search('kernel-(.*).json', connection_file)
+        if mo is not None:
+            kernel_id = mo.group(1)
+            servers = list_running_servers()
+            for ss in servers:
+                response = requests.get(urljoin(ss['url'], 'api/sessions'),
+                                        params={'token': ss.get('token', '')})
+                for nn in json.loads(response.text):
+                    if nn['kernel']['id'] == kernel_id:
+                        relative_path = nn['notebook']['path']
+                        return join(ss['notebook_dir'], relative_path)
+            print("Did not find a matching notebook server for %s" % connection_file)
+            return None
+    except Exception as e:
+        if verbose:
+            print("Unable to use notebook API to access session info: %s" % e)
+    # all our atempts failed
+    return None
 
 
 def get_step_name_for_notebook() -> Optional[str]:
@@ -122,4 +141,214 @@ class NotebookLineageBuilder(LineageBuilder):
         self.results_dir = results_dir
         self.run_description = run_description
 
+
+############################################################################
+#                 Code for IPython magic extension                         #
+############################################################################
+
+DwsJupyterInfo = namedtuple('DwsJupyterInfo',
+                            ['notebook_name', 'notebook_path', 'workspace_dir', 'error'])
+
+
+
+init_jscode=r"""
+%%javascript
+var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n\n %dws_info     - print information about your dws environment\n%dws_history  - print a history of snapshots in this workspace\n%dws_snapshot - save and create a new snapshot\n\nRun any command with the --help option to see a list\nof options for that command.\n\nThe variable DWS_JUPYTER_NOTEBOOK has been added to\nyour variables, for use in future DWS calls.";
+
+if (typeof Jupyter == "undefined") {
+    alert("Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.");
+    throw "Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.";
+}
+else {
+    var DWSComm = Jupyter.notebook.kernel.comm_manager.new_comm('dws_comm_target', {})
+    DWSComm.on_msg(function(msg) {
+        console.log("Got msg status: " + msg.content.data.status);
+        console.log("msg type: " + msg.content.data.msg_type);
+        if (msg.content.data.status != 'ok') {
+            alert(msg.content.data.status);
+            return;
+        }
+        if (msg.content.data.msg_type == "snapshot-result") {
+            alert(msg.content.data.message);
+        }
+        else if (msg.content.data.msg_type == "init-ack") {
+            alert(dws_initialization_msg);
+        }
+    });
+    // Send data
+    DWSComm.send({'msg_type':'init',
+                  'notebook_name': Jupyter.notebook.notebook_name,
+                  'notebook_path': Jupyter.notebook.notebook_path});
+    window.DWSComm = DWSComm;
+}
+"""
+
+snapshot_jscode="""
+%%javascript
+Jupyter.notebook.save_notebook();
+"""
+
+snapshot_jscode2="""
+%%javascript
+window.DWSComm.send({'msg_type':'snapshot'});
+console.log("sending snapshot");
+"""
+
+initialization_msg ='''
+Ran DWS initialization. The following magic commands have been added to your notebook:
+
+* %dws_info     - print information about your dws environment
+* %dws_history  - print a history of snapshots in this workspace
+* %dws_snapshot - save the notebook and create a new snapshot
+
+Run any command with the --help option to see a list of options for that
+command.
+
+The variable DWS_JUPYTER_NOTEBOOK will be added to your variables, for
+use in future DWS calls.
+'''
+
+class DwsMagicError(ConfigurationError):
+    pass
+
+class DwsMagicArgParseExit(Exception):
+    """Throw this in our overriding the exit method"""
+    pass
+
+class DwsMagicParseArgs(argparse.ArgumentParser):
+    """Specialized version of the argument parser that can
+    work in the context of ipython magic commands. Should
+    never call sys.exit() and needs its own line parsing.
+    """
+    def parse_magic_line(self, line):
+        return self.parse_args(shlex.split(line))
+    def error(self, msg):
+        raise DwsMagicError(msg)
+    def exit(self, status=0, message=None):
+        assert status==0, "Expecting a status of 0"
+        raise DwsMagicArgParseExit()
+
+
+@magics_class
+class DwsMagics(Magics):
+    def __init__(self, shell):
+        super().__init__(shell)
+        self._snapshot_args = None
+        def target_func(comm, open_msg):
+            self.comm = comm
+            @comm.on_msg
+            def _recv(msg):
+                ipy = get_ipython()
+                data = msg['content']['data']
+                msg_type = data['msg_type']
+                if msg_type=='init':
+                    npath = data['notebook_path']
+                    if not isabs(npath):
+                        npath = join(abspath(expanduser(curdir)), npath)
+                    notebook_dir=dirname(npath)
+                    workspace_dir = _find_containing_workspace(notebook_dir)
+                    error = None
+                    if workspace_dir is None:
+                        error = "Unable to find a containing workspace for note book at %s" % npath
+                    DWS_JUPYTER_INFO=DwsJupyterInfo(data['notebook_name'],
+                                      npath,
+                                      workspace_dir,
+                                      error)
+                    ipy.push({'DWS_JUPYTER_INFO': DWS_JUPYTER_INFO})
+                    if error:
+                        comm.send({'status':error})
+                        raise Exception(error)
+                    else:
+                        comm.send({'status':'ok', 'msg_type':'init-ack'})
+                        self.dws_jupyter_info = DWS_JUPYTER_INFO
+                elif msg_type=='snapshot':
+                    try:
+                        r = take_snapshot(self.dws_jupyter_info.workspace_dir,
+                                          tag=self._snapshot_args.tag,
+                                          message=self._snapshot_args.message)
+                        self._snapshot_args = None
+                        comm.send({'msg_type':'snapshot-result',
+                                   'status':'ok',
+                                   'message':'Successfully completed snapshot. Hash is %s'%r[0:8]})
+                    except Exception as e:
+                        comm.send({'msg_type':'snapshot-result',
+                                   'status':"Snapshot failed with error '%s'"% e})
+                        raise
+                else:
+                    raise Exception("Uknown message type %s" % msg_type)
+        self.shell.kernel.comm_manager.register_target('dws_comm_target', target_func)
+        self.shell.run_cell(init_jscode)
+
+    async def _call_snapshot(self):
+        await self.shell.run_cell_async(snapshot_jscode)
+        await self.shell.run_cell_async(snapshot_jscode2)
+
+    @line_magic
+    def dws_info(self, line):
+        print("Notebook name:       %s" % self.dws_jupyter_info.notebook_name)
+        print("Notebook path:       %s"  % self.dws_jupyter_info.notebook_path)
+        print("Workspace directory: %s" % self.dws_jupyter_info.workspace_dir)
+        if self.dws_jupyter_info.error is not None:
+            print("Error message:       %s" % self.dws_jupyter_info.error)
+
+    @line_magic
+    def dws_snapshot(self, line):
+        parser = DwsMagicParseArgs("dws_snapshot")
+        parser.add_argument('-m', '--message', type=str, default=None,
+                            help="Message describing the snapshot")
+        parser.add_argument('-t', '--tag', type=str, default=None,
+                            help="Tag for the snapshot. Note that a given tag can "+
+                                 "only be used once (without deleting the old one).")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
+        self._snapshot_args = args
+        msg = "Initiating snapshot"
+        if args.tag:
+            msg += " with tag '%s'" % args.tag
+        if args.message:
+            msg += " with message '%s'" % args.message
+        print(msg + '...')
+        import tornado.ioloop
+        tornado.ioloop.IOLoop.current().spawn_callback(self._call_snapshot)
+
+    @line_magic
+    def dws_history(self, line):
+        import pandas as pd # TODO: support case where pandas wasn't installed
+        parser = DwsMagicParseArgs("dws_history")
+        parser.add_argument('--max-count', type=int, default=None,
+                            help="Maximum number of snapshots to show")
+        parser.add_argument('--tail', default=False, action='store_true',
+                            help="Just show the last 10 entries in reverse order")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
+        if args.max_count and args.tail:
+            max_count = args.max_count
+        elif args.tail:
+            max_count = 10
+        else:
+            max_count = None
+        history = get_snapshot_history(max_count=max_count,
+                                       reverse=args.tail)
+        entries = []
+        index = []
+        for s in history:
+            d = {'timestamp':s.timestamp,
+                 'hash':s.hashval[0:8],
+                 'tags':', '.join([tag for tag in s.tags]),
+                 'message':s.message}
+            if s.metrics is not None:
+                for (m, v) in s.metrics.items():
+                    d[m] = v
+            entries.append(d)
+            index.append(s.snapshot_number)
+        history_df = pd.DataFrame(entries, index=index)
+        return history_df
+
+
+def load_ipython_extension(ipython):
+    ipython.register_magics(DwsMagics)
 

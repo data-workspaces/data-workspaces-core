@@ -499,12 +499,15 @@ def load_workspace(uri:str, batch:bool, verbose:bool) -> Workspace:
     return _get_factory('dataworkspaces.backends.'+parsed_uri.scheme).load_workspace(batch, verbose, parsed_uri)
 
 
-def _find_containing_workspace() -> Optional[str]:
+def _find_containing_workspace(start_dir:Optional[str]=None) -> Optional[str]:
     """For commands that execute in the context of a containing
     workspace, find the nearest containging workspace and return
     its absolute path. If none is found, return None.
     """
-    curr_base = os.path.abspath(os.path.expanduser(os.path.curdir))
+    if start_dir:
+        curr_base = os.path.abspath(os.path.expanduser(start_dir))
+    else:
+        curr_base = os.path.abspath(os.path.expanduser(os.path.curdir))
     while curr_base != '/':
         if os.path.isdir(os.path.join(curr_base, '.dataworkspace')) and os.access(curr_base, os.W_OK):
             return curr_base

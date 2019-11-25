@@ -1494,6 +1494,7 @@ def make_lineage_graph_for_visualization(instance:str, store:LineageStore, outpu
 def make_simplified_lineage_graph_for_resource(instance:str, store:LineageStore,
                                                resource_name:str, output_file:str,
                                                snapshot_hash:Optional[str],
+                                               format='html',
                                                width=1024, height=800) -> None:
     nodes = [] # type: List[Dict[str, Any]]
     links = [] # type: List[Dict[str, Any]]
@@ -1504,7 +1505,7 @@ def make_simplified_lineage_graph_for_resource(instance:str, store:LineageStore,
             else "placeholder=%d" % cast(PlaceholderCertificate, cert).version
     def step_lineage_to_name(lineage):
         assert isinstance(lineage, StepLineage)
-        return "%s at %s" % (lineage.step_name, str(lineage.start_time)[0:16])
+        return "%s@%s" % (lineage.step_name, str(lineage.start_time)[0:16])
     class CertNodes:
         def __init__(self):
             self.next_node_id = 1
@@ -1571,15 +1572,26 @@ def make_simplified_lineage_graph_for_resource(instance:str, store:LineageStore,
                     if input_is_new and cert_in_lineage(input_cert):
                         next_worklist.append(input_cert.ref)
         worklist = next_worklist
-    if not exists(GRAPH_TEMPLATE_FILE):
-        raise InternalError("Could not find lineage graph template")
-    graph_str = json.dumps({"nodes":nodes, "links":links}, indent=2)
-    with open(GRAPH_TEMPLATE_FILE, 'r') as f, open(output_file, 'w') as g:
-        data = f.read()
-        t = Template(data)
-        g.write(t.substitute(LINEAGE_GRAPH=graph_str,
-                             WIDTH=str(width),
-                             HEIGHT=str(height)))
+    if format=='html':
+        if not exists(GRAPH_TEMPLATE_FILE):
+            raise InternalError("Could not find lineage graph template")
+        graph_str = json.dumps({"nodes":nodes, "links":links}, indent=2)
+        with open(GRAPH_TEMPLATE_FILE, 'r') as f, open(output_file, 'w') as g:
+            data = f.read()
+            t = Template(data)
+            g.write(t.substitute(LINEAGE_GRAPH=graph_str,
+                                 WIDTH=str(width),
+                                 HEIGHT=str(height)))
+    elif format=='dot':
+        with open(output_file, 'w') as g:
+            g.write('digraph lineage {\n')
+            g.write('  size="100,100";\n')
+            for node in nodes:
+                g.write('  %s [label="%s",font=4];\n' % (node['id'], node['name']))
+            for edge in links:
+                g.write('  %s -> %s [label="%s",font=4,len=2];\n' % (edge['source'], edge['target'], edge['type']))
+            g.write('}\n')
+
 
 
 def infer_step_name(argv=sys.argv):

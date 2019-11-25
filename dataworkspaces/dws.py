@@ -619,6 +619,8 @@ cli.add_command(lineage)
               help="name of the resource to graph the lineage for (default to the first results resource)")
 @click.option('--snapshot', type=str, default=None,
               help="Snapshot hash or tag to use for lineage. If not specified, use current lineage.")
+@click.option('--format', default="html", type=click.Choice(["html", "dot"]),
+              help="Format of the output graph (defaults to html)")
 @click.option('--width', type=int, default=1024,
               help="Width of graph in pixels (defaults to 1024)")
 @click.option('--height', type=int, default=800,
@@ -627,12 +629,12 @@ cli.add_command(lineage)
                 type=click.Path(exists=False, file_okay=True, dir_okay=False,
                                 readable=True, writable=True, resolve_path=True))
 @click.pass_context
-def graph(ctx, resource:Optional[str], snapshot:Optional[str], width:int,
+def graph(ctx, resource:Optional[str], snapshot:Optional[str], format:str, width:int,
           height:int, output_file:str):
     """Graph the lineage of a resource, writing the graph to an HTML file. Subcommand of ``lineage``"""
     ns = ctx.obj
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    lineage_graph_command(workspace, output_file, resource, snapshot, width, height)
+    lineage_graph_command(workspace, output_file, resource, snapshot, format, width, height)
 
 lineage.add_command(graph)
 
