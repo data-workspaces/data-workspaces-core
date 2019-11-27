@@ -6,7 +6,6 @@ Integration with Jupyter notebooks. This module provides a
 import ipykernel
 from IPython.core.getipython import get_ipython
 from IPython.core.magic import (Magics, magics_class, line_magic)
-
 import requests
 import json
 #from requests.compat import urljoin
@@ -129,8 +128,10 @@ class NotebookLineageBuilder(LineageBuilder):
             self.step_name = step_name
         else:
             notebook_step_name = get_step_name_for_notebook()
-            self.step_name = notebook_step_name if notebook_step_name is not None \
-                             else 'UnknownNotebook'
+            if notebook_step_name is None:
+                raise ConfigurationError("Unable to infer the name of this notebook. "+
+                                         "Please either use the DWS notebook magic or pass the name in explicitly to the lineage builder.")
+            self.step_name = notebook_step_name
         notebook_path = _get_notebook_name()
         if notebook_path is not None:
             self.code.append(notebook_path)
@@ -153,33 +154,45 @@ DwsJupyterInfo = namedtuple('DwsJupyterInfo',
 
 init_jscode=r"""
 %%javascript
-var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n\n %dws_info     - print information about your dws environment\n%dws_history  - print a history of snapshots in this workspace\n%dws_snapshot - save and create a new snapshot\n\nRun any command with the --help option to see a list\nof options for that command.\n\nThe variable DWS_JUPYTER_NOTEBOOK has been added to\nyour variables, for use in future DWS calls.";
-
+var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n- `%dws_info` - print information about your dws environment\n- `%dws_history` - print a history of snapshots in this workspace\n- `%dws_snapshot` - save and create a new snapshot\n\nRun any command with the `--help` option to see a list\nof options for that command.\n\nThe variable `DWS_JUPYTER_NOTEBOOK` has been added to\nyour variables, for use in future DWS calls.";
 if (typeof Jupyter == "undefined") {
     alert("Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.");
     throw "Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.";
 }
-else {
+else if (Jupyter.notebook.hasOwnProperty('kernel') && Jupyter.notebook.kernel!=null) {
     var DWSComm = Jupyter.notebook.kernel.comm_manager.new_comm('dws_comm_target', {})
     DWSComm.on_msg(function(msg) {
-        console.log("Got msg status: " + msg.content.data.status);
-        console.log("msg type: " + msg.content.data.msg_type);
+        console.log("DWS Got msg status: " + msg.content.data.status);
+        console.log("DWS msg type: " + msg.content.data.msg_type);
         if (msg.content.data.status != 'ok') {
+            if (msg.content.data.hasOwnProperty('cell')) {
+                var cell = Jupyter.notebook.get_cell(msg.content.data.cell-1);
+                cell.output_area.append_output({'data':{'text/plain':msg.content.data.status}, 'metadata':{}, 'output_type':'display_data' });
+            }
             alert(msg.content.data.status);
             return;
         }
         if (msg.content.data.msg_type == "snapshot-result") {
+            var cell = Jupyter.notebook.get_cell(msg.content.data.cell-1);
+            cell.output_area.append_output({'data':{'text/plain':msg.content.data.message}, 'metadata':{}, 'output_type':'display_data' });
             alert(msg.content.data.message);
         }
         else if (msg.content.data.msg_type == "init-ack") {
-            alert(dws_initialization_msg);
+            var cell = Jupyter.notebook.get_cell(msg.content.data.cell-1);
+            cell.output_area.append_output({'data':{'text/markdown':dws_initialization_msg}, 'metadata':{}, 'output_type':'display_data' });
+            //alert(dws_initialization_msg);
         }
     });
     // Send data
+    var cellno = Jupyter.notebook.find_cell_index(Jupyter.notebook.get_selected_cell());
     DWSComm.send({'msg_type':'init',
                   'notebook_name': Jupyter.notebook.notebook_name,
-                  'notebook_path': Jupyter.notebook.notebook_path});
+                  'notebook_path': Jupyter.notebook.notebook_path,
+                  'cell':cellno});
     window.DWSComm = DWSComm;
+} else {
+    // this happens when evaluating the javascript upon loading the notebook
+    console.log("kernal was null");
 }
 """
 
@@ -190,8 +203,11 @@ Jupyter.notebook.save_notebook();
 
 snapshot_jscode2="""
 %%javascript
-window.DWSComm.send({'msg_type':'snapshot'});
-console.log("sending snapshot");
+if (window.hasOwnProperty('DWSComm')) {
+    window.DWSComm.send({'msg_type':'snapshot',
+                         'cell':Jupyter.notebook.find_cell_index(Jupyter.notebook.get_selected_cell())});
+    console.log("sending snapshot");
+}
 """
 
 initialization_msg ='''
@@ -259,9 +275,10 @@ class DwsMagics(Magics):
                         comm.send({'status':error})
                         raise Exception(error)
                     else:
-                        comm.send({'status':'ok', 'msg_type':'init-ack'})
+                        comm.send({'status':'ok', 'msg_type':'init-ack', 'cell':data['cell']})
                         self.dws_jupyter_info = DWS_JUPYTER_INFO
                 elif msg_type=='snapshot':
+                    cell = data['cell']
                     try:
                         r = take_snapshot(self.dws_jupyter_info.workspace_dir,
                                           tag=self._snapshot_args.tag,
@@ -269,15 +286,17 @@ class DwsMagics(Magics):
                         self._snapshot_args = None
                         comm.send({'msg_type':'snapshot-result',
                                    'status':'ok',
-                                   'message':'Successfully completed snapshot. Hash is %s'%r[0:8]})
+                                   'message':'Successfully completed snapshot. Hash is %s'%r[0:8],
+                                   'cell':cell})
                     except Exception as e:
                         comm.send({'msg_type':'snapshot-result',
-                                   'status':"Snapshot failed with error '%s'"% e})
+                                   'status':"Snapshot failed with error '%s'"% e,
+                                   'cell':cell})
                         raise
                 else:
                     raise Exception("Uknown message type %s" % msg_type)
         self.shell.kernel.comm_manager.register_target('dws_comm_target', target_func)
-        self.shell.run_cell(init_jscode)
+        self.shell.run_cell(init_jscode, store_history=False, silent=True)
 
     async def _call_snapshot(self):
         await self.shell.run_cell_async(snapshot_jscode)
