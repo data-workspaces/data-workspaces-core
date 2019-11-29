@@ -1,6 +1,9 @@
 """
 Integration with Jupyter notebooks. This module provides a
 :class:`~LineageBuilder` subclass to simplify Lineage for Notebooks.
+
+It also provides a collection of IPython *magics* (macros) for working
+in Jupyter notebooks.
 """
 import os
 import sys
@@ -309,6 +312,12 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_info(self, line):
+        parser = DwsMagicParseArgs("dws_info",
+                                   description="Print some information about this workspace")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
         print("Notebook name:       %s" % self.dws_jupyter_info.notebook_name)
         print("Notebook path:       %s"  % self.dws_jupyter_info.notebook_path)
         print("Workspace directory: %s" % self.dws_jupyter_info.workspace_dir)
@@ -318,7 +327,8 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_snapshot(self, line):
-        parser = DwsMagicParseArgs("dws_snapshot")
+        parser = DwsMagicParseArgs("dws_snapshot",
+                                   description="Save the notebook and create a new snapshot")
         parser.add_argument('-m', '--message', type=str, default=None,
                             help="Message describing the snapshot")
         parser.add_argument('-t', '--tag', type=str, default=None,
@@ -341,7 +351,8 @@ class DwsMagics(Magics):
     @line_magic
     def dws_history(self, line):
         import pandas as pd # TODO: support case where pandas wasn't installed
-        parser = DwsMagicParseArgs("dws_history")
+        parser = DwsMagicParseArgs("dws_history",
+                                   description="Print a history of snapshots in this workspace")
         parser.add_argument('--max-count', type=int, default=None,
                             help="Maximum number of snapshots to show")
         parser.add_argument('--tail', default=False, action='store_true',
@@ -377,7 +388,8 @@ class DwsMagics(Magics):
     @line_magic
     def dws_lineage_table(self, line):
         import pandas as pd # TODO: support case where pandas wasn't installed
-        parser = DwsMagicParseArgs("dws_lineage_table")
+        parser = DwsMagicParseArgs("dws_lineage_table",
+                                   description="Show a table of lineage for the workspace's resources")
         parser.add_argument('--snapshot', default=None, type=str,
                             help="If specified, print lineage as of the specified snapshot hash or tag")
         try:
@@ -389,7 +401,8 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_lineage_graph(self, line):
-        parser = DwsMagicParseArgs("dws_lineage_table")
+        parser = DwsMagicParseArgs("dws_lineage_table",
+                                   description="Show a graph of lineage for a resource")
         parser.add_argument('--resource', default=None, type=str,
                             help="Graph lineage from this resource. Defaults to the results resource. Error if not specified and there is more than one.")
         parser.add_argument('--snapshot', default=None, type=str,
@@ -407,7 +420,8 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_results(self, line):
-        parser = DwsMagicParseArgs("dws_results")
+        parser = DwsMagicParseArgs("dws_results",
+                                   description="Show results from a run (results.json file)")
         parser.add_argument('--resource', default=None, type=str,
                             help="Look for the results.json file in this resource. Otherwise, will look in all results resources and return the first match.")
         parser.add_argument('--snapshot', default=None, type=str,

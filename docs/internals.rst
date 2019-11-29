@@ -208,7 +208,7 @@ Source Data Sets
 We want the ability to name source data sets and swap them in and out without
 changing other parts of the workspace. This still needs to be implemented.
 
-Intrermediate Data
+Intermediate Data
 ~~~~~~~~~~~~~~~~~~
 For intermediate data, we may want to delete it from the current state of
 the workspace if it becomes out of date (e.g. a data source version is changed
@@ -237,6 +237,18 @@ be kept at the latest version. This is done by always putting results
 resources into the leave set, as if specified in the ``--leave`` option.
 If the user puts a results resource in the ``--only`` set, we will error
 out for now.
+
+.. _integration_api:
+
+Integration API
+---------------
+The module ``dataworkspaces.api`` provides a simplified, high level programmatic
+inferface to Data Workspaces. It is for integration with third-party tooling.
+
+.. automodule:: dataworkspaces.api
+   :no-undoc-members:
+   :members:
+
 
 .. _workspace_api:
 

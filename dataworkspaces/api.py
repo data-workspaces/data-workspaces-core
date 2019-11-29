@@ -1,6 +1,6 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 """
-API for selected Data Workspaces management functions.
+This is an API for selected Data Workspaces management functions.
 """
 from typing import Optional, NamedTuple, List, Iterable, cast, Tuple
 from os.path import join
@@ -20,14 +20,21 @@ __api_version__ = '0.2'
 
 
 def get_version():
+    """Get the version string for the installed version of Data Workspaces"""
     return __version__
 
 def get_api_version():
+    """The API version is maintained independently of the overall DWS version.
+    It should be more stable.
+    """
     return __api_version__
 
 
 
 class ResourceInfo(NamedTuple):
+    """Named tuple representing the
+    results from a call to :func:`~get_resource_info`.
+    """
     name : str
     role : str
     resource_type : str
@@ -49,6 +56,9 @@ def get_resource_info(workspace_uri_or_path:Optional[str]=None, verbose:bool=Fal
 
 
 class SnapshotInfo(NamedTuple):
+    """Named tuple represneting the results from a call
+    to :func:`~get_snapshot_history`
+    """
     snapshot_number: int
     hashval : int
     tags : List[str]
@@ -97,10 +107,12 @@ def restore(tag_or_hash:str, workspace_uri_or_path:Optional[str]=None,
             only:Optional[List[str]]=None, leave:Optional[List[str]]=None,
             verbose:bool=False) -> int:
     """Restore to a previous snapshot, identified by either its hash
-    or its tag (if one was specified). :param only: is an optional list of
-    resources to store. If specified, all other resources will be left as-is.
-    :param leave: is an optional list of resource to leave as-is. Both
-    :param only: and :param leave: should not be specified together.
+    or its tag (if one was specified). Parameters:
+
+    * ``only`` - an optional list of resources to store. If specified
+      all other resources will be left as-is.
+    * ``leave`` - an optional list of resource to leave as-is. Both
+      ``only`` and ``leave`` should not be specified together.
 
     Returns the number of resources changed.
     """
