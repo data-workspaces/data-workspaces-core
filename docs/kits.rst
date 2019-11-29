@@ -20,7 +20,13 @@ Limitations
 ...........
 Currently these magics are only supported in interactive Jupyter Notebooks. They do not run properly
 within JupyterLab (we are currently working on an extension specific to JupyterLab),
-the `nbconvert` command, or if you run the entire notebook with "Run All Cells".
+the ``nbconvert`` command, or if you run the entire notebook with "Run All Cells".
+
+To develop a notebook interactively using the DWS magic commands and then run the same notebook
+in batch mode, you can set the variable ``DWS_MAGIC_DISABLE`` in your notebook, ahead of the
+call to load the magics (``%load_ext``). If you set it to ``True``, the commands will be
+loaded in a disabled state and will run with no effect. Setting ``DWS_MAGIC_DISABLE`` to
+``False`` will load the magics in the enabled state and run all commands normally.
 
 Loading the magics
 ..................
@@ -31,17 +37,21 @@ To load the magics, run the following in an interactive cell of your Jupyter Not
 
 If the load runs correctly, you should see output like this in your cell:
 
-  Ran DWS initialization. The following magic commands have been added to your notebook:
+  *Ran DWS initialization. The following magic commands have been added to your notebook:*
 
-  * ``%dws_info`` - print information about your dws environment
-  * ``%dws_history`` - print a history of snapshots in this workspace
-  * ``%dws_snapshot`` - save and create a new snapshot
-  * ``%dws_lineage_table`` - show a table of lineage for the workspace resources
-  * ``%dws_lineage_graph`` - show a graph of lineage for a resource
-  * ``%dws_results`` - show results from a run (results.json file)
+  * ``%dws_info`` *- print information about your dws environment*
+  * ``%dws_history`` *- print a history of snapshots in this workspace*
+  * ``%dws_snapshot`` *- save and create a new snapshot*
+  * ``%dws_lineage_table`` *- show a table of lineage for the workspace resources*
+  * ``%dws_lineage_graph`` *- show a graph of lineage for a resource*
+  * ``%dws_results`` *- show results from a run (results.json file)*
 
-  Run any command with the ``--help`` option to see a list of options for that command.
-  The variable ``DWS_JUPYTER_NOTEBOOK`` has been added to your variables, for use in future DWS calls.
+  *Run any command with the* ``--help`` *option to see a list of options for that command.*
+  *The variable* ``DWS_JUPYTER_NOTEBOOK`` *has been added to your variables, for use in future DWS calls.*
+
+  *If you want to disable the DWS magic commands (e.g. when running in a batch context),*
+  *set the variable* ``DWS_MAGIC_DISABLE`` *to* ``True`` *ahead of the* ``%load_ext`` *call.*
+
 
 Magic Command reference
 .......................

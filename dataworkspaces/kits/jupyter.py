@@ -11,7 +11,7 @@ import ipykernel
 from IPython.core.getipython import get_ipython
 from IPython.core.magic import (Magics, magics_class, line_magic)
 from IPython.core.display import display
-from IPython.display import IFrame, HTML
+from IPython.display import IFrame, HTML, Markdown
 
 import requests
 import json
@@ -166,7 +166,7 @@ DwsJupyterInfo = namedtuple('DwsJupyterInfo',
 
 
 init_jscode=r"""%%javascript
-var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n- `%dws_info` - print information about your dws environment\n- `%dws_history` - print a history of snapshots in this workspace\n- `%dws_snapshot` - save and create a new snapshot\n- `%dws_lineage_table` - show a table of lineage for the workspace resources\n- `%dws_lineage_graph` - show a graph of lineage for a resource\n- `%dws_results` - show results from a run (results.json file)\n\nRun any command with the `--help` option to see a list\nof options for that command.\n\nThe variable `DWS_JUPYTER_NOTEBOOK` has been added to\nyour variables, for use in future DWS calls.";
+var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n- `%dws_info` - print information about your dws environment\n- `%dws_history` - print a history of snapshots in this workspace\n- `%dws_snapshot` - save and create a new snapshot\n- `%dws_lineage_table` - show a table of lineage for the workspace resources\n- `%dws_lineage_graph` - show a graph of lineage for a resource\n- `%dws_results` - show results from a run (results.json file)\n\nRun any command with the `--help` option to see a list\nof options for that command.\n\nThe variable `DWS_JUPYTER_NOTEBOOK` has been added to\nyour variables, for use in future DWS calls.\n\nIf you want to disable the DWS magic commands (e.g. when running in a batch context), set the variable `DWS_MAGIC_DISABLE` to `True` ahead of the `%load_ext` call.";
 if (typeof Jupyter == "undefined") {
     alert("Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.");
     throw "Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.";
@@ -246,6 +246,13 @@ class DwsMagicParseArgs(argparse.ArgumentParser):
 class DwsMagics(Magics):
     def __init__(self, shell):
         super().__init__(shell)
+        try:
+            self.disabled = get_ipython().ev('DWS_MAGIC_DISABLE')
+        except NameError:
+            self.disabled = False
+        if self.disabled:
+            print("Loaded Data Workspaces magic commands in disabled state.", file=sys.stderr)
+            return
         self._snapshot_args = None
         def target_func(comm, open_msg):
             self.comm = comm
@@ -302,7 +309,7 @@ class DwsMagics(Magics):
                                    'cell':cell})
                         raise
                 else:
-                    raise Exception("Uknown message type %s" % msg_type)
+                    raise Exception("Unknown message type %s" % msg_type)
         self.shell.kernel.comm_manager.register_target('dws_comm_target', target_func)
         self.shell.run_cell(init_jscode, store_history=False, silent=True)
 
@@ -318,6 +325,9 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
         print("Notebook name:       %s" % self.dws_jupyter_info.notebook_name)
         print("Notebook path:       %s"  % self.dws_jupyter_info.notebook_path)
         print("Workspace directory: %s" % self.dws_jupyter_info.workspace_dir)
@@ -338,6 +348,9 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
         self._snapshot_args = args
         msg = "Initiating snapshot"
         if args.tag:
@@ -350,7 +363,6 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_history(self, line):
-        import pandas as pd # TODO: support case where pandas wasn't installed
         parser = DwsMagicParseArgs("dws_history",
                                    description="Print a history of snapshots in this workspace")
         parser.add_argument('--max-count', type=int, default=None,
@@ -361,6 +373,10 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
+        import pandas as pd # TODO: support case where pandas wasn't installed
         if args.max_count and args.tail:
             max_count = args.max_count
         elif args.tail:
@@ -396,6 +412,9 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
         rows = [r for r in make_lineage_table(self.dws_jupyter_info.workspace_dir, args.snapshot)]
         return pd.DataFrame(rows, columns=['Resource', 'Lineage Type', 'Details', 'Inputs']).set_index('Resource')
 
@@ -411,6 +430,9 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
         output_file = join(dirname(self.dws_jupyter_info.notebook_path),
                            'lineage_'+_remove_notebook_extn(self.dws_jupyter_info.notebook_name)+'.html')
         make_lineage_graph(output_file, self.dws_jupyter_info.workspace_dir,
@@ -430,6 +452,9 @@ class DwsMagics(Magics):
             args = parser.parse_magic_line(line)
         except DwsMagicArgParseExit:
             return # user asked for help
+        if self.disabled:
+            display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
+            return
         rtn = get_results(self.dws_jupyter_info.workspace_dir,
                           tag_or_hash=args.snapshot, resource_name=args.resource)
         if rtn is None:
