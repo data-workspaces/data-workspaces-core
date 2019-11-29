@@ -1191,6 +1191,18 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """
         pass
 
+    def get_most_recent_snapshot(self) -> Optional[SnapshotMetadata]:
+        """Helper function to return the metadata for the most recent
+        snapshot (by timestamp). Returns None if no snapshot found
+        """
+        l = [s for s in self.list_snapshots(reverse=True, max_count=1)]
+        if len(l)==0:
+            return None
+        elif len(l)==1:
+            return l[0]
+        else:
+            assert 0, "list_snapshots returned more than max_count of 1"
+            
     @abstractmethod
     def remove_tag_from_snapshot(self, hash_val:str, tag:str) -> None:
         """Remove the specified tag from the specified snapshot. Throw an

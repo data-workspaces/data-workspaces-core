@@ -18,7 +18,7 @@ The __repr__ call should just be pp(0)
 import datetime
 import os
 from os.path import join, exists, basename, realpath, abspath, expanduser,\
-                    commonpath, dirname
+                    commonpath, dirname, isdir
 from typing import List, Any, Optional, Tuple, NamedTuple, Dict, Iterable, cast
 import json
 import shutil
@@ -30,6 +30,7 @@ from string import Template
 
 from dataworkspaces.errors import InternalError, LineageError
 from .regexp_utils import isots_to_dt
+from .hash_utils import is_a_git_hash
 
 class LineageConsistencyError(LineageError):
     """Special case of LineageError where the inputs for a step
@@ -898,6 +899,13 @@ class LineageStore(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def iterate_all_as_of_snapshot(self, instance:str, snapshot_hash:str) \
+        -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
+        """Iterate through the contents of the store, as of the specific snapshot.
+        """
+        pass
+
+    @abstractmethod
     def dump(self, instance:str) -> None:
         """Print the current contents of the store (for debugging).
         """
@@ -1119,6 +1127,14 @@ class FileLineageStore(LineageStore):
         if not exists(snapshot_dir):
             os.makedirs(snapshot_dir)
 
+    def _get_resources_in_snapshot(self, snapshot_hash:str) -> Iterable[str]:
+        snapshot_dir = join(self.snapshot_lineage_path, snapshot_hash)
+        if not isdir(snapshot_dir):
+            raise LineageNotFoundError("No lineage data found for snapshot hash %s"%snapshot_hash)
+        for fname in sorted(os.listdir(snapshot_dir)):
+            if fname.endswith('.json'):
+                yield fname[0:-5]
+
     def _parse_snapshot_rfile(self, resource_name:str, snapshot_hash:str) \
         -> Dict[ResourceRef, ResourceLineage]:
         """Since this is for a snapshot, it does not use the cache.
@@ -1321,6 +1337,14 @@ class FileLineageStore(LineageStore):
             for (ref, lineage) in mapping.items():
                 yield (ref, lineage)
 
+    def iterate_all_as_of_snapshot(self, instance:str, snapshot_hash:str) \
+        -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
+        """Iterate through the contents of the store, as of the specific snapshot.
+        """
+        for rname in self._get_resources_in_snapshot(snapshot_hash):
+            for ref in self.get_refs_for_resource_as_of_snapshot(instance, rname, snapshot_hash):
+                yield (ref, self.retrieve_entry_as_of_snapshot(instance, ref, snapshot_hash))
+
 
     def dump(self, instance:str) -> None:
         self._load_resource_cache()
@@ -1382,6 +1406,53 @@ class FileLineageStore(LineageStore):
         mapping = self._parse_snapshot_rfile(resource_name, snapshot_hash)
         return mapping.keys()
 
+
+
+def make_lineage_table(instance:str, store:LineageStore, snapshot_hash:Optional[str]=None) \
+    -> Iterable[Tuple[str, str, str, Optional[List[str]]]]:
+    """Make a table of the lineage for each resource.
+    The columns are: ref, lineage type, details, inputs
+    """
+    def ref_name(ref) -> str:
+        return ref.name if ref.subpath is None else ref.name + ":/" + ref.subpath
+    def cert_name(cert) -> str:
+        if isinstance(cert, HashCertificate):
+            if is_a_git_hash(cert.hashval):
+                return 'Hash:%s' % cert.hashval[0:8]
+            else:
+                return 'Hash:%s' % cert.hashval
+        else:
+            assert isinstance(cert, PlaceholderCertificate)
+            return "Placeholder:version=%d" % cert.version
+    def input_to_str(cert):
+        try:
+            if snapshot_hash is not None:
+                lg = store.retrieve_entry_as_of_snapshot(instance, cert.ref, snapshot_hash)
+            else:
+                lg = store.retrieve_entry(instance, cert.ref)
+        except LineageNotFoundError:
+            return "%s (%s)" % (ref_name(cert.ref), cert_name(cert))
+        cur_cert = lg.get_cert_for_ref(ref)
+        if cur_cert is None or cur_cert!=cert:
+            return "%s (%s)" % (ref_name(cert.ref), cert_name(cert))
+        else:
+            return "%s (current)" % ref_name(cert.ref)
+    def lineage_to_cols(lineage) -> Tuple[str, str, Optional[List[str]]]:
+        if isinstance(lineage, StepLineage):
+            sname = "%s at %s" % (lineage.step_name, lineage.start_time)
+            return ('Step', sname, [input_to_str(i) for i in lineage.input_resources])
+        elif isinstance(lineage, SourceDataLineage):
+            return ("Source Data", cert_name(lineage.cert), None)
+        elif isinstance(lineage, CodeLineage):
+            return ("Code", cert_name(lineage.cert), None)
+        else:
+            assert 0
+    iterator = store.iterate_all_as_of_snapshot(instance, snapshot_hash) \
+               if snapshot_hash is not None else \
+               store.iterate_all(instance)
+    for (ref, lineage) in iterator:
+        (ltype, details, inputs) = lineage_to_cols(lineage)
+        yield (ref_name(ref), ltype, details, inputs)
 
 
 GRAPH_TEMPLATE_FILE=abspath(join(dirname(__file__),

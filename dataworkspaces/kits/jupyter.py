@@ -2,16 +2,19 @@
 Integration with Jupyter notebooks. This module provides a
 :class:`~LineageBuilder` subclass to simplify Lineage for Notebooks.
 """
-
+import os
+import sys
 import ipykernel
 from IPython.core.getipython import get_ipython
 from IPython.core.magic import (Magics, magics_class, line_magic)
+from IPython.core.display import display
+from IPython.display import IFrame, HTML
+
 import requests
 import json
-#from requests.compat import urljoin
 from urllib.parse import urljoin
 import re
-from os.path import join, basename, dirname, abspath, expanduser, curdir, isabs
+from os.path import join, basename, dirname, abspath, expanduser, curdir, exists
 from notebook.notebookapp import list_running_servers
 from typing import Optional
 import shlex
@@ -22,7 +25,10 @@ from collections import namedtuple
 
 from dataworkspaces.lineage import LineageBuilder
 from dataworkspaces.workspace import _find_containing_workspace
-from dataworkspaces.api import take_snapshot, get_snapshot_history
+from dataworkspaces.api import take_snapshot, get_snapshot_history,\
+                               make_lineage_table, make_lineage_graph,\
+                               get_results
+from dataworkspaces.utils.file_utils import get_subpath_from_absolute
 from dataworkspaces.errors import ConfigurationError
 
 
@@ -65,6 +71,14 @@ def _get_notebook_name(verbose=False) -> Optional[str]:
     return None
 
 
+def _remove_notebook_extn(notebook_name):
+    if notebook_name.endswith('.ipynb'):
+        return notebook_name[0:-6]
+    elif notebook_name.endswith('.py'):
+        return notebook_name[0:-3]
+    else:
+        return notebook_name
+
 def get_step_name_for_notebook() -> Optional[str]:
     """
     Get the step name for a notebook by getting the path and then
@@ -74,12 +88,7 @@ def get_step_name_for_notebook() -> Optional[str]:
     """
     notebook_path = _get_notebook_name()
     if notebook_path is not None:
-        step_name = basename(notebook_path)
-        if step_name.endswith('.ipynb'):
-            step_name = step_name[0:-6]
-        elif step_name.endswith('.py'):
-            step_name = step_name[0:-3]
-        return step_name
+        return _remove_notebook_extn(basename(notebook_path))
     else:
         return None
 
@@ -148,13 +157,13 @@ class NotebookLineageBuilder(LineageBuilder):
 ############################################################################
 
 DwsJupyterInfo = namedtuple('DwsJupyterInfo',
-                            ['notebook_name', 'notebook_path', 'workspace_dir', 'error'])
+                            ['notebook_name', 'notebook_path', 'workspace_dir', 'notebook_server_dir',
+                             'error'])
 
 
 
-init_jscode=r"""
-%%javascript
-var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n- `%dws_info` - print information about your dws environment\n- `%dws_history` - print a history of snapshots in this workspace\n- `%dws_snapshot` - save and create a new snapshot\n\nRun any command with the `--help` option to see a list\nof options for that command.\n\nThe variable `DWS_JUPYTER_NOTEBOOK` has been added to\nyour variables, for use in future DWS calls.";
+init_jscode=r"""%%javascript
+var dws_initialization_msg = "Ran DWS initialization. The following magic commands have been added to your notebook:\n- `%dws_info` - print information about your dws environment\n- `%dws_history` - print a history of snapshots in this workspace\n- `%dws_snapshot` - save and create a new snapshot\n- `%dws_lineage_table` - show a table of lineage for the workspace resources\n- `%dws_lineage_graph` - show a graph of lineage for a resource\n- `%dws_results` - show results from a run (results.json file)\n\nRun any command with the `--help` option to see a list\nof options for that command.\n\nThe variable `DWS_JUPYTER_NOTEBOOK` has been added to\nyour variables, for use in future DWS calls.";
 if (typeof Jupyter == "undefined") {
     alert("Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.");
     throw "Unable to initialize DWS magic. This version only works with Jupyter Notebooks, not nbconvert or JupyterLab.";
@@ -196,13 +205,11 @@ else if (Jupyter.notebook.hasOwnProperty('kernel') && Jupyter.notebook.kernel!=n
 }
 """
 
-snapshot_jscode="""
-%%javascript
+snapshot_jscode="""%%javascript
 Jupyter.notebook.save_notebook();
 """
 
-snapshot_jscode2="""
-%%javascript
+snapshot_jscode2="""%%javascript
 if (window.hasOwnProperty('DWSComm')) {
     window.DWSComm.send({'msg_type':'snapshot',
                          'cell':Jupyter.notebook.find_cell_index(Jupyter.notebook.get_selected_cell())});
@@ -210,19 +217,6 @@ if (window.hasOwnProperty('DWSComm')) {
 }
 """
 
-initialization_msg ='''
-Ran DWS initialization. The following magic commands have been added to your notebook:
-
-* %dws_info     - print information about your dws environment
-* %dws_history  - print a history of snapshots in this workspace
-* %dws_snapshot - save the notebook and create a new snapshot
-
-Run any command with the --help option to see a list of options for that
-command.
-
-The variable DWS_JUPYTER_NOTEBOOK will be added to your variables, for
-use in future DWS calls.
-'''
 
 class DwsMagicError(ConfigurationError):
     pass
@@ -258,18 +252,29 @@ class DwsMagics(Magics):
                 data = msg['content']['data']
                 msg_type = data['msg_type']
                 if msg_type=='init':
-                    npath = data['notebook_path']
-                    if not isabs(npath):
-                        npath = join(abspath(expanduser(curdir)), npath)
+                    # It looks like the notebook is always running with the cwd set to the notebook
+                    # However, the notebook path from the browser is relative to where the
+                    # notebook server was started
+                    #npath = data['notebook_path']
+                    #if not isabs(npath):
+                    #    npath = join(abspath(expanduser(curdir)), npath)
+                    abscwd = abspath(expanduser(os.getcwd()))
+                    npath = join(abscwd, data['notebook_name'])
+                    assert exists(npath), "Wrong calculation for absolute notebook path, got %s" % npath
+                    assert npath.endswith(data['notebook_path']), \
+                        "Unexpacted notebook path from client, got %s, but absolute is %s" %\
+                        (data['notebook_path'], npath)
+                    notebook_server_dir = npath[0:-(len(data['notebook_path'])+1)]
                     notebook_dir=dirname(npath)
                     workspace_dir = _find_containing_workspace(notebook_dir)
                     error = None
                     if workspace_dir is None:
                         error = "Unable to find a containing workspace for note book at %s" % npath
                     DWS_JUPYTER_INFO=DwsJupyterInfo(data['notebook_name'],
-                                      npath,
-                                      workspace_dir,
-                                      error)
+                                                    npath,
+                                                    workspace_dir,
+                                                    notebook_server_dir,
+                                                    error)
                     ipy.push({'DWS_JUPYTER_INFO': DWS_JUPYTER_INFO})
                     if error:
                         comm.send({'status':error})
@@ -307,6 +312,7 @@ class DwsMagics(Magics):
         print("Notebook name:       %s" % self.dws_jupyter_info.notebook_name)
         print("Notebook path:       %s"  % self.dws_jupyter_info.notebook_path)
         print("Workspace directory: %s" % self.dws_jupyter_info.workspace_dir)
+        print("Notebook server dir: %s" % self.dws_jupyter_info.notebook_server_dir)
         if self.dws_jupyter_info.error is not None:
             print("Error message:       %s" % self.dws_jupyter_info.error)
 
@@ -350,7 +356,8 @@ class DwsMagics(Magics):
             max_count = 10
         else:
             max_count = None
-        history = get_snapshot_history(max_count=max_count,
+        history = get_snapshot_history(self.dws_jupyter_info.workspace_dir,
+                                       max_count=max_count,
                                        reverse=args.tail)
         entries = []
         index = []
@@ -366,6 +373,74 @@ class DwsMagics(Magics):
             index.append(s.snapshot_number)
         history_df = pd.DataFrame(entries, index=index)
         return history_df
+
+    @line_magic
+    def dws_lineage_table(self, line):
+        import pandas as pd # TODO: support case where pandas wasn't installed
+        parser = DwsMagicParseArgs("dws_lineage_table")
+        parser.add_argument('--snapshot', default=None, type=str,
+                            help="If specified, print lineage as of the specified snapshot hash or tag")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
+        rows = [r for r in make_lineage_table(self.dws_jupyter_info.workspace_dir, args.snapshot)]
+        return pd.DataFrame(rows, columns=['Resource', 'Lineage Type', 'Details', 'Inputs']).set_index('Resource')
+
+    @line_magic
+    def dws_lineage_graph(self, line):
+        parser = DwsMagicParseArgs("dws_lineage_table")
+        parser.add_argument('--resource', default=None, type=str,
+                            help="Graph lineage from this resource. Defaults to the results resource. Error if not specified and there is more than one.")
+        parser.add_argument('--snapshot', default=None, type=str,
+                            help="If specified, graph lineage as of the specified snapshot hash or tag")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
+        output_file = join(dirname(self.dws_jupyter_info.notebook_path),
+                           'lineage_'+_remove_notebook_extn(self.dws_jupyter_info.notebook_name)+'.html')
+        make_lineage_graph(output_file, self.dws_jupyter_info.workspace_dir,
+                           resource_name=args.resource, tag_or_hash=args.snapshot,
+                           width=780, height=380)
+        return display(IFrame(basename(output_file), width=800, height=400))
+
+    @line_magic
+    def dws_results(self, line):
+        parser = DwsMagicParseArgs("dws_results")
+        parser.add_argument('--resource', default=None, type=str,
+                            help="Look for the results.json file in this resource. Otherwise, will look in all results resources and return the first match.")
+        parser.add_argument('--snapshot', default=None, type=str,
+                            help="If specified, get results as of the specified snapshot or tag. Otherwise, looks at current workspace and then most recent snapshot.")
+        try:
+            args = parser.parse_magic_line(line)
+        except DwsMagicArgParseExit:
+            return # user asked for help
+        rtn = get_results(self.dws_jupyter_info.workspace_dir,
+                          tag_or_hash=args.snapshot, resource_name=args.resource)
+        if rtn is None:
+            print("Did not find a results.json file.", file=sys.stderr)
+            return
+        (results, rpath) = rtn
+        import pandas as pd
+        html_list = ['<h3>%s</h3>' % rpath]
+        def dict_to_df(d, name):
+            keys=[]
+            values = []
+            for (k, v) in d.items():
+                if not isinstance(v, dict):
+                    keys.append(k)
+                    values.append(v)
+            df = pd.DataFrame({'Property':keys, 'Value':values}).set_index('Property')
+            html_list.append("<h4>%s</h4>"% name)
+            html_list.append(df.to_html())
+        dict_to_df(results, 'General Properties')
+        if 'parameters' in results:
+            dict_to_df(results['parameters'], 'Parameters')
+        if 'metrics' in results:
+            dict_to_df(results['metrics'], 'Metrics')
+        return HTML('\n'.join(html_list))
+
 
 
 def load_ipython_extension(ipython):
