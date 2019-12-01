@@ -4,6 +4,7 @@ import os.path
 from os.path import exists, join
 import json
 import functools
+import inspect
 
 from utils_for_tests import SimpleCase, WS_DIR
 
@@ -31,6 +32,13 @@ except ImportError:
 
 from dataworkspaces.kits.wrapper_utils import NotSupportedError
 
+def generator_from_arrays(x, y):
+    assert len(x)==len(y)
+    # keras expects the same number of dimensions, so, we reshape to add one more
+    old_shape = x[0].shape
+    new_shape = (1, old_shape[0], old_shape[1])
+    for i in range(len(y)):
+        yield(x[i].reshape(new_shape), y[i].reshape((1,1)))
 
 class TestTensorflowKit(SimpleCase):
 
@@ -196,6 +204,101 @@ class TestTensorflowKit(SimpleCase):
         with open(results_file, 'r') as f:
             data = json.load(f)
         self.assertAlmostEqual(test_accuracy, data['metrics']['accuracy' if TF_VERSION==2 else 'acc'])
+        self.assertAlmostEqual(test_loss, data['metrics']['loss'])
+        self._take_snapshot()
+
+    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
+    def test_wrapper_for_generators(self):
+        """This test follows the basic classification tutorial, modified for using
+        the fit_generator() and eval_generator() methods.
+        """
+        import tensorflow as tf
+        import tensorflow.keras as keras
+        self._setup_initial_repo(git_resources='results', api_resources='fashion-mnist-data')
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
+                                                            input_resource='fashion-mnist-data',
+                                                            verbose=True,
+                                                            workspace_dir=WS_DIR)
+        fashion_mnist = keras.datasets.fashion_mnist
+        (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+        train_images = train_images / 255.0
+        test_images = test_images / 255.0
+        model = keras.Sequential([
+            keras.layers.Flatten(input_shape=(28, 28)),
+            keras.layers.Dense(128, activation='relu'),
+            keras.layers.Dense(10, activation='softmax')
+        ])
+        model.compile(optimizer='adam',
+                      loss='sparse_categorical_crossentropy',
+                      metrics=['accuracy'])
+        g = generator_from_arrays(train_images, train_labels)
+        self.assertTrue(inspect.isgenerator(g))
+        model.fit_generator(g, epochs=5, steps_per_epoch=2)
+        g2 = generator_from_arrays(test_images, test_labels)
+        test_loss, test_acc = model.evaluate_generator(g2, steps=len(test_labels), verbose=2)
+        print("test accuracy: %s" % test_acc)
+        results_file = join(WS_DIR, 'results/results.json')
+        self.assertTrue(exists(results_file), "missing file %s" % results_file)
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        self.assertAlmostEqual(test_acc, data['metrics']['accuracy' if TF_VERSION==2 else 'acc'])
+        self.assertAlmostEqual(test_loss, data['metrics']['loss'])
+        self._take_snapshot()
+
+    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
+    def test_wrapper_for_keras_sequence(self):
+        """This test follows the basic classification tutorial, modified for using
+        the fit_generator() and eval_generator() methods.
+        """
+        import tensorflow as tf
+        import tensorflow.keras as keras
+        import tensorflow.keras.utils as kerasutils
+        class KSequence(kerasutils.Sequence):
+            def __init__(self, x, y):
+                assert len(x)==len(y)
+                self.x = x
+                self.y = y
+                old_shape = x[0].shape
+                self.new_shape = (1, old_shape[0], old_shape[1])
+
+            def __iter__(self):
+                return generator_from_arrays(self.x, self.y)
+
+            def __getitem__(self, idx):
+                return (self.x[idx].reshape(self.new_shape), self.y[idx].reshape((1,1)))
+
+            def __len__(self):
+                return len(self.y)
+
+        self._setup_initial_repo(git_resources='results', api_resources='fashion-mnist-data')
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
+                                                            input_resource='fashion-mnist-data',
+                                                            verbose=True,
+                                                            workspace_dir=WS_DIR)
+        fashion_mnist = keras.datasets.fashion_mnist
+        (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+        train_images = train_images / 255.0
+        test_images = test_images / 255.0
+        model = keras.Sequential([
+            keras.layers.Flatten(input_shape=(28, 28)),
+            keras.layers.Dense(128, activation='relu'),
+            keras.layers.Dense(10, activation='softmax')
+        ])
+        model.compile(optimizer='adam',
+                      loss='sparse_categorical_crossentropy',
+                      metrics=['accuracy'])
+        g = KSequence(train_images, train_labels)
+        model.fit_generator(g, epochs=5, steps_per_epoch=2)
+        g2 = KSequence(test_images, test_labels)
+        test_loss, test_acc = model.evaluate_generator(g2, steps=len(test_labels), verbose=2)
+        print("test accuracy: %s" % test_acc)
+        results_file = join(WS_DIR, 'results/results.json')
+        self.assertTrue(exists(results_file), "missing file %s" % results_file)
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        self.assertAlmostEqual(test_acc, data['metrics']['accuracy' if TF_VERSION==2 else 'acc'])
         self.assertAlmostEqual(test_loss, data['metrics']['loss'])
         self._take_snapshot()
 

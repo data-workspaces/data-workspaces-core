@@ -132,6 +132,7 @@ if tensorflow.__version__.startswith('2.'): # type: ignore
 else:
     USING_TENSORFLOW2=False
 import tensorflow.keras.optimizers as optimizers
+import tensorflow.keras.utils as kerasutils
 if USING_TENSORFLOW2:
     import tensorflow.keras.losses as losses
 else:
@@ -153,6 +154,52 @@ def _verify_eager_if_dataset(x, y, api_resource):
         raise NotSupportedError("Using an API resource ("+ api_resource.name+
                                 ") with non-eager datasets is not "+
                                 "supported with TensorFlow 1.x.")
+
+
+def _wrap_generator(wrapped, hash_state):
+    """Return a generator such that it hashes
+    the values returned for each iterator
+    """
+    def wrapper():
+        for v in wrapped:
+            if len(v)==2:
+                (inputs, targets) = v
+                sample_weights = None
+            else:
+                (inputs, targets, sample_weights) = v
+            _add_to_hash(inputs, hash_state)
+            _add_to_hash(targets, hash_state)
+            if sample_weights is not None:
+                _add_to_hash(sample_weights, hash_state)
+            yield v
+    return wrapper()
+
+class _TfKerasSequenceWrapper(kerasutils.Sequence):
+    def __init__(self, wrapped, hash_state):
+        self.wrapped = wrapped
+        self.hash_state = hash_state
+
+    def __getitem__(self, idx):
+        v = self.wrapped.__getitem__(idx)
+        if len(v)==2:
+            (inputs, targets) = v
+            sample_weights = None
+        else:
+            (inputs, targets, sample_weights) = v
+        _add_to_hash(inputs, self.hash_state)
+        _add_to_hash(targets, self.hash_state)
+        if sample_weights is not None:
+            _add_to_hash(sample_weights)
+        return v
+
+    def __len__(self):
+        return self.wrapped.__len__()
+
+    def __iter__(self):
+        return _wrap_generator(self.wrapped, self.hash_state)
+
+    def on_epoch_end(self):
+        return self.on_epoch_end()
 
 
 def add_lineage_to_keras_model_class(Cls:type,
@@ -184,9 +231,15 @@ def add_lineage_to_keras_model_class(Cls:type,
     * :func:`~fit` - captures the ``epochs`` and ``batch_size`` parameter values;
       if input is an API resource, capture hash values of training data, otherwise capture
       input resource name.
-    * :func:`~evaluate` - captures the ``batch_size`` paramerter value; if input is an
+    * :func:`~fit_generator` - captues the ``epochs`` and ``steps_per_epoch`` parameter
+      values; if input is an API resource, wraps the generator and captures the hashes
+      of returned values from the generator as it is iterated through.
+    * :func:`~evaluate` - captures the ``batch_size`` parameter value; if input is an
       API resource, capture hash values of test data, otherwise capture input resource
       name; capture metrics and write them to results resource.
+    * :func:`~evaluate_generator` - captures the ``steps`` parameter value; if input is
+      an API resource, wraps the generator and captures the hashes of returned values
+      from the generator as it is iterated through.
     """
     if hasattr(Cls, '_dws_model_wrap') and Cls._dws_model_wrap is True: # type: ignore
         print("dws>> %s or a superclass is already wrapped" % Cls.__name__)
@@ -221,13 +274,13 @@ def add_lineage_to_keras_model_class(Cls:type,
                                    target_tensors, distribute, **kwargs)
         def fit(self, x,y=None,  **kwargs):
             if 'epochs' in kwargs:
-                self._dws_state.lineage.add_param('epochs', kwargs['epochs'])
+                self._dws_state.lineage.add_param('fit.epochs', kwargs['epochs'])
             else:
-                self._dws_state.lineage.add_param('epochs', 1)
+                self._dws_state.lineage.add_param('fit.epochs', 1)
             if 'batch_size' in kwargs:
-                self._dws_state.lineage.add_param('fit_batch_size', kwargs['batch_size'])
+                self._dws_state.lineage.add_param('fit.batch_size', kwargs['batch_size'])
             else:
-                self._dws_state.lineage.add_param('fit_batch_size', None)
+                self._dws_state.lineage.add_param('fit.batch_size', None)
             api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
             if api_resource is not None:
                 _verify_eager_if_dataset(x, y, api_resource)
@@ -236,13 +289,58 @@ def add_lineage_to_keras_model_class(Cls:type,
                 _add_to_hash(x, hash_state)
                 if y is not None:
                     _add_to_hash(y, hash_state)
+                api_resource.save_current_hash() # in case we evaluate in a separate process
             return super().fit(x, y, **kwargs)
+
+        def fit_generator(self,
+            generator,
+            steps_per_epoch=None,
+            epochs=1,
+            verbose=1,
+            callbacks=None,
+            validation_data=None,
+            validation_steps=None,
+            validation_freq=1,
+            class_weight=None,
+            max_queue_size=10,
+            workers=1,
+            use_multiprocessing=False,
+            shuffle=True,
+            initial_epoch=0):
+            self._dws_state.lineage.add_param('fit_generator.epochs', epochs)
+            self._dws_state.lineage.add_param('fit_generator.steps_per_epoch', steps_per_epoch)
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(generator)
+            if api_resource is not None:
+                # wrap the generator to capture each entry as it is returned
+                api_resource.init_hash_state()
+                hash_state = api_resource.get_hash_state()
+                if isinstance(generator, kerasutils.Sequence):
+                    generator = _TfKerasSequenceWrapper(generator, hash_state)
+                else:
+                    generator = _wrap_generator(generator, hash_state)
+            results = super().fit_generator(generator,
+                                            steps_per_epoch,
+                                            epochs,
+                                            verbose,
+                                            callbacks,
+                                            validation_data,
+                                            validation_steps,
+                                            validation_freq,
+                                            class_weight,
+                                            max_queue_size,
+                                            workers,
+                                            use_multiprocessing,
+                                            shuffle,
+                                            initial_epoch)
+            if api_resource is not None:
+                api_resource.save_current_hash()
+            return results
 
         def evaluate(self, x, y=None, **kwargs):
             if 'batch_size' in kwargs:
-                self._dws_state.lineage.add_param('evaluate_batch_size', kwargs['batch_size'])
+                self._dws_state.lineage.add_param('evaluate.batch_size', kwargs['batch_size'])
             else:
-                self._dws_state.lineage.add_param('evaluate_batch_size', None)
+                self._dws_state.lineage.add_param('evaluate.batch_size', None)
             api_resource =  self._dws_state.find_input_resources_and_return_if_api(x, y)
             if api_resource is not None:
                 _verify_eager_if_dataset(x, y, api_resource)
@@ -258,6 +356,41 @@ def add_lineage_to_keras_model_class(Cls:type,
             self._dws_state.write_metrics_and_complete({n:v for (n, v) in
                                                         zip(self.metrics_names, results)})
             return results
+
+        def evaluate_generator(self,
+                               generator,
+                               steps=None,
+                               callbacks=None,
+                               max_queue_size=10,
+                               workers=1,
+                               use_multiprocessing=False,
+                               verbose=0):
+            self._dws_state.lineage.add_param('evaluate_generator.steps', steps)
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(generator)
+            if api_resource is not None:
+                # wrap the generator to capture each entry as it is returned
+                api_resource.dup_hash_state()
+                hash_state = api_resource.get_hash_state()
+                if isinstance(generator, kerasutils.Sequence):
+                    generator = _TfKerasSequenceWrapper(generator, hash_state)
+                else:
+                    generator = _wrap_generator(generator, hash_state)
+            results =  super().evaluate_generator(generator,
+                                                  steps,
+                                                  callbacks,
+                                                  max_queue_size,
+                                                  workers,
+                                                  use_multiprocessing,
+                                                  verbose)
+            if api_resource is not None:
+                api_resource.save_current_hash()
+                api_resource.pop_hash_state()
+            assert len(results)==len(self.metrics_names)
+            self._dws_state.write_metrics_and_complete({n:v for (n, v) in
+                                                        zip(self.metrics_names, results)})
+            return results
+
+
     WrappedModel.__name__ = Cls.__name__ # this is to fake things out for the reporting
     if workspace.verbose:
         print("dws>> Wrapped model class %s" % Cls.__name__)

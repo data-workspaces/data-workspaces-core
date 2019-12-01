@@ -93,6 +93,8 @@ def _add_to_hash(array_data, hash_state):
         else:
             raise Exception("Tensor type %s is not in eager mode, cannot convert to numpy, value was: %s"%
                             (type(array_data), repr(array_data)))
+    elif isinstance(array_data, np.uint8) or isinstance(array_data, np.int8) or isinstance(array_data, np.int32) or isinstance(array_data, np.int64):
+        hash_state.update(bytes(int(array_data)))
     else:
         raise Exception("Unable to hash data type %s, data was: %s"%
                         (type(array_data), array_data))
