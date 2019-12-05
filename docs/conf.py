@@ -180,3 +180,4 @@ epub_exclude_files = ['search.html']
 
 
 # -- Extension configuration -------------------------------------------------
+html_logo = '_static/dws-med-logo.png'
