@@ -28,7 +28,7 @@ try:
     import pandas
     PANDAS_INSTALLED=True
 except ImportError:
-    PANSAS_INSTALLED=False
+    PANDAS_INSTALLED=False
 
 from dataworkspaces.kits.wrapper_utils import NotSupportedError
 
