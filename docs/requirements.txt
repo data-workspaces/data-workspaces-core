@@ -5,3 +5,4 @@ sphinx-click
 jupyter # needed for kits doc
 numpy # needed for kits doc
 scikit-learn # needed for kits doc
+git+https://github.com/data-workspaces/repo2docker.git # imported indirectly into dws.py
