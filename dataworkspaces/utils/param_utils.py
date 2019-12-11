@@ -3,12 +3,15 @@
 Definition of configuration parameters
 """
 import socket
-from typing import Dict, Callable, Any, Optional
+from typing import Dict, Callable, Any, Optional, Tuple, cast
 assert Dict
 assert Callable
+from os.path import isabs, expanduser, abspath, join
+import click
 
 from dataworkspaces.utils.snapshot_utils import \
     validate_template
+from dataworkspaces.utils.file_utils import LocalPathType, get_subpath_from_absolute
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
@@ -71,11 +74,28 @@ RESULTS_MOVE_EXCLUDE_FILES=define_param(
     validate_move_exclude_files
 )
 
+def validate_scratch_directory(value):
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise ParamValidationError("Directory path should be a string, not %s" % type(value))
+    if isabs(value):
+        raise ParamValidationError("Scratch directory path should be relative to the workspace")
+
+SCRATCH_DIRECTORY=define_param(
+    "scratch_directory",
+    None,
+    "Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
+    "If this is set, it is relative to the workspace directory.",
+    validate_scratch_directory
+)
+
 def get_global_param_defaults():
     """Return a mapping of all default values of global params for use
     in generating the initial config file
     """
-    return {n:d.default_value for (n, d) in PARAM_DEFS.items()}
+    return {n:d.default_value for (n, d) in PARAM_DEFS.items()
+            if d.default_value is not None}
 
 
 #########################################################
@@ -97,8 +117,9 @@ def get_local_param_defaults(hostname=None):
     the initial config file. The hostname is usually provided explicitly
     by the user
     """
-    defaults = {param:LOCAL_PARAM_DEFS[param].default_value
-                for param in LOCAL_PARAM_DEFS.keys()}
+    defaults = {param:defn.default_value
+                for (param, defn) in LOCAL_PARAM_DEFS.items()
+                if defn.default_value is not None}
     if hostname is not None:
         defaults[HOSTNAME] = hostname
     return defaults
@@ -115,3 +136,81 @@ HOSTNAME=define_local_param(
     help="Hostname to identify this machine in snapshots.",
     validation_fn=validate_hostname
 )
+
+def validate_local_scratch_directory(value):
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise ParamValidationError("Directory path should be a string, not %s" % type(value))
+    if not isabs(value):
+        raise ParamValidationError("Local scratch directory path should be absolute")
+
+LOCAL_SCRATCH_DIRECTORY=define_local_param(
+    "local_scratch_directory",
+    None,
+    "Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
+    "If this is set, it is absolute and only specific to the local machine.",
+    validate_local_scratch_directory
+)
+
+def init_scratch_directory(scratch_dir:str, workspace_dir:str,
+                           global_params:Dict[str,Any], local_params:Dict[str,Any]) \
+                           -> Tuple[str,Optional[str]]:
+    """Given the user-provided or default scratch directory, set the SCRATCH_DIRECTORY
+    and LOCAL_SCRATCH_DIRECTORY parameters accordingly. One only will be set, with preference
+    to the global parameter, which is relative to the workspace. Returns a tuple of the absolute
+    and the gitignore entry (if any) for the scratch_directory
+    """
+    abs_scratch_dir = abspath(expanduser(scratch_dir)) if not isabs(scratch_dir) else scratch_dir
+    scratch_dir_gitignore = None # type: Optional[str]
+    if abs_scratch_dir.startswith(workspace_dir):
+        rel_scratch_dir = get_subpath_from_absolute(workspace_dir, abs_scratch_dir)
+        global_params[SCRATCH_DIRECTORY] = rel_scratch_dir # always store a relative directory
+        # scratch dir gitignore should start with / to indicate that this should only
+        # match the exact path relative to the git repo root.
+        if rel_scratch_dir is None:
+            raise ConfigurationError("Scratch directory cannot be equal to workspace directory. "+
+                                     "It should either be a subdirectory or completely outside it.")
+        if rel_scratch_dir.startswith('./'):
+            scratch_dir_gitignore = rel_scratch_dir[1:]
+        else:
+            scratch_dir_gitignore = '/'
+    else:
+        local_params[LOCAL_SCRATCH_DIRECTORY] = abs_scratch_dir
+    return (abs_scratch_dir, scratch_dir_gitignore)
+
+def clone_scratch_directory(workspace_dir:str, global_params:Dict[str,Any],
+                            local_params:Dict[str,Any],
+                            batch:bool=False) -> str:
+    """Set the scratch directory parameters for a cloned copy of the workspace,
+    updating local_params if neded.
+    Returns the absolute path for the scratch directory on this system.
+    """
+    if SCRATCH_DIRECTORY in global_params:
+        return join(workspace_dir, global_params[SCRATCH_DIRECTORY])
+    elif not batch:
+        local_path = \
+            cast(str,
+                 click.prompt("Please specify a location for this workspace's scratch directory (must be outside of workspace)",
+                              type=LocalPathType(exists=False, must_be_outside_of_workspace=workspace_dir)))
+        local_params[LOCAL_SCRATCH_DIRECTORY] = local_path
+        return local_path
+    else:
+        # TODO: come up with a standard way of handling this when called from the API - either by
+        # letting the user provide values in advance or by having some standard defaults.
+        raise ConfigurationError("Scratch directory was not within workspaces and we are running in batch mode. No way to ask user for location.")
+
+def get_scratch_directory(workspace_dir:str, global_params:Dict[str,Any],
+                          local_params:Dict[str,Any]) -> str:
+    """Given the global and local params, return the absolute path
+    of the scratch directory for this workspace. If it was not specified
+    in either, raise an error indicating that user needs to migrate.
+    """
+    if SCRATCH_DIRECTORY in global_params:
+        return join(workspace_dir, global_params[SCRATCH_DIRECTORY])
+    elif LOCAL_SCRATCH_DIRECTORY in local_params:
+        return local_params[LOCAL_SCRATCH_DIRECTORY]
+    else:
+        raise ConfigurationError("This workspace was created before the scratch space feature was implemented. "+
+                                 "Please run 'dws migrate' to add the necessary configuration")
+

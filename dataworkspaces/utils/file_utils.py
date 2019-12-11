@@ -77,23 +77,48 @@ def does_subpath_exist(base_dir:str, subpath:str, must_be_file:bool=False,
     else:
         return False # does not exist, but a special file
 
+def parent_path(path):
+    """Return the path to the parent directory of path"""
+    return abspath(join(path, os.pardir))
+
 class LocalPathType(click.Path):
     """A subclass of click's Path input parameter type used to validate a local path
     where we are going to put a resource. The path does not necessarily exist yet, but
     we need to validate that the parent directory exists and is writable.
+
+    If must_be_outside_of_workspace is set to the workspace directory, we validate
+    that the path is outside of the workspace.
+
+    If allow_multiple_levels_of_missing_dirs is True, we go up the tree to find the
+    first parent in the hierarchy that exists and check its permissions. This works
+    in cases where we're going to use os.makedirs() to create multiple levels of
+    the hierarchy.
     """
-    def __init__(self, exists=False):
+    def __init__(self, exists:bool=False, must_be_outside_of_workspace:Optional[str]=None,
+                 allow_multiple_levels_of_missing_dirs:bool=False):
         super().__init__(exists=exists, file_okay=False, dir_okay=True, writable=True,
                          # always use unicode, not bytes
                          path_type=str)
+        self.must_be_outside_of_workspace = must_be_outside_of_workspace
+        self.allow_multiple_levels_of_missing_dirs = allow_multiple_levels_of_missing_dirs
 
     def convert(self, value, param, ctx):
-        rv = super().convert(value, param, ctx)
-        parent = dirname(rv)
-        if not exists(parent):
-            self.fail('%s "%s" does not exist.' % (self.path_type, parent), param, ctx)
-        if not isdir(parent):
-            self.fail('%s "%s" is a file.' % (self.path_type, parent), param, ctx)
-        if not os.access(parent, os.W_OK):
-            self.fail('%s "%s" is not writable.' % (self.path_type, parent), param, ctx)
-        return abspath(expanduser(rv))
+        rv = abspath(expanduser(super().convert(value, param, ctx)))
+        if isdir(rv):
+            parent_dir = rv
+        else:
+            parent_dir = parent_path(rv)
+        if self.allow_multiple_levels_of_missing_dirs:
+            while not isdir(parent_dir) and parent_dir!='/':
+                parent_dir = parent_path(parent_dir)
+        if not exists(parent_dir):
+            self.fail('%s "%s" does not exist.' % (self.path_type, parent_dir), param, ctx)
+        if not isdir(parent_dir):
+            self.fail('%s "%s" is a file.' % (self.path_type, parent_dir), param, ctx)
+        if not os.access(parent_dir, os.W_OK):
+            self.fail('%s "%s" is not writable.' % (self.path_type, parent_dir), param, ctx)
+        if (self.must_be_outside_of_workspace is not None) and \
+           commonpath([self.must_be_outside_of_workspace, rv]) in (self.must_be_outside_of_workspace, rv):
+            self.fail('%s must be outside of workspace "%s"' %
+                      (self.path_type, self.must_be_outside_of_workspace), param, ctx)
+        return rv

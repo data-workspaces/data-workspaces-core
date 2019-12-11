@@ -9,13 +9,16 @@ from dataworkspaces.workspace import init_workspace, RESOURCE_ROLE_CHOICES
 
 
 def init_command(name:str, hostname:str, create_resources:List[str],
+                 scratch_dir:Optional[str]=None,
                  git_fat_remote:Optional[str]=None, git_fat_user:Optional[str]=None,
                  git_fat_port:Optional[int]=None,
                  git_fat_attributes:Optional[str]=None,
                  batch:bool=False, verbose:bool=False):
     workspace_dir=abspath(expanduser(os.curdir))
+    if scratch_dir is None:
+        scratch_dir = join(workspace_dir, 'scratch')
     workspace = init_workspace('dataworkspaces.backends.git', #TODO: remove hardcoding
-                               name, hostname, batch, verbose, workspace_dir,
+                               name, hostname, batch, verbose, scratch_dir, workspace_dir,
                                git_fat_remote, git_fat_user, git_fat_port,
                                git_fat_attributes)
 

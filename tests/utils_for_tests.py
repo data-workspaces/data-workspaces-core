@@ -83,11 +83,13 @@ class BaseCase(HelperMethods, unittest.TestCase):
         if os.path.exists(TEMPDIR):
             shutil.rmtree(TEMPDIR)
 
-    def _setup_initial_repo(self, create_resources=None):
+    def _setup_initial_repo(self, create_resources=None, scratch_dir=None):
+        init_cmd = ['init']
         if create_resources is not None:
-            self._run_dws(['init', '--create-resources='+create_resources], cwd=WS_DIR)
-        else:
-            self._run_dws(['init'], cwd=WS_DIR)
+           init_cmd.append('--create-resources='+create_resources)
+        if scratch_dir is not None:
+            init_cmd.append('--scratch-directory='+scratch_dir)
+        self._run_dws(init_cmd, cwd=WS_DIR)
         self._run_git(['init', '--bare', 'workspace_origin.git'],
                       cwd=TEMPDIR)
         self._run_git(['remote', 'add', 'origin', WS_ORIGIN], cwd=WS_DIR)
@@ -109,7 +111,6 @@ class SimpleCase(HelperMethods, unittest.TestCase):
         os.mkdir(TEMPDIR)
         os.mkdir(WS_DIR)
         self.dws=find_exe("dws", "Make sure you have enabled your python virtual environment")
-        print("created %s" % WS_DIR) # xxX
 
     def tearDown(self):
         if os.path.exists(TEMPDIR):

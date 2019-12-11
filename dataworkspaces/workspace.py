@@ -185,6 +185,13 @@ class Workspace(metaclass=ABCMeta):
         self._set_local_param(name, value)
 
     @abstractmethod
+    def get_scratch_directory(self) -> str:
+        """Return an absolute path for the local scratch directory to be used
+        by this workspace.
+        """
+        pass
+
+    @abstractmethod
     def get_resource_names(self) -> Iterable[str]:
         """Return an iterable of resource names. The names should be
         returned in a consistent order, specifically the order in which
@@ -543,7 +550,7 @@ def find_and_load_workspace(batch:bool, verbose:bool, uri_or_local_path:Optional
 
 
 def init_workspace(backend_name:str, workspace_name:str, hostname:str,
-                   batch:bool, verbose:bool,
+                   batch:bool, verbose:bool, scratch_dir:str,
                    *args, **kwargs) -> Workspace:
     """Given a requested workspace backend, and backend-specific parameters,
     initialize a new workspace, then instantitate and return it.
@@ -560,7 +567,7 @@ def init_workspace(backend_name:str, workspace_name:str, hostname:str,
              .init_workspace(workspace_name, dataworkspaces.__version__,
                              get_global_param_defaults(),
                              get_local_param_defaults(hostname),
-                             batch, verbose, *args, **kwargs)
+                             batch, verbose, scratch_dir, *args, **kwargs)
 
 def clone_workspace(backend_name:str, hostname:str, batch:bool, verbose:bool, *args) -> Workspace:
     """Instantiate the workspace factory based on backend name and then clone the

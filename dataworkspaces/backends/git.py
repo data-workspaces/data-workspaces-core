@@ -30,7 +30,8 @@ from dataworkspaces.utils.git_fat_utils import \
     run_git_fat_pull_if_needed, validate_git_fat_in_path, run_git_fat_push_if_needed,\
     setup_git_fat_for_repo, is_a_git_fat_repo
 from dataworkspaces.utils.file_utils import safe_rename, get_subpath_from_absolute
-from dataworkspaces.utils.param_utils import HOSTNAME
+from dataworkspaces.utils.param_utils import HOSTNAME, init_scratch_directory,\
+    clone_scratch_directory, get_scratch_directory
 from dataworkspaces.utils.lineage_utils import \
     FileLineageStore, LineageStore, ResourceRef, ResourceLineage
 
@@ -105,6 +106,8 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         self.resource_local_params_by_name = \
             self._load_json_file(RESOURCE_LOCAL_PARAMS_PATH) # type: Dict[str,JSONDict]
         self.lineage_store = GitFileLineageStore(self)
+        self.scratch_dir = get_scratch_directory(self.workspace_dir, self.global_params,
+                                                 self.local_params)
 
     def get_instance(self) -> str:
         return self.instance
@@ -114,6 +117,9 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
 
     def get_lineage_store(self) -> LineageStore:
         return self.lineage_store
+
+    def get_scratch_directory(self) -> str:
+        return self.scratch_dir
 
     def _load_json_file(self, relative_path):
         f_path = join(self.workspace_dir, relative_path)
@@ -473,6 +479,7 @@ class WorkspaceFactory(ws.WorkspaceFactory):
     def init_workspace(workspace_name:str, dws_version:str, # type: ignore
                        global_params:JSONDict, local_params:JSONDict,
                        batch:bool, verbose:bool,
+                       scratch_dir:str,
                        workspace_dir:str,
                        git_fat_remote:Optional[str]=None,
                        git_fat_user:Optional[str]=None,
@@ -491,6 +498,11 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         os.mkdir(snapshot_dir)
         snapshot_md_dir = join(workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
         os.mkdir(snapshot_md_dir)
+
+        (abs_scratch_dir, scratch_dir_gitignore) = init_scratch_directory(scratch_dir,
+                                                                          workspace_dir,
+                                                                          global_params,
+                                                                          local_params)
         with open(join(workspace_dir, CONFIG_FILE_PATH), 'w') as f:
             json.dump({'name':workspace_name, 'dws-version':dws_version,
                        'global_params':global_params},
@@ -503,10 +515,12 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             json.dump({}, f, indent=2)
         os.mkdir(join(workspace_dir, CURRENT_LINEAGE_DIR_PATH))
 
-        with open(join(workspace_dir, GIT_IGNORE_FILE_PATH), 'w') as f:
+        with open(join(workspace_dir, GIT_IGNORE_FILE_PATH), 'a') as f:
                 f.write("%s\n" % basename(LOCAL_PARAMS_PATH))
                 f.write("%s\n" % basename(RESOURCE_LOCAL_PARAMS_PATH))
                 f.write("current_lineage/\n")
+                if scratch_dir_gitignore is not None:
+                    f.write(scratch_dir_gitignore+"\n")
         if exists(join(workspace_dir, '.git')):
             click.echo("%s is already a git repository, will just add to it"%
                        workspace_dir)
@@ -516,6 +530,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 [CONFIG_FILE_PATH, RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
                 verbose=verbose)
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
+        if not isdir(abs_scratch_dir):
+            if verbose:
+                print("Creating scratch directory %s" % abs_scratch_dir)
+            os.makedirs(abs_scratch_dir)
 
         if git_fat_remote is not None:
             setup_git_fat_for_repo(workspace_dir, git_fat_remote, git_fat_user,
@@ -574,6 +592,19 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                     raise ConfigurationError("Clone target directory %s already exists" % new_name)
                 safe_rename(initial_path, new_name)
                 directory = new_name
+
+            cf_path = join(directory, CONFIG_FILE_PATH)
+            if not exists(cf_path):
+                raise ConfigurationError("Did not find workspace config file %s" % cf_path)
+            with open(cf_path, 'r') as f:
+                cf_data = json.load(f)
+            global_params = cf_data['global_params']
+            # get the scratch directory (also adds local param if needed)
+            abs_scratch_dir = clone_scratch_directory(directory, global_params, local_params, batch)
+            if not isdir(abs_scratch_dir):
+                if verbose:
+                    print("Creating scratch directory %s" % abs_scratch_dir)
+                os.makedirs(abs_scratch_dir)
             with open(join(directory, LOCAL_PARAMS_PATH), 'w') as f:
                 json.dump(local_params, f, indent=2) # create an initial local params file
             with open(join(directory, RESOURCE_LOCAL_PARAMS_PATH), 'w') as f:

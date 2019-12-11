@@ -455,4 +455,3 @@ def ensure_entry_in_gitignore(repo_dir:str, gitignore_rel_path:str, entry:str,
                         cwd=repo_dir, verbose=verbose)
     return True
 
-

@@ -34,6 +34,7 @@ from dataworkspaces.workspace import \
 from dataworkspaces.errors import BatchModeError
 from dataworkspaces.utils.param_utils import DEFAULT_HOSTNAME
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
+from dataworkspaces.utils.file_utils import LocalPathType
 
 CURR_DIR = abspath(expanduser(curdir))
 CURR_DIRNAME=basename(CURR_DIR)
@@ -176,6 +177,8 @@ RESOURCE_PARAM = ResourceParamType()
 @click.option('--create-resources', default=[], type=RESOURCE_PARAM,
               help="Initialize the workspace with subdirectories for the specified resource roles. Choices are 'all' or any comma-separated combination of %s."
               % ', '.join(RESOURCE_ROLE_CHOICES))
+@click.option('--scratch-directory', default=None, type=LocalPathType(allow_multiple_levels_of_missing_dirs=True),
+              help="Local scratch directory (defaults to WORKSPACE_DIR/scratch)")
 @click.option('--git-fat-remote', type=str,
               help="Initialize the workspace with the git-fat large file extension "+
                    "and use the specified URL for the remote datastore")
@@ -189,8 +192,8 @@ RESOURCE_PARAM = ResourceParamType()
               " here, you can always add the .gitattributes file later.")
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
-def init(ctx, hostname, name, create_resources, git_fat_remote,
-         git_fat_user, git_fat_port, git_fat_attributes):
+def init(ctx, hostname, name, create_resources, scratch_directory,
+         git_fat_remote, git_fat_user, git_fat_port, git_fat_attributes):
     """Initialize a new workspace"""
     if hostname is None:
         if not ctx.obj.batch:
@@ -203,7 +206,8 @@ def init(ctx, hostname, name, create_resources, git_fat_remote,
         raise click.BadOptionUsage(message="If you specify --git-fat-user, --git-fat-port-, or --git-fat-attributes, "+
                                    "you also need to specify --git-fat-remote",
                                    option_name='--git-fat-remote')
-    init_command(name, hostname, create_resources, git_fat_remote,
+    init_command(name, hostname, create_resources, scratch_directory,
+                 git_fat_remote,
                  git_fat_user, git_fat_port, git_fat_attributes,
                  batch=ctx.obj.batch, verbose=ctx.obj.verbose)
 
