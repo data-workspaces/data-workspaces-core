@@ -2,100 +2,92 @@
 import click
 from typing import Optional, cast, Dict, List, Any
 assert Dict and List and Any # for pyflakes
+from collections import Counter
 
 from dataworkspaces.workspace import RESOURCE_ROLE_CHOICES, Workspace, \
-    SnapshotWorkspaceMixin, JSONDict
+    SnapshotWorkspaceMixin
+from dataworkspaces.utils.print_utils import print_columns, ColSpec
 
 
 
 METRIC_NAME_WIDTH=18
 METRIC_VAL_WIDTH=12
 
+NUM_METRICS=2
+
 def print_snapshot_history(workspace:SnapshotWorkspaceMixin, reverse:bool=True, max_count:Optional[int]=None):
     history = workspace.list_snapshots(reverse, max_count)
-    click.echo("\nHistory of snapshots")
-    click.echo("%s %s %s %s %s %s" %
-               ('Hash'.ljust(8), 'Tags'.ljust(20), 'Created'.ljust(19),
-                'Metric'.ljust(METRIC_NAME_WIDTH),
-                'Value'.ljust(METRIC_VAL_WIDTH),
-                'Message'))
-    def format_metric_val(val):
-        if val is None:
-            return 'N/A'.ljust(METRIC_VAL_WIDTH)
-        elif not isinstance(val, float):
-            return str(val).ljust(METRIC_VAL_WIDTH)
-        elif val<1.0 and val>-1.0:
-            return ('%.3f'%val).ljust(METRIC_VAL_WIDTH)
-        else:
-            return ('%.1f'%val).ljust(METRIC_VAL_WIDTH)
+    # find the most common metrics
+    mcounter = Counter() # type: Counter
+    for md in history:
+        if md.metrics is not None:
+            mcounter.update(md.metrics.keys())
+    metric_names = [m for (m, cnt) in mcounter.most_common(NUM_METRICS)]
+    spec = {
+        'Hash':ColSpec(width=8),
+        'Tags':ColSpec(width=20),
+        'Created':ColSpec(width=19),
+        'Message':ColSpec(width=30)
+    }
+    hashes = [] # type: List[str]
+    tags = [] # type: List[str]
+    created = [] # type: List[str]
+    metrics = {n:[] for n in metric_names} # type: Dict[str,List[Any]]
+    messages = [] # type: List[str]
+
     returned = 0
     for md in history:
-        metric_name = None # type: Optional[str]
-        metric_value = None # type: Any
-        if md.metrics and len(md.metrics)>0:
-            (metric_name, metric_value) = next(md.metrics.items().__iter__())
-        click.echo('%s %s %s %s %s %s' %
-                   (md.hashval[0:7]+' ',
-                    (', '.join(md.tags) if md.tags is not None and len(md.tags)>0 else 'N/A').ljust(20),
-                    md.timestamp[0:-7],
-                    (metric_name if metric_name is not None else 'N/A').ljust(METRIC_NAME_WIDTH),
-                    format_metric_val(metric_value),
-                    md.message if md.message is not None and
-                                    md.message!='' else 'N/A'))
+        hashes.append(md.hashval[0:7])
+        tags.append(', '.join(md.tags))
+        created.append(md.timestamp[0:-7])
+        messages.append(md.message)
+        for m in metric_names:
+            metrics[m].append(md.metrics[m] if md.metrics is not None and m in md.metrics else None)
         returned += 1
+    columns = {'Hash':hashes, 'Tags':tags, 'Created':created}
+    for m in metric_names:
+        columns[m] = metrics[m]
+    columns['Message'] = messages
+    click.echo("\n")
+    print_columns(columns, null_value='', spec=spec,
+                  paginate=False,
+                  title="History of snapshots")
     if max_count is not None and returned==max_count:
         click.echo('Showing first %d snapshots' % max_count)
     else:
         click.echo("%d snapshots total" % returned)
 
 
-def pp_resource_params(params:JSONDict, indent:int=2, verbose:bool=False):
-    if params['resource_type'] == 'git':
-        click.echo(' '*indent, nl=False)
-        click.echo('git repo %s' % params['name'])
-        if verbose:
-            click.echo(' '*(indent+2)+ ('Remote: %s' % params['remote_origin_url']))
-        return
-    elif params['resource_type'] == 'git-subdirectory':
-        click.echo(' '*indent, nl=False)
-        click.echo('git subdirectory %s' % params['name'])
-        if verbose:
-            click.echo(' '*(indent+2)+ ('Relative path: %s' % params['relative_path']))
-        return
-    elif params['resource_type'] == 'file':
-        click.echo(' '*indent, nl=False)
-        click.echo('local files %s' % params['name'])
-        if verbose:
-            click.echo(' '*(indent+2), nl=False)
-            click.echo('LocalPath: %s' % params['local_path'])
-        return
-    else:
-        click.echo(' '*indent, nl=False)
-        click.echo("%s %s" % (params['resource_type'], params['name']))
-        if verbose:
-            for p in params.keys():
-                if p in ['resource_type', 'name']:
-                    continue
-                click.echo(' '*(indent+2), nl=False)
-                click.echo("%s: %s" % (p, params[p]))
 
 def print_resource_status(workspace:Workspace):
-        items = { } # type: Dict[str,List[Dict[str,Any]]]
-        for c in RESOURCE_ROLE_CHOICES:
-            items[c] = []
+        names_by_role = {role:[] for role in RESOURCE_ROLE_CHOICES} # type:Dict[str,List[str]]
+        resource_names = []
+        roles = []
+        types = []
+        params = []
+        missing_roles = []
+        # we are going to order resources by role
         for rname in workspace.get_resource_names():
-            params = workspace._get_resource_params(rname)
-            items[params['role']].append(params)
-        for r in RESOURCE_ROLE_CHOICES:
-            if items[r] != []:
-                click.echo('Role %s' % r)
-                click.echo('-' *(5+len(r)))
-                for rp in items[r]:
-                    pp_resource_params(rp, indent=2, verbose=workspace.verbose) 
+            role = workspace.get_resource_role(rname)
+            names_by_role[role].append(rname)
+        for role in RESOURCE_ROLE_CHOICES:
+            if len(names_by_role[role])>0:
+                for rname in names_by_role[role]:
+                    resource_names.append(rname)
+                    roles.append(role)
+                    types.append(workspace.get_resource_type(rname))
+                    params.append(',\n'.join(['%s=%s'%(pname,pval)
+                                             for (pname, pval)
+                                             in workspace._get_resource_params(rname).items()
+                                             if pname not in ('resource_type', 'name', 'role')]))
             else:
-                click.echo('Role %s' % r)
-                click.echo('-' *(5+len(r)))
-                click.echo('  No items with role %s' % r)
+                missing_roles.append(role)
+        print_columns({'Resource':resource_names, 'Role':roles, 'Type':types, 'Parameters':params},
+                      #spec={'Parameters':ColSpec(width=40)},
+                      null_value='', title='Resources for workspace: %s'%workspace.name,
+                      paginate=False)
+        if len(missing_roles)>0:
+            click.echo("No resources for the following roles: %s." % ', '.join(missing_roles))
 
 
 def status_command(workspace:Workspace, history:bool, limit:Optional[int]=None):

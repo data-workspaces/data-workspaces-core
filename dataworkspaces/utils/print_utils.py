@@ -13,6 +13,8 @@ class ColSpec(NamedTuple):
 
 
 def pad_left(s, width):
+    if '\n' in s:
+        return '\n'.join([pad_left(fragment, width) for fragment in s.split('\n')])
     if len(s)==width:
         return s
     if len(s)<width:
@@ -27,6 +29,8 @@ def pad_left(s, width):
         return '\n'.join(wrapped)
 
 def pad_right(s, width):
+    if '\n' in s:
+        return '\n'.join([pad_right(fragment, width) for fragment in s.split('\n')])
     if len(s)==width:
         return s
     if len(s)<width:
@@ -46,8 +50,13 @@ class FormattedColumns(NamedTuple):
     columns: Dict[str, List[str]]
     widths: List[int]
 
-def format_columns(columns:Dict[str,Any], precision=2, spec:Dict[str,ColSpec]={})\
+def format_columns(columns:Dict[str,Any], precision=-1, null_value:str='None',
+                   spec:Dict[str,ColSpec]={})\
     -> FormattedColumns:
+    """Format and pad the individual columns.
+
+    A precision of -1 means to adjust based on whether absolute value is less than one.
+    """
     str_cols = {} # type: Dict[str,List[str]]
     # start an iteration to get the length of the first column
     nitems = 0
@@ -71,12 +80,26 @@ def format_columns(columns:Dict[str,Any], precision=2, spec:Dict[str,ColSpec]={}
         # find the maxium width, determine if numeric, and do rounding
         for v in values:
             if isinstance(v, float):
-                v = round(v, col_precision)
-            if not isinstance(v, (int, float)):
+                if col_precision!=-1:
+                    v = round(v, col_precision)
+                elif v>-1.0 and v<1.0:
+                    v = round(v, 3)
+                else:
+                    v = round(v, 1)
+            if not isinstance(v, (int, float)) and v is not None:
                 all_numeric = False
-            s = str(v)
-            if len(s)>max_value_width:
-                max_value_width = len(s)
+            if v is not None and v!='':
+                s = str(v)
+            else:
+                s = null_value
+            if '\n' in s:
+                # special case if there are line breaks
+                fragments = s.split('\n')
+                len_s = max([len(fragment) for fragment in fragments])
+            else:
+                len_s = len(s)
+            if len_s>max_value_width:
+                max_value_width = len_s
             strvalues.append(s)
         if cspec is not None and cspec.width is not None:
             colwidth = cspec.width
@@ -115,7 +138,13 @@ def format_row(columns:List[str], widths:List[int]) -> str:
             lineno += 1
     return row[0:-1]
 
-def row_generator(cols:FormattedColumns, nl=False):
+def row_generator(cols:FormattedColumns, title:Optional[str]=None, nl=False):
+    if title is not None:
+        for line in title.split('\n'):
+            if nl:
+                yield line + '\n'
+            else:
+                yield line
     #header row
     for line in format_row(cols.headers, cols.widths).split('\n'):
         if nl:
@@ -136,11 +165,16 @@ def row_generator(cols:FormattedColumns, nl=False):
             else:
                 yield line
 
-def print_columns(columns:Dict[str,Any], precision=2, spec:Dict[str,ColSpec]={},
-                  paginate:bool=True):
-    cols = format_columns(columns, precision, spec)
+def print_columns(columns:Dict[str,Any], precision=-1, null_value:str='None',
+                  spec:Dict[str,ColSpec]={}, paginate:bool=True,
+                  title:Optional[str]=None) -> None:
+    """Print the columns as a table.
+
+    A precision of -1 means to adjust based on whether absolute value is less than one.
+    """
+    cols = format_columns(columns, precision, null_value, spec)
     if paginate:
-        click.echo_via_pager(row_generator(cols, nl=True))
+        click.echo_via_pager(row_generator(cols, title=title, nl=True))
     else:
-        for line in row_generator(cols):
+        for line in row_generator(cols, title=title):
             click.echo(line)
