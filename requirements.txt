@@ -1,3 +1,4 @@
 click
 mypy
+requests
 git+https://github.com/data-workspaces/repo2docker.git

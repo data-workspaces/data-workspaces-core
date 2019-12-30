@@ -28,6 +28,7 @@ from dataworkspaces.commands.diff import diff_command
 from dataworkspaces.commands.lineage import lineage_graph_command
 from dataworkspaces.commands.deploy import deploy_build_command,\
                                            deploy_run_command
+from dataworkspaces.commands.config import config_command
 from dataworkspaces.workspace import \
     RESOURCE_ROLE_CHOICES, ResourceRoles,\
     find_and_load_workspace, _find_containing_workspace
@@ -696,6 +697,35 @@ def deploy_run(ctx, image_name:Optional[str], no_mount_ssh_keys:bool):
     deploy_run_command(workspace, image_name, no_mount_ssh_keys)
 
 deploy.add_command(deploy_run)
+
+
+@click.command()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.argument('param_name', metavar="[PARAMETER_NAME]", default=None, required=False)
+@click.argument('param_value', metavar="[PARAMETER_VALUE]", default=None, required=False)
+@click.pass_context
+def config(ctx, workspace_dir, param_name, param_value):
+    """Get or set configuration parameters. Local parameters are only for this
+    copy of the workspace, while global parameters are stored centrally and
+    affect all copies.
+
+    If neither PARAMETER_NAME nor PARAMETER_VALUE are specified, this command
+    prints a table of all parameters and their information (scope, value, default or not,
+    and help text). If just PARAMETER_NAME is specified, it prints the specified parameter's
+    information. Finally, if both the parameter name and value are specified, the parameter
+    is set to the specified value."""
+    ns = ctx.obj
+
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
+    config_command(workspace, param_name, param_value)
+
+cli.add_command(config)
 
 
 if __name__=='__main__':

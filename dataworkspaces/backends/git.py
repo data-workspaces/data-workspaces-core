@@ -31,7 +31,8 @@ from dataworkspaces.utils.git_fat_utils import \
     setup_git_fat_for_repo, is_a_git_fat_repo
 from dataworkspaces.utils.file_utils import safe_rename, get_subpath_from_absolute
 from dataworkspaces.utils.param_utils import HOSTNAME, init_scratch_directory,\
-    clone_scratch_directory, get_scratch_directory
+    clone_scratch_directory, get_scratch_directory, SCRATCH_DIRECTORY,\
+    LOCAL_SCRATCH_DIRECTORY
 from dataworkspaces.utils.lineage_utils import \
     FileLineageStore, LineageStore, ResourceRef, ResourceLineage
 
@@ -119,7 +120,11 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         return self.lineage_store
 
     def get_scratch_directory(self) -> str:
-        return self.scratch_dir
+        if self.scratch_dir is not None:
+            return self.scratch_dir
+        else:
+            raise ConfigurationError("Neither the %s nor %s parameters are set, so cannot find scratch directory. Please set one using 'dws config'."%
+                                     (SCRATCH_DIRECTORY, LOCAL_SCRATCH_DIRECTORY))
 
     def _load_json_file(self, relative_path):
         f_path = join(self.workspace_dir, relative_path)

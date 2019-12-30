@@ -8,6 +8,7 @@ assert Dict
 assert Callable
 from os.path import isabs, expanduser, abspath, join
 import click
+import json
 
 from dataworkspaces.utils.snapshot_utils import \
     validate_template
@@ -22,15 +23,32 @@ class ParamNotFoundError(ConfigurationError):
 class ParamValidationError(ConfigurationError):
     pass
 
+class ParamParseError(ConfigurationError):
+    pass
+
+ParseFnType = Callable[[str], Any]
 ValidationFnType = Callable[[Any], None]
 class ParamDef:
     def __init__(self, name:str, default_value:Any, help:str,
+                 parse_fn:Optional[ParseFnType]=None,
                  validation_fn:Optional[ValidationFnType]=None):
         self.name = name
         self.default_value = default_value
+        self.help = help
+        self.parse_fn = parse_fn
         self.validation_fn = validation_fn
         if validation_fn:
             validation_fn(default_value)
+
+    def parse(self, str_value:str) -> Any:
+        if self.parse_fn:
+            try:
+                return self.parse_fn(str_value)
+            except Exception as e:
+                raise ParamParseError("Unable to parse parameter %s value %s"%
+                                      (self.name, repr(str_value))) from e
+        else:
+            return str_value
 
     def validate(self, value:Any)->None:
         if self.validation_fn:
@@ -46,17 +64,19 @@ LOCAL_PARAM_DEFS = {} # type: Dict[str, ParamDef]
 
 
 def define_param(name:str, default_value:Any, help:str,
+                 parse_fn:Optional[ParseFnType]=None,
                  validation_fn:Optional[ValidationFnType]=None) -> str:
     global PARAM_DEFS
     assert name not in PARAM_DEFS
     assert name not in LOCAL_PARAM_DEFS # don't want duplicates across local and global
-    PARAM_DEFS[name] = ParamDef(name, default_value, help, validation_fn)
+    PARAM_DEFS[name] = ParamDef(name, default_value, help, parse_fn, validation_fn)
     return name
 
 RESULTS_DIR_TEMPLATE=define_param(
     'results.dir_template',
     "snapshots/{HOSTNAME}-{TAG}",
     "Template describing where results files will be moved during snapshot",
+    None,
     validate_template
 )
 
@@ -71,6 +91,7 @@ RESULTS_MOVE_EXCLUDE_FILES=define_param(
     'results.move_exclude_files',
     ['README.txt', 'README.rst', 'README.md'],
     "List of files to exclude when moving results to a subdirectory during snapshot.",
+    lambda s:json.loads(s),
     validate_move_exclude_files
 )
 
@@ -87,6 +108,7 @@ SCRATCH_DIRECTORY=define_param(
     None,
     "Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
     "If this is set, it is relative to the workspace directory.",
+    None,
     validate_scratch_directory
 )
 
@@ -104,11 +126,13 @@ def get_global_param_defaults():
 # These are parameters local to the current install, and not
 # tracked through the workspace.
 
-def define_local_param(name, default_value, help, validation_fn=None):
+def define_local_param(name:str, default_value:Optional[Any],
+                       help:str, parse_fn:Optional[ParseFnType]=None,
+                       validation_fn:Optional[ValidationFnType]=None):
     global LOCAL_PARAM_DEFS
     assert name not in LOCAL_PARAM_DEFS
     assert name not in PARAM_DEFS # don't want duplicates across local and global
-    LOCAL_PARAM_DEFS[name] = ParamDef(name, default_value, help, validation_fn)
+    LOCAL_PARAM_DEFS[name] = ParamDef(name, default_value, help, parse_fn, validation_fn)
     return name
 
 
@@ -134,6 +158,7 @@ HOSTNAME=define_local_param(
     'hostname',
     DEFAULT_HOSTNAME,
     help="Hostname to identify this machine in snapshots.",
+    parse_fn=None,
     validation_fn=validate_hostname
 )
 
@@ -150,6 +175,7 @@ LOCAL_SCRATCH_DIRECTORY=define_local_param(
     None,
     "Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
     "If this is set, it is absolute and only specific to the local machine.",
+    None,
     validate_local_scratch_directory
 )
 
@@ -201,16 +227,18 @@ def clone_scratch_directory(workspace_dir:str, global_params:Dict[str,Any],
         raise ConfigurationError("Scratch directory was not within workspaces and we are running in batch mode. No way to ask user for location.")
 
 def get_scratch_directory(workspace_dir:str, global_params:Dict[str,Any],
-                          local_params:Dict[str,Any]) -> str:
+                          local_params:Dict[str,Any]) -> Optional[str]:
     """Given the global and local params, return the absolute path
     of the scratch directory for this workspace. If it was not specified
-    in either, raise an error indicating that user needs to migrate.
+    in either, print a warning and return None.
     """
     if SCRATCH_DIRECTORY in global_params:
         return join(workspace_dir, global_params[SCRATCH_DIRECTORY])
     elif LOCAL_SCRATCH_DIRECTORY in local_params:
         return local_params[LOCAL_SCRATCH_DIRECTORY]
     else:
-        raise ConfigurationError("This workspace was created before the scratch space feature was implemented. "+
-                                 "Please run 'dws migrate' to add the necessary configuration")
+        click.echo("WARNING: Neither the %s nor %s parameters are set, so cannot find scratch directory. Please set one using 'dws config'."%
+                   (SCRATCH_DIRECTORY, LOCAL_SCRATCH_DIRECTORY),
+                   err=True)
+        return None
 
