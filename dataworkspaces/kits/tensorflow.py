@@ -22,7 +22,12 @@ Here is the code::
     from dataworkspaces.kits.tensorflow1 import add_lineage_to_keras_model_class
     
     # Wrap our model class. This is the only DWS-specific change needed.
-    keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential)
+    # We add an optional checkpoint configuration, which will cause checkpoints
+    # to be written to the workspace's scratch directory and then the best
+    # checkpoint copied to the results resource.
+    keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
+                           checkpoint_config=CheckpointConfig(model='fashion',
+                                                              monitor='loss'))
     
     fashion_mnist = keras.datasets.fashion_mnist
     

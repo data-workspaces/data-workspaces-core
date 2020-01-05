@@ -144,5 +144,5 @@ TensorFlow
 
 .. automodule:: dataworkspaces.kits.tensorflow
    :no-undoc-members:
-   :members: add_lineage_to_keras_model_class
+   :members: DwsModelCheckpoint,CheckpointConfig,add_lineage_to_keras_model_class
   
