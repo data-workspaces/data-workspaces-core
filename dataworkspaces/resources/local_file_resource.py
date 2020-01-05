@@ -87,6 +87,21 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
         with open(abs_dest_path, 'w') as f:
             json.dump(data, f, indent=2)
 
+
+    def upload_file(self, local_path:str,
+                    rel_dest_path:str) -> None:
+        """Copy a local file to the specified path in the
+        resource. This may be a local copy or an upload, depending
+        on the resource implmentation
+        """
+        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
+        parent_dir = os.path.dirname(abs_dest_path)
+        if not exists(local_path):
+            raise ConfigurationError("Source file %s does not exist." % local_path)
+        if not os.path.isdir(parent_dir):
+            os.makedirs(parent_dir)
+        shutil.copyfile(local_path, rel_dest_path)
+        
     def does_subpath_exist(self, subpath:str, must_be_file:bool=False,
                            must_be_directory:bool=False) -> bool:
         return does_subpath_exist(self.local_path, subpath, must_be_file,

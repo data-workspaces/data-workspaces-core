@@ -6,6 +6,7 @@ import subprocess
 import os
 from os.path import realpath, basename, isdir, join, dirname, exists,\
                     abspath, expanduser, commonpath, isabs
+import shutil
 import stat
 import click
 import json
@@ -100,6 +101,29 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                            must_be_directory:bool=False) -> bool:
         return does_subpath_exist(self.local_path, subpath, must_be_file,
                                   must_be_directory)
+
+    def upload_file(self, src_local_path:str,
+                    rel_dest_path:str) -> None:
+        """Copy a local file to the specified path in the
+        resource. This may be a local copy or an upload, depending
+        on the resource implmentation
+        """
+        abs_dest_path = join(self.local_path, rel_dest_path)
+        parent_dir = dirname(abs_dest_path)
+        if not exists(src_local_path):
+            raise ConfigurationError("Source file %s does not exist"%src_local_path)
+        if not exists(parent_dir):
+            os.makedirs(parent_dir)
+        shutil.copyfile(src_local_path, abs_dest_path)
+        rel_to_repo_path = get_subpath_from_absolute(self.repo_dir, abs_dest_path)
+        assert rel_to_repo_path is not None
+        call_subprocess([GIT_EXE_PATH, 'add', rel_to_repo_path],
+                        cwd=self.repo_dir, verbose=self.workspace.verbose)
+        call_subprocess([GIT_EXE_PATH, 'commit',
+                         '-m', "Added %s" % rel_to_repo_path],
+                        cwd=self.repo_dir, verbose=self.workspace.verbose)
+        if self.workspace.verbose:
+            click.echo("%s: Copied file to %s" % (self.name, rel_dest_path))
 
     def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
         """Read and parse json results data from the specified path
@@ -549,6 +573,7 @@ class GitRepoResultsSubdirResource(GitResourceBase):
         call_subprocess([GIT_EXE_PATH, 'commit',
                          '-m', "Added %s" % rel_to_repo_path],
                         cwd=self.workspace_dir, verbose=self.workspace.verbose)
+
 
     def push_precheck(self):
         if not exists(self.local_path):

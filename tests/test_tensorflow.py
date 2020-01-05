@@ -64,11 +64,14 @@ class TestTensorflowKit(SimpleCase):
         import tensorflow as tf
         import tensorflow.keras as keras
         self._setup_initial_repo(git_resources='results', api_resources='fashion-mnist-data')
-        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class, CheckpointConfig
         keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
                                                             input_resource='fashion-mnist-data',
                                                             verbose=True,
-                                                            workspace_dir=WS_DIR)
+                                                            workspace_dir=WS_DIR,
+                                                            checkpoint_config=CheckpointConfig('fashion',
+                                                                                               monitor='loss',
+                                                                                               save_best_only=True))
         fashion_mnist = keras.datasets.fashion_mnist
         (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
         train_images = train_images / 255.0
@@ -172,9 +175,12 @@ class TestTensorflowKit(SimpleCase):
             categorical_columns.append(tf.feature_column.indicator_column(cat_col))
         categorical_layer = tf.keras.layers.DenseFeatures(categorical_columns)
         preprocessing_layer = tf.keras.layers.DenseFeatures(categorical_columns+numeric_columns)
-        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class, CheckpointConfig
         tf.keras.Sequential = add_lineage_to_keras_model_class(tf.keras.Sequential, input_resource='titanic-data',
                                                                workspace_dir=WS_DIR,
+                                                               checkpoint_config=CheckpointConfig('fashion',
+                                                                                               monitor='loss',
+                                                                                                  save_best_only=True),
                                                                verbose=True)
         model = tf.keras.Sequential([
             preprocessing_layer,
@@ -215,11 +221,15 @@ class TestTensorflowKit(SimpleCase):
         import tensorflow as tf
         import tensorflow.keras as keras
         self._setup_initial_repo(git_resources='results', api_resources='fashion-mnist-data')
-        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class, CheckpointConfig
         keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
                                                             input_resource='fashion-mnist-data',
                                                             verbose=True,
-                                                            workspace_dir=WS_DIR)
+                                                            workspace_dir=WS_DIR,
+                                                            checkpoint_config=CheckpointConfig('fashion',
+                                                                                               monitor='loss',
+                                                                                               save_best_only=True))
+
         fashion_mnist = keras.datasets.fashion_mnist
         (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
         train_images = train_images / 255.0
@@ -272,11 +282,15 @@ class TestTensorflowKit(SimpleCase):
                 return len(self.y)
 
         self._setup_initial_repo(git_resources='results', api_resources='fashion-mnist-data')
-        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class
+        from dataworkspaces.kits.tensorflow import add_lineage_to_keras_model_class, CheckpointConfig
         keras.Sequential = add_lineage_to_keras_model_class(keras.Sequential,
                                                             input_resource='fashion-mnist-data',
                                                             verbose=True,
-                                                            workspace_dir=WS_DIR)
+                                                            workspace_dir=WS_DIR,
+                                                            checkpoint_config=CheckpointConfig('fashion',
+                                                                                               monitor='loss',
+                                                                                               save_best_only=True))
+
         fashion_mnist = keras.datasets.fashion_mnist
         (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
         train_images = train_images / 255.0

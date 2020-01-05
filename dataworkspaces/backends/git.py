@@ -524,8 +524,6 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 f.write("%s\n" % basename(LOCAL_PARAMS_PATH))
                 f.write("%s\n" % basename(RESOURCE_LOCAL_PARAMS_PATH))
                 f.write("current_lineage/\n")
-                if scratch_dir_gitignore is not None:
-                    f.write(scratch_dir_gitignore+"\n")
         if exists(join(workspace_dir, '.git')):
             click.echo("%s is already a git repository, will just add to it"%
                        workspace_dir)
@@ -534,7 +532,13 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         git_add(workspace_dir,
                 [CONFIG_FILE_PATH, RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
                 verbose=verbose)
+        if scratch_dir_gitignore is not None:
+            # add the scratch directory's gitignore entry to the top level of
+            # the repo, not the .gitignore within .dataworkspace
+            ensure_entry_in_gitignore(workspace_dir, '.gitignore', scratch_dir_gitignore,
+                                      commit=False, verbose=verbose)
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
+
         if not isdir(abs_scratch_dir):
             if verbose:
                 print("Creating scratch directory %s" % abs_scratch_dir)

@@ -20,7 +20,7 @@ except ImportError:
     sys.path.append(os.path.abspath(".."))
 
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH
-from dataworkspaces.utils.subprocess_utils import find_exe
+from dataworkspaces.utils.subprocess_utils import find_exe, call_subprocess_for_rc
 
 class HelperMethods:
     def _run_dws(self, dws_args, cwd=WS_DIR, env=None):
@@ -57,6 +57,22 @@ class HelperMethods:
         with open(filepath, 'r') as f:
             data = f.read()
         self.assertEqual(expected_contents, data, "File %s does not contain expected data"%filepath)
+
+    def _assert_file_git_tracked(self, rel_path, repo_dir=WS_DIR):
+        rc = call_subprocess_for_rc([GIT_EXE_PATH, 'ls-files', '--error-unmatch',
+                                     rel_path],
+                                    cwd=repo_dir, verbose=True)
+        self.assertEqual(0, rc,
+                         "File %s should be in git repo %s, but it was not"%
+                         (rel_path, repo_dir))
+
+    def _assert_file_not_git_tracked(self, rel_path, repo_dir=WS_DIR):
+        rc = call_subprocess_for_rc([GIT_EXE_PATH, 'ls-files', '--error-unmatch',
+                                     rel_path],
+                                    cwd=repo_dir, verbose=True)
+        self.assertNotEqual(0, rc,
+                            "File %s should not be in git repo %s, but it was"%
+                            (rel_path, repo_dir))
 
     def _get_resource_set(self, workspace_dir):
         resource_file = join(workspace_dir, '.dataworkspace/resources.json')

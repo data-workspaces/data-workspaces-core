@@ -200,7 +200,7 @@ def init_scratch_directory(scratch_dir:str, workspace_dir:str,
         if rel_scratch_dir.startswith('./'):
             scratch_dir_gitignore = rel_scratch_dir[1:]
         else:
-            scratch_dir_gitignore = '/'
+            scratch_dir_gitignore = '/' + rel_scratch_dir
     else:
         local_params[LOCAL_SCRATCH_DIRECTORY] = abs_scratch_dir
     return (abs_scratch_dir, scratch_dir_gitignore)
@@ -233,7 +233,8 @@ def get_scratch_directory(workspace_dir:str, global_params:Dict[str,Any],
     in either, print a warning and return None.
     """
     if SCRATCH_DIRECTORY in global_params:
-        return join(workspace_dir, global_params[SCRATCH_DIRECTORY])
+        # normalize the path to remove any "." in the path
+        return abspath(join(workspace_dir, global_params[SCRATCH_DIRECTORY]))
     elif LOCAL_SCRATCH_DIRECTORY in local_params:
         return local_params[LOCAL_SCRATCH_DIRECTORY]
     else:

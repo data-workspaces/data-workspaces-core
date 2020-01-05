@@ -96,6 +96,20 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
                 raise ConfigurationError("Parse error when reading %s in resource %s"
                                          %(subpath, self.name)) from e
 
+    def upload_file(self, src_local_path:str,
+                    rel_dest_path:str) -> None:
+        """Copy a local file to the specified path in the
+        resource. This may be a local copy or an upload, depending
+        on the resource implmentation
+        """
+        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
+        parent_dir = os.path.dirname(abs_dest_path)
+        if not os.path.exists(src_local_path):
+            raise ConfigurationError("Source file %s does not exist." % src_local_path)
+        if not os.path.isdir(parent_dir):
+            os.makedirs(parent_dir)
+        shutil.copyfile(src_local_path, rel_dest_path)
+
     def get_local_params(self) -> JSONDict:
         return {} # TODO: local filepath can override global path
 

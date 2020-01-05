@@ -655,6 +655,15 @@ class FileResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def upload_file(self, src_local_path:str,
+                    rel_dest_path:str) -> None:
+        """Copy a local file to the specified path in the
+        resource. This may be a local copy or an upload, depending
+        on the resource implmentation
+        """
+        pass
+
+    @abstractmethod
     def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file

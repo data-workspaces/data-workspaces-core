@@ -1,6 +1,7 @@
 """
 Test cases for the scratch directory functionality
 """
+import os
 from os.path import isdir, join
 import sys
 import unittest
@@ -20,6 +21,29 @@ class TestScratchDir(BaseCase):
         self._clone_second_repo()
         other_scratch_dir = join(OTHER_WS, 'scratch')
         self.assertTrue(isdir(other_scratch_dir), "Cloned scratch directory %s does not exist" % other_scratch_dir)
+
+    def test_scratch_files_not_in_snapshot(self):
+        """Make sure that files in the scratch directory are properly
+        gitignore'd
+        """
+        self._setup_initial_repo(create_resources='code')
+        scratch_dir=join(WS_DIR, 'scratch')
+        self.assertTrue(isdir(scratch_dir), "Scratch directory %s does not exist" % scratch_dir)
+        f1path = join(scratch_dir, 'f1.txt')
+        with open(f1path, 'w') as f:
+            f.write("this file should not be in git\n")
+        cpdir = join(scratch_dir, 'checkpoints')
+        os.mkdir(cpdir)
+        f2path = join(cpdir, 'f2.index')
+        with open(f2path, 'w') as f:
+            f.write("this file should also not be in git\n")
+        codefilepath = join(join(WS_DIR, 'code'), 'foo.py')
+        with open(codefilepath, 'w') as f:
+            f.write("print('this is a test')\n")
+        self._run_dws(['snapshot', 's1'])
+        self._assert_file_git_tracked(codefilepath)
+        self._assert_file_not_git_tracked(f1path)
+        self._assert_file_not_git_tracked(f2path)
 
     def test_scratch_in_subdirectory(self):
         scratch_dir = join(WS_DIR, 'scratch_parent/scratch')
