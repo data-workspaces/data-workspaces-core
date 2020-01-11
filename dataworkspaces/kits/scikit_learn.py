@@ -9,23 +9,29 @@ support the computation of common metrics and the writing of them
 to a results file.
 """
 
-from typing import Optional, Union, Dict, List, Any
+from typing import Optional, Union, Dict, List, Any, cast
+from abc import ABCMeta, abstractmethod
 from sklearn.base import ClassifierMixin
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.externals import joblib
 from sklearn.utils import Bunch
+from sklearn.base import _pprint
 import sys
 import numpy as np
 import os
 from os.path import join, abspath, expanduser, exists
-import json
-import glob
+import pickle
+from tempfile import NamedTemporaryFile
+
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.lineage import LineageBuilder
-from dataworkspaces.workspace import find_and_load_workspace, LocalStateResourceMixin
+from dataworkspaces.workspace import find_and_load_workspace, LocalStateResourceMixin,\
+                                     FileResourceMixin
 from dataworkspaces.utils.lineage_utils import ResourceRef
+from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
+
 from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
 
 def _load_dataset_file(dataset_path, filename):
@@ -167,20 +173,34 @@ def load_dataset_from_resource(resource_name:str, subpath:Optional[str]=None,
     return Bunch(**result)
 
 
-class Metrics:
+class Metrics(metaclass=ABCMeta):
     """Metrics and its subclasses are convenience classes
     for sklearn metrics. The subclasses
     of Matrics are used by :func:`~train_and_predict_with_cv`
     in printing a metrics report and generating the metrics
     json file.
     """
-    def __init__(self, expected, predicted):
+    def __init__(self, expected, predicted, sample_weight=None):
         self.expected = expected
         self.predicted = predicted
+        self.sample_weight=sample_weight
 
-    def to_dict(self):
+    @abstractmethod
+    def to_dict(self) -> Dict[str,Any]:
         pass
-    def print_metrics(self, file=sys.stdout):
+
+    @abstractmethod
+    def score(self) -> float:
+        """Given the expected and predicted values, compute the metric
+        for this type of predictor, as needed for the predictor's score()
+        method. This is used in the wrapped classes to avoid multiple
+        calls to predict()."""
+        pass
+
+    @abstractmethod
+    def print_metrics(self, file=sys.stdout) -> None:
+        """Print the metrics to a file
+        """
         pass
 
 
@@ -191,15 +211,20 @@ class BinaryClassificationMetrics(Metrics):
     classifier, including accuracy, precision, recall, roc auc,
     and f1 score.
     """
-    def __init__(self, expected, predicted):
-        super().__init__(expected, predicted)
-        self.accuracy = metrics.accuracy_score(expected, predicted)
-        self.precision = metrics.precision_score(expected, predicted)
-        self.recall = metrics.recall_score(expected, predicted)
-        self.roc_auc = metrics.roc_auc_score(expected, predicted)
-        self.f1_score = metrics.f1_score(expected, predicted)
+    def __init__(self, expected, predicted, sample_weight=None):
+        super().__init__(expected, predicted, sample_weight)
+        self.accuracy = metrics.accuracy_score(expected, predicted,
+                                               sample_weight=sample_weight)
+        self.precision = metrics.precision_score(expected, predicted,
+                                                 sample_weight=sample_weight)
+        self.recall = metrics.recall_score(expected, predicted,
+                                           sample_weight=sample_weight)
+        self.roc_auc = metrics.roc_auc_score(expected, predicted,
+                                             sample_weight=sample_weight)
+        self.f1_score = metrics.f1_score(expected, predicted,
+                                         sample_weight=sample_weight)
 
-    def to_dict(self):
+    def to_dict(self)  -> Dict[str,Any]:
         return {
             'accuracy':self.accuracy,
             'precision':self.precision,
@@ -208,9 +233,14 @@ class BinaryClassificationMetrics(Metrics):
             'f1_score':self.f1_score
         }
 
-    def print_metrics(self, file=sys.stdout):
+    def score(self) -> float:
+        """Metric for binary classification is accuracy
+        """
+        return self.accuracy
+
+    def print_metrics(self, file=sys.stdout) -> None:
         for k, v in self.to_dict():
-            print("%13s: %.02f" % (k, v), file=file)
+            print("%13s: %.02f" % (k, cast(Union[int,float],v)), file=file)
 
 
 class MulticlassClassificationMetrics(Metrics):
@@ -220,12 +250,19 @@ class MulticlassClassificationMetrics(Metrics):
     classifier, including accuracy and sklearn's
     "classification report" showing per-class metrics.
     """
-    def __init__(self, expected, predicted):
-        super().__init__(expected, predicted)
-        self.accuracy = metrics.accuracy_score(expected, predicted)
+    def __init__(self, expected, predicted, sample_weight=None):
+        super().__init__(expected, predicted, sample_weight)
+        self.accuracy = metrics.accuracy_score(expected, predicted,
+                                               sample_weight=sample_weight)
         self.classification_report = \
             metrics.classification_report(expected, predicted,
+                                          sample_weight=sample_weight,
                                           output_dict=True)
+
+    def score(self) -> float:
+        """Metric for multiclass classification is accuracy
+        """
+        return self.accuracy
 
     def to_dict(self):
         return {
@@ -237,6 +274,233 @@ class MulticlassClassificationMetrics(Metrics):
         print("accuracy: %.02f" % self.accuracy, file=file)
         print("classification report:", file=file)
         print(metrics.classification_report(self.expected, self.predicted))
+
+
+class RegressionMetrics(Metrics):
+    """For regression, we capture the r-squared score and
+    the mean squared error.
+    """
+    def __init__(self, expected, predicted, sample_weight=None):
+        super().__init__(expected, predicted, sample_weight)
+        self.r2_score = metrics.r2_score(self.expected, self.predicted,
+                                         sample_weight=sample_weight)
+        self.mean_squared_error = metrics.mean_squared_error(self.expected,
+                                                             self.predicted,
+                                                             sample_weight=sample_weight)
+    def score(self) -> float:
+        """Metric for regression is r2_score
+        """
+        return self.r2_score
+
+    def to_dict(self):
+        return {
+            'r2_score':self.r2_score,
+            'mean_squared_error':self.mean_squared_error
+        }
+
+    def print_metrics(self, file=sys.stdout):
+        print("r2_score: %.02f" % self.r2_score, file=file)
+        print("mean_squared_error: %.02f" % self.mean_squared_error, file=file)
+
+
+_METRICS = {
+    'binary_classification':BinaryClassificationMetrics,
+    'multiclass_classification':MulticlassClassificationMetrics,
+    'regression': RegressionMetrics
+}
+
+import sklearn.utils.metaestimators
+class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
+    _dws_model_wrap = True
+    def __init__(self, predictor, metrics:Union[str,type],
+                 input_resource:Optional[Union[str, ResourceRef]]=None,
+                 results_resource:Optional[Union[str, ResourceRef]]=None,
+                 model_save_file:Optional[str]=None,
+                 workspace_dir:Optional[str]=None,
+                 verbose:bool=False):
+        if hasattr(predictor, '_dws_model_wrap') and predictor._dws_model_wrap is True: # type: ignore
+            print("dws>> %s is already wrapped" % repr(predictor))
+            return predictor # already wrapped
+        self.predictor = predictor
+        assert metrics in  _METRICS.keys() or \
+            (isinstance(metrics, type) and issubclass(metrics, Metrics)),\
+            "%s is not a subclass of Metrics and not one of %s" % \
+            (repr(metrics), ', '.join([repr(s) for s in _METRICS.keys()]))
+        self.metrics = metrics
+        self.input_resource = input_resource
+        self.results_resource = results_resource
+        self.model_save_file = model_save_file
+        self.workspace_dir = workspace_dir
+        self.metrics = metrics
+        self.verbose = verbose
+        self._init_dws_state()
+
+    def _init_dws_state(self):
+        workspace = find_and_load_workspace(batch=True, verbose=self.verbose,
+                                            uri_or_local_path=self.workspace_dir)
+        self._dws_state = _DwsModelState(workspace, self.input_resource,
+                                         self.results_resource)
+
+    def _save_model(self):
+        if self.model_save_file.endswith('.joblib') or \
+           self.model_save_file.endswith('.pkl'):
+            model_save_file = self.model_save_file
+        else:
+            model_save_file = self.model_save_file + '.joblib'
+        tempname = None
+        try:
+            if model_save_file.endswith('.joblib'):
+                with NamedTemporaryFile(delete=False, suffix='.joblib') as f:
+                    tempname = f.name
+                joblib.dump(self, tempname)
+            else:
+                with NamedTemporaryFile(delete=False, suffix='pkl') as f:
+                    tempname = f.name
+                    pickle.dump(self, f)
+            resource = self._dws_state.workspace.get_resource(self._dws_state.results_ref.name)
+            if self._dws_state.results_ref.subpath is not None:
+                target_name = join(self._dws_state.results_ref.subpath,
+                                   model_save_file)
+            else:
+                target_name = model_save_file
+            cast(FileResourceMixin, resource).upload_file(tempname, target_name)
+        finally:
+            if exists(tempname):
+                os.remove(tempname)
+            if self.verbose:
+                print("dws> saved model file to %s:%s" %
+                      (resource.name, target_name))
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        if '_dws_state' in state:
+            print("__get_state__: deleting _dws_state")
+            del state['_dws_state']
+        return state
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        self._init_dws_state()
+
+    def set_params(self, **params):
+        print("set_params(%s)"%repr(params))
+        super().set_params(**params)
+        self._init_dws_state()
+        return self
+
+    def fit(self, X, y, *args, **kwargs):
+        api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
+        if api_resource is not None:
+            api_resource.init_hash_state()
+            hash_state = api_resource.get_hash_state()
+            _add_to_hash(X, hash_state)
+            _add_to_hash(y, hash_state)
+            api_resource.save_current_hash() # in case we evaluate in a separate process
+        result = self.predictor.fit(X, y, *args, **kwargs)
+        if self.model_save_file is not None:
+            self._save_model()
+        return result
+
+    def score(self, X, y, sample_weight=None):
+        for (param, value) in self.predictor.get_params(deep=True).items():
+            self._dws_state.lineage.add_param(param, value)
+        api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
+        if api_resource is not None:
+            api_resource.dup_hash_state()
+            hash_state = api_resource.get_hash_state()
+            _add_to_hash(X, hash_state)
+            if y is not None:
+                _add_to_hash(y, hash_state)
+            api_resource.save_current_hash()
+            api_resource.pop_hash_state()
+        predictions = self.predictor.predict(X)
+        if isinstance(self.metrics, str):
+            metrics_inst = _METRICS[self.metrics](y, predictions, sample_weight=sample_weight)
+        else:
+            metrics_inst = self.metrics(y, predictions, sample_weight=sample_weight)
+        self._dws_state.write_metrics_and_complete(metrics_inst.to_dict())
+        return metrics_inst.score()
+
+    def predict(self, X):
+        return self.predictor.predict(X)
+            
+
+
+
+def add_lineage_to_predictor_instance(predictor,
+                                      metrics_class:type,
+                                      input_resource:Optional[Union[str, ResourceRef]]=None,
+                                      results_resource:Optional[Union[str, ResourceRef]]=None,
+                                      workspace_dir:Optional[str]=None,
+                                      verbose:bool=False):
+    """
+    This function wraps a predictor instance with a subclass that overrides
+    key methods to make calls to the data lineage api.
+    """
+    if hasattr(predictor, '_dws_model_wrap') and predictor._dws_model_wrap is True: # type: ignore
+        print("dws>> %s is already wrapped" % repr(predictor))
+        return predictor # already wrapped
+    assert issubclass(metrics_class, Metrics),\
+        "%s is not a subclass of Metrics" % metrics_class.__name__
+    workspace = find_and_load_workspace(batch=True, verbose=verbose,
+                                        uri_or_local_path=workspace_dir)
+
+    class WrappedPredictor: # type: ignore
+        _dws_model_wrap = True
+        def __init__(self):
+            self.predictor = predictor
+            self._dws_state = _DwsModelState(workspace, input_resource,
+                                             results_resource)
+
+        @classmethod
+        def _get_param_names(cls):
+            """Get parameter names for the estimator"""
+            return predictor.__class__.get_param_names()
+        def get_params(self, deep=True):
+            """Get parameters for this estimator."""
+            return self.predictor.get_params(deep=deep)
+        def set_params(self, **params):
+            return self.predictor.set_params(**params)
+        def __repr__(self):
+            class_name = self.__class__.__name__
+            return '%s(%s)' % (class_name, _pprint(self.get_params(deep=False),
+                                                   offset=len(class_name),),)
+        def __getstate__(self):
+            return self.predictor.__getstate__()
+        def __setstate__(self, state):
+            return self.predictor.__setstate__(state)
+        def fit(self, X, y, *args, **kwargs):
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
+            if api_resource is not None:
+                api_resource.init_hash_state()
+                hash_state = api_resource.get_hash_state()
+                _add_to_hash(X, hash_state)
+                _add_to_hash(y, hash_state)
+                api_resource.save_current_hash() # in case we evaluate in a separate process
+            return self.predictor.fit(X, y, *args, **kwargs)
+        def score(self, X, y, sample_weight=None):
+            for (param, value) in self.predictor.get_params(deep=True).items():
+                self._dws_state.lineage.add_param(param, value)
+            api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
+            if api_resource is not None:
+                api_resource.dup_hash_state()
+                hash_state = api_resource.get_hash_state()
+                _add_to_hash(X, hash_state)
+                if y is not None:
+                    _add_to_hash(y, hash_state)
+                api_resource.save_current_hash()
+                api_resource.pop_hash_state()
+            predictions = self.predictor.predict(X)
+            metrics = metrics_class(y, predictions, sample_weight=sample_weight)
+            self._dws_state.write_metrics_and_complete(metrics.to_dict())
+            return metrics.score()
+        def predict(self, X):
+            return self.predictor.predict(X)
+            
+    WrappedPredictor.__name__ = 'Wrapped'+predictor.__class__.__name__
+    return WrappedPredictor()
+
+
 
 
 def train_and_predict_with_cv(classifier_class:ClassifierMixin,
