@@ -356,7 +356,7 @@ def add_lineage_to_keras_model_class(Cls:type,
                                      results_resource:Optional[Union[str, ResourceRef]]=None,
                                      workspace_dir:Optional[str]=None,
                                      checkpoint_config:Optional[CheckpointConfig]=None,
-                                     verbose:bool=False):
+                                     verbose:bool=False) -> type:
     """This function wraps a Keras model class with a subclass that overwrites
     key methods to make calls to the data lineage API.
 
