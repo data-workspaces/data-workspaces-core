@@ -333,6 +333,7 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
         self.workspace_dir = workspace_dir
         self.metrics = metrics
         self.verbose = verbose
+        self.score_has_been_run = False
         self._init_dws_state()
 
     def _init_dws_state(self):
@@ -342,21 +343,15 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
                                          self.results_resource)
 
     def _save_model(self):
-        if self.model_save_file.endswith('.joblib') or \
-           self.model_save_file.endswith('.pkl'):
-            model_save_file = self.model_save_file
-        else:
+        if not self.model_save_file.endswith('.joblib'):
             model_save_file = self.model_save_file + '.joblib'
+        else:
+            model_save_file = self.model_save_file
         tempname = None
         try:
-            if model_save_file.endswith('.joblib'):
-                with NamedTemporaryFile(delete=False, suffix='.joblib') as f:
-                    tempname = f.name
-                joblib.dump(self, tempname)
-            else:
-                with NamedTemporaryFile(delete=False, suffix='pkl') as f:
-                    tempname = f.name
-                    pickle.dump(self, f)
+            with NamedTemporaryFile(delete=False, suffix='.joblib') as f:
+                tempname = f.name
+            joblib.dump(self, tempname)
             resource = self._dws_state.workspace.get_resource(self._dws_state.results_ref.name)
             if self._dws_state.results_ref.subpath is not None:
                 target_name = join(self._dws_state.results_ref.subpath,
@@ -402,6 +397,10 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
         return result
 
     def score(self, X, y, sample_weight=None):
+        if self.score_has_been_run:
+            # This might be from a saved model, so we reset the
+            # execution time, etc.
+            self._dws_state.reset_lineage()
         for (param, value) in self.predictor.get_params(deep=True).items():
             self._dws_state.lineage.add_param(param, value)
         api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
@@ -419,86 +418,13 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
         else:
             metrics_inst = self.metrics(y, predictions, sample_weight=sample_weight)
         self._dws_state.write_metrics_and_complete(metrics_inst.to_dict())
+        self.score_has_been_run = True
         return metrics_inst.score()
 
     def predict(self, X):
         return self.predictor.predict(X)
-            
 
 
-
-def add_lineage_to_predictor_instance(predictor,
-                                      metrics_class:type,
-                                      input_resource:Optional[Union[str, ResourceRef]]=None,
-                                      results_resource:Optional[Union[str, ResourceRef]]=None,
-                                      workspace_dir:Optional[str]=None,
-                                      verbose:bool=False):
-    """
-    This function wraps a predictor instance with a subclass that overrides
-    key methods to make calls to the data lineage api.
-    """
-    if hasattr(predictor, '_dws_model_wrap') and predictor._dws_model_wrap is True: # type: ignore
-        print("dws>> %s is already wrapped" % repr(predictor))
-        return predictor # already wrapped
-    assert issubclass(metrics_class, Metrics),\
-        "%s is not a subclass of Metrics" % metrics_class.__name__
-    workspace = find_and_load_workspace(batch=True, verbose=verbose,
-                                        uri_or_local_path=workspace_dir)
-
-    class WrappedPredictor: # type: ignore
-        _dws_model_wrap = True
-        def __init__(self):
-            self.predictor = predictor
-            self._dws_state = _DwsModelState(workspace, input_resource,
-                                             results_resource)
-
-        @classmethod
-        def _get_param_names(cls):
-            """Get parameter names for the estimator"""
-            return predictor.__class__.get_param_names()
-        def get_params(self, deep=True):
-            """Get parameters for this estimator."""
-            return self.predictor.get_params(deep=deep)
-        def set_params(self, **params):
-            return self.predictor.set_params(**params)
-        def __repr__(self):
-            class_name = self.__class__.__name__
-            return '%s(%s)' % (class_name, _pprint(self.get_params(deep=False),
-                                                   offset=len(class_name),),)
-        def __getstate__(self):
-            return self.predictor.__getstate__()
-        def __setstate__(self, state):
-            return self.predictor.__setstate__(state)
-        def fit(self, X, y, *args, **kwargs):
-            api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
-            if api_resource is not None:
-                api_resource.init_hash_state()
-                hash_state = api_resource.get_hash_state()
-                _add_to_hash(X, hash_state)
-                _add_to_hash(y, hash_state)
-                api_resource.save_current_hash() # in case we evaluate in a separate process
-            return self.predictor.fit(X, y, *args, **kwargs)
-        def score(self, X, y, sample_weight=None):
-            for (param, value) in self.predictor.get_params(deep=True).items():
-                self._dws_state.lineage.add_param(param, value)
-            api_resource =  self._dws_state.find_input_resources_and_return_if_api(X, y)
-            if api_resource is not None:
-                api_resource.dup_hash_state()
-                hash_state = api_resource.get_hash_state()
-                _add_to_hash(X, hash_state)
-                if y is not None:
-                    _add_to_hash(y, hash_state)
-                api_resource.save_current_hash()
-                api_resource.pop_hash_state()
-            predictions = self.predictor.predict(X)
-            metrics = metrics_class(y, predictions, sample_weight=sample_weight)
-            self._dws_state.write_metrics_and_complete(metrics.to_dict())
-            return metrics.score()
-        def predict(self, X):
-            return self.predictor.predict(X)
-            
-    WrappedPredictor.__name__ = 'Wrapped'+predictor.__class__.__name__
-    return WrappedPredictor()
 
 
 

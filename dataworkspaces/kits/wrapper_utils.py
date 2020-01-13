@@ -185,3 +185,11 @@ class _DwsModelState:
             print("dws>> Metrics: %s" % repr(metrics))
         self.lineage.write_results(metrics)
         self.lineage.complete()
+
+    def reset_lineage(self):
+        """If you are rerunning a step, call this to reset the start and execution
+        times as well as the in_progress marker in the lineage.
+        """
+        self.lineage.step.execution_time_seconds=None
+        self.lineage.step.start_time=datetime.datetime.now()
+        self.lineage.in_progress = True
