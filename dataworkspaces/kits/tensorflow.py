@@ -368,7 +368,7 @@ def add_lineage_to_keras_model_class(Cls:type,
       ``ResourceRef``. If no inputs are specified, will try to infer from the
       workspace.
     * ``results_resource`` -- optional resource where the results are to be stored.
-      My be specified by name, by a local file path, or via a ``ResourceRef``.
+      May be specified by name, by a local file path, or via a ``ResourceRef``.
       if not specified, will try to infer from the workspace.
     * ``workspace-dir`` -- Optional directory specifying the workspace. Usually can be
       inferred from the current directory.

@@ -137,7 +137,8 @@ Scikit-learn
 
 .. automodule:: dataworkspaces.kits.scikit_learn
    :no-undoc-members:
-   :members: load_dataset_from_resource,train_and_predict_with_cv,Metrics,BinaryClassificationMetrics,MulticlassClassificationMetrics
+   :members: load_dataset_from_resource,LineagePredictor,Metrics,BinaryClassificationMetrics,MulticlassClassificationMetrics
+
 
 TensorFlow
 ----------

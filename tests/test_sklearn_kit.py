@@ -30,7 +30,7 @@ class TestSklearnKit(SimpleCase):
             dataset.data, dataset.target, test_size=0.5, shuffle=False)
         classifier = skkit.LineagePredictor(SVC(gamma=0.001),
                                             'multiclass_classification',
-                                            input_resource='sklearn-digits-dataset',
+                                            input_resource=dataset.resource,
                                             model_save_file=model_save_file,
                                             workspace_dir=WS_DIR,
                                             verbose=False)
