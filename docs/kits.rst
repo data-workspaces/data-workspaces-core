@@ -33,7 +33,7 @@ Loading the magics
 To load the magics, run the following in an interactive cell of your Jupyter Notebook::
 
   import dataworkspaces.kits.jupyter
-  %load_ext dtaworkspaces.kits.jupyter
+  %load_ext dataworkspaces.kits.jupyter
 
 If the load runs correctly, you should see output like this in your cell:
 

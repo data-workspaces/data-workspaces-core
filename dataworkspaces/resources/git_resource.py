@@ -21,7 +21,8 @@ from dataworkspaces.utils.git_utils import \
     checkout_and_apply_commit, GIT_EXE_PATH,\
     is_git_repo, commit_changes_in_repo_subdir,\
     checkout_subdir_and_apply_commit, get_subdirectory_hash,\
-    is_pull_needed_from_remote, git_remove_subtree, git_commit
+    is_pull_needed_from_remote, git_remove_subtree, git_commit,\
+    is_git_staging_dirty
 from dataworkspaces.utils.git_fat_utils import \
     is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
@@ -119,9 +120,10 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
         assert rel_to_repo_path is not None
         call_subprocess([GIT_EXE_PATH, 'add', rel_to_repo_path],
                         cwd=self.repo_dir, verbose=self.workspace.verbose)
-        call_subprocess([GIT_EXE_PATH, 'commit',
-                         '-m', "Added %s" % rel_to_repo_path],
-                        cwd=self.repo_dir, verbose=self.workspace.verbose)
+        if is_git_staging_dirty(self.repo_dir, rel_to_repo_path):
+            call_subprocess([GIT_EXE_PATH, 'commit',
+                             '-m', "Added %s" % rel_to_repo_path],
+                            cwd=self.repo_dir, verbose=self.workspace.verbose)
         if self.workspace.verbose:
             click.echo("%s: Copied file to %s" % (self.name, rel_dest_path))
 

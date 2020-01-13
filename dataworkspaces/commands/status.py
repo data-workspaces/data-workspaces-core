@@ -47,6 +47,7 @@ def print_snapshot_history(workspace:SnapshotWorkspaceMixin, reverse:bool=True, 
     columns = {'Hash':hashes, 'Tags':tags, 'Created':created}
     for m in metric_names:
         columns[m] = metrics[m]
+        spec[m] = ColSpec(width=25, truncate=True)
     columns['Message'] = messages
     click.echo("\n")
     print_columns(columns, null_value='', spec=spec,

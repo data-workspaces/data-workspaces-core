@@ -9,10 +9,25 @@ class ColSpec(NamedTuple):
     precision: Optional[int] = None
     width: Optional[int] = None # if spec, specifies exact width. Does not include
                                 # one spec padding each side
-    alignment: str = 'left'
+    truncate: bool = False # If True and width is specified, truncate column
+                           # rather than wrapping it.
+    alignment: str = 'auto'
 
+def _truncate(s, width):
+    truncated = False
+    if '\n' in s:
+        s = s[0, s.index('\n')] # tuncate at the first newline
+        truncated = True
+    if len(s)>(width-2):
+        s = s[0:width-2]
+        truncated = True
+    if truncated:
+        s += '..'
+    return s
 
-def pad_left(s, width):
+def pad_left(s, width, truncate=False):
+    if truncate:
+        s = _truncate(s, width)
     if '\n' in s:
         return '\n'.join([pad_left(fragment, width) for fragment in s.split('\n')])
     if len(s)==width:
@@ -28,7 +43,9 @@ def pad_left(s, width):
             wrapped.append(pad_left(s, width))
         return '\n'.join(wrapped)
 
-def pad_right(s, width):
+def pad_right(s, width, truncate=False):
+    if truncate:
+        s = _truncate(s, width)
     if '\n' in s:
         return '\n'.join([pad_right(fragment, width) for fragment in s.split('\n')])
     if len(s)==width:
@@ -77,6 +94,7 @@ def format_columns(columns:Dict[str,Any], precision=-1, null_value:str='None',
         max_value_width = 0
         strvalues = []
         all_numeric = True
+        truncate = False
         # find the maxium width, determine if numeric, and do rounding
         for v in values:
             if isinstance(v, float):
@@ -101,19 +119,32 @@ def format_columns(columns:Dict[str,Any], precision=-1, null_value:str='None',
             if len_s>max_value_width:
                 max_value_width = len_s
             strvalues.append(s)
+        width_needed = max(len(col), max_value_width)
         if cspec is not None and cspec.width is not None:
-            colwidth = cspec.width
+            if width_needed>=cspec.width:
+                colwidth = cspec.width
+                if cspec.truncate:
+                    assert cspec.width>3, "Column too short to truncate"
+                    truncate = True
+            else:
+                # if possible, we make the column narrower than
+                # specified.
+                colwidth = width_needed
         else:
-            colwidth = max(len(col), max_value_width)
+            colwidth = width_needed
         headers.append(pad_right(col, colwidth)) # headers are always left aligned
         widths.append(colwidth)
-        if (cspec is not None and cspec.alignment=='right') or \
-           (cspec is None and all_numeric):
+        if cspec is not None and cspec.alignment!='auto':
+            if cspec.alignment=='right':
+                pad_fn = pad_left
+            else:
+                pad_fn = pad_right
+        elif all_numeric:
             pad_fn = pad_left
         else:
             pad_fn = pad_right
         # second pass does padding and line breaks
-        str_cols[col] =[pad_fn(strvalue, colwidth) for strvalue in strvalues]
+        str_cols[col] =[pad_fn(strvalue, colwidth, truncate) for strvalue in strvalues]
     return FormattedColumns(nitems, headers, str_cols, widths)
 
 
