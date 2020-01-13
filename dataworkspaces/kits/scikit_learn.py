@@ -20,7 +20,7 @@ from sklearn.base import _pprint
 import sys
 import numpy as np
 import os
-from os.path import join, abspath, expanduser, exists
+from os.path import join, abspath, expanduser, exists, isabs
 import pickle
 from tempfile import NamedTemporaryFile
 
