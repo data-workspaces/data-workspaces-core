@@ -19,6 +19,9 @@ from dataworkspaces.commands.snapshot import snapshot_command
 from dataworkspaces.commands.delete_snapshot import delete_snapshot_command
 from dataworkspaces.commands.restore import restore_command
 from dataworkspaces.commands.status import status_command
+from dataworkspaces.commands.report import \
+    report_status_command, report_history_command, report_lineage_command,\
+    report_results_command
 from dataworkspaces.commands.publish import publish_command
 from dataworkspaces.commands.push import push_command
 from dataworkspaces.commands.pull import pull_command
@@ -521,6 +524,68 @@ def clone(ctx, hostname, repository, directory):
 
 cli.add_command(clone)
 
+
+# The report command has subcommands for specific reports on the workspace
+@click.group()
+@click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.pass_context
+def report(ctx, workspace_dir):
+    """Report generation commands"""
+    ns = ctx.obj
+    if workspace_dir is None:
+        if ns.batch:
+            raise BatchModeError("--workspace-dir")
+        else:
+            workspace_dir = click.prompt("Please enter the workspace root dir",
+                                         type=WORKSPACE_PARAM)
+        
+    ns.workspace_dir = workspace_dir
+
+cli.add_command(report)
+
+@click.command(name="status")
+@click.pass_context
+def report_status(ctx):
+    """Show the status of resources in this workspace"""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    report_status_command(workspace)
+report.add_command(report_status)
+
+@click.command(name="history")
+@click.option('--limit', type=int, default=None,
+              help='Number of previous snapshots to show (most recent first)')
+@click.pass_context
+def report_history(ctx, limit):
+    """Show the history of snapshots"""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    report_history_command(workspace, limit)
+report.add_command(report_history)
+
+@click.command(name="lineage")
+@click.option('--snapshot', type=HOST_PARAM, default=None,
+              help='Optional tag or hash for a snapshot. Otherwise, shows the current status.')
+@click.pass_context
+def report_lineage(ctx, snapshot=None):
+    """Show the history of snapshots"""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    report_lineage_command(workspace, snapshot)
+report.add_command(report_lineage)
+
+@click.command(name="results")
+@click.option('--snapshot', type=HOST_PARAM, default=None,
+              help='Optional tag or hash for a snapshot. Otherwise, shows the current status.')
+@click.option('--resource', type=str, default=None,
+              help="Optional resource name. Otherwise, will look for first resource with a results file.")
+@click.pass_context
+def report_results(ctx, snapshot=None, resource=None):
+    """Show the contents of a results file."""
+    ns = ctx.obj
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    report_results_command(workspace, snapshot, resource)
+report.add_command(report_results)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)

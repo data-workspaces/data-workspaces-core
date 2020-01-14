@@ -465,6 +465,20 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         with open(snapshot_metadata_path, 'w') as mdf:
             json.dump(metadata.to_json(), mdf, indent=2)
 
+    def as_snapshot_ws(self) -> ws.SnapshotWorkspaceMixin:
+        """If this workspace supports snapshots, cast
+        it to a SnapshotWorkspaceMixin. Otherwise,
+        raise an NotSupportedError exception.
+        """
+        return cast(ws.SnapshotWorkspaceMixin, self)
+
+    def as_lineage_ws(self) -> ws.SnapshotWorkspaceMixin:
+        """If this workspace supports snapshots and lineage, cast
+        it to a SnapshotWorkspaceMixin. Otherwise,
+        raise an NotSupportedError exception.
+        """
+        return cast(ws.SnapshotWorkspaceMixin, self)
+
 
 
 class WorkspaceFactory(ws.WorkspaceFactory):

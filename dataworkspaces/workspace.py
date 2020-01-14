@@ -439,6 +439,21 @@ class Workspace(metaclass=ABCMeta):
         """Save the current state of the workspace"""
         pass
 
+    @abstractmethod
+    def as_snapshot_ws(self) -> 'SnapshotWorkspaceMixin':
+        """If this workspace supports snapshots, cast
+        it to a SnapshotWorkspaceMixin. Otherwise,
+        raise an NotSupportedError exception.
+        """
+        pass
+
+    @abstractmethod
+    def as_lineage_ws(self) -> 'SnapshotWorkspaceMixin':
+        """If this workspace supports snapshots and lineage, cast
+        it to a SnapshotWorkspaceMixin. Otherwise,
+        raise an NotSupportedError exception.
+        """
+        pass
 
 class WorkspaceFactory(metaclass=ABCMeta):
     """This class collects the various ways of instantiating a workspace:

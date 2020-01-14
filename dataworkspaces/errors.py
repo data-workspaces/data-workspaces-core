@@ -21,6 +21,12 @@ class LineageError(ConfigurationError):
     """
     pass
 
+class NotSupportedError(ConfigurationError):
+    """Raised when a requested capability is not supported by
+    the specified resource or workspace.
+    """
+    pass
+
 class UserAbort(Exception):
     """Thrown when the user requests not to perform the action.
     """
