@@ -42,6 +42,22 @@ we should treat the repository as read-only and never try to push it to its
 ``origin`` [#introf2]_
 (as you do not have write permissions to the ``origin`` copy of this repository).
 
+We can see the list of resources in our workspace via the command ``dws report status``::
+
+  $ dws report status
+  Status for workspace: quickstart
+  Resources for workspace: quickstart
+  | Resource               | Role        | Type             | Parameters                                                                |
+  |________________________|_____________|__________________|___________________________________________________________________________|
+  | sklearn-digits-dataset | source-data | git              | remote_origin_url=https://github.com/jfischer/sklearn-digits-dataset.git, |
+  |                        |             |                  | relative_local_path=sklearn-digits-dataset,                               |
+  |                        |             |                  | branch=master,                                                            |
+  |                        |             |                  | read_only=True                                                            |
+  | code                   | code        | git-subdirectory | relative_path=code                                                        |
+  | results                | results     | git-subdirectory | relative_path=results                                                     |
+  No resources for the following roles: intermediate-data.
+
+
 .. [#introf2] In Git, each remote copy of a repository is assigned a name. By
    convention, the ``origin`` is the copy from which the local copy was cloned.
 
@@ -57,46 +73,97 @@ and change the title to ``digits-svc``.
 
 Now, type the following Python code in the first cell::
 
-  import numpy as np
-  from os.path import join
   from sklearn.svm import SVC
-  from dataworkspaces.kits.scikit_learn import load_dataset_from_resource,\
-                                               train_and_predict_with_cv
-  
-  RESULTS_DIR='../results'
+  from sklearn.model_selection import train_test_split
+  from dataworkspaces.kits.scikit_learn import LineagePredictor, load_dataset_from_resource
 
+  # load the data from filesystem into a "Bunch"
   dataset = load_dataset_from_resource('sklearn-digits-dataset')
-  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, dataset,
-                            RESULTS_DIR, random_state=42)
 
-Now, run the cell. It will take a few seconds to train and test the
-model. You should then see::
+  # Instantiate a support vector classifier and wrap it for dws
+  classifier = LineagePredictor(SVC(gamma=0.001),
+                                'multiclass_classification',
+                                input_resource=dataset.resource,
+                                model_save_file='digits.joblib')
 
-  Best params were: {'gamma': 0.001}
-  accuracy: 0.99
-  classification report:
-                precision    recall  f1-score   support
-  
-           0.0       1.00      1.00      1.00        33
-           1.0       1.00      1.00      1.00        28
-           2.0       1.00      1.00      1.00        33
-           3.0       1.00      0.97      0.99        34
-           4.0       1.00      1.00      1.00        46
-           5.0       0.98      0.98      0.98        47
-           6.0       0.97      1.00      0.99        35
-           7.0       0.97      0.97      0.97        34
-           8.0       1.00      1.00      1.00        30
-           9.0       0.97      0.97      0.97        40
-  
-     micro avg       0.99      0.99      0.99       360
-     macro avg       0.99      0.99      0.99       360
-  weighted avg       0.99      0.99      0.99       360
-  
+  # split the training and test data
+  X_train, X_test, y_train, y_test = train_test_split(
+      dataset.data, dataset.target, test_size=0.5, shuffle=False)
+
+  # train and score the classifier
+  classifier.fit(X_train, y_train)
+  classifier.score(X_test, y_test)
+
+This code is the same as you would write for scikit-learn without dws,
+except that:
+
+1. we load the dataset from a resource rather than call the lower-level
+   NumPy fuctions (although you can call those if you prefer), and
+2. we wrap the support vector classifier instance with a ``LineagePredictor``.
+
+It will take a second to train and run the classifier. In the output of the cell,
+you should then see::
+
   Wrote results to results:results.json
 
+  0.9688542825361512
+
 Now, you can save and shut down your notebook. If you look at the
-directory ``quickstart/results``, you should see a ``results.json``
-file with information about your run.
+directory ``quickstart/results``, you should see a saved model file,
+``digits.joblib``, and a results file, ``results.json``,
+file with information about your run. We can format and view the results file
+with the command ``dws report results``::
+
+  $ dws report results
+  Results file at results:/results.json
+  
+  General Properties
+  | Key                    | Value                      |
+  |________________________|____________________________|
+  | step                   | digits-svc                 |
+  | start_time             | 2020-01-14T12:54:00.473892 |
+  | execution_time_seconds | 0.13                       |
+  | run_description        | None                       |
+  
+  Parameters
+  | Key                     | Value |
+  |_________________________|_______|
+  | C                       | 1.0   |
+  | cache_size              | 200   |
+  | class_weight            | None  |
+  | coef0                   | 0.0   |
+  | decision_function_shape | ovr   |
+  | degree                  | 3     |
+  | gamma                   | 0.001 |
+  | kernel                  | rbf   |
+  | max_iter                | -1    |
+  | probability             | False |
+  | random_state            | None  |
+  | shrinking               | True  |
+  | tol                     | 0.001 |
+  | verbose                 | False |
+  
+  Metrics
+  | Key      | Value |
+  |__________|_______|
+  | accuracy | 0.969 |
+  
+  Metrics: classification_report
+  | Key          | Value                                                                                                 |
+  |______________|_______________________________________________________________________________________________________|
+  | 0.0          | precision: 1.0, recall: 0.9886363636363636, f1-score: 0.9942857142857142, support: 88                 |
+  | 1.0          | precision: 0.9887640449438202, recall: 0.967032967032967, f1-score: 0.9777777777777779, support: 91   |
+  | 2.0          | precision: 0.9883720930232558, recall: 0.9883720930232558, f1-score: 0.9883720930232558, support: 86  |
+  | 3.0          | precision: 0.9753086419753086, recall: 0.8681318681318682, f1-score: 0.9186046511627908, support: 91  |
+  | 4.0          | precision: 0.9887640449438202, recall: 0.9565217391304348, f1-score: 0.9723756906077348, support: 92  |
+  | 5.0          | precision: 0.946236559139785, recall: 0.967032967032967, f1-score: 0.9565217391304348, support: 91    |
+  | 6.0          | precision: 0.989010989010989, recall: 0.989010989010989, f1-score: 0.989010989010989, support: 91     |
+  | 7.0          | precision: 0.9565217391304348, recall: 0.9887640449438202, f1-score: 0.9723756906077348, support: 89  |
+  | 8.0          | precision: 0.9361702127659575, recall: 1.0, f1-score: 0.967032967032967, support: 88                  |
+  | 9.0          | precision: 0.9278350515463918, recall: 0.9782608695652174, f1-score: 0.9523809523809524, support: 92  |
+  | micro avg    | precision: 0.9688542825361512, recall: 0.9688542825361512, f1-score: 0.9688542825361512, support: 899 |
+  | macro avg    | precision: 0.9696983376479764, recall: 0.9691763901507882, f1-score: 0.9688738265020351, support: 899 |
+  | weighted avg | precision: 0.9696092010839529, recall: 0.9688542825361512, f1-score: 0.9686644837258652, support: 899 |
 
 Next, let us take a *snapshot*, which will record the state of
 the workspace and save the data lineage along with our results::
@@ -110,6 +177,29 @@ If you look in ``quickstart/results``, you will see that the results
 local machine). A file, ``lineage.json``, containing a full
 data lineage graph for our experiment has also been
 created in that directory.
+
+We can see the history of snapshots with the command ``dws report history``::
+
+  $ dws report history
+  
+  History of snapshots
+  | Hash    | Tags  | Created             | accuracy | classification_report     | Message            |
+  |_________|_______|_____________________|__________|___________________________|____________________|
+  | f1401a8 | SVC-1 | 2020-01-14T13:00:39 |    0.969 | {'0.0': {'precision': 1.. | first run with SVC |
+  1 snapshots total
+
+We can also see the lineage for this snapshot with the command ``dws report lineage --snapshot SVC-1``::
+
+  $ dws report lineage --snapshot SVC-1
+  Lineage for SVC-1
+  | Resource               | Type        | Details                                  | Inputs                                 |
+  |________________________|_____________|__________________________________________|________________________________________|
+  | results                | Step        | digits-svc at 2020-01-14 12:54:00.473892 | sklearn-digits-dataset (Hash:635b7182) |
+  | sklearn-digits-dataset | Source Data | Hash:635b7182                            | None                                   |
+
+This report shows us that the *results* resource was writen by the *digits-svc* step, which had as its input the
+resource *sklearn-digits-dataset*. We also know the specific version of this resource (hash 635b71820) and that it
+is *source data*, not written by another step.
 
 Some things you can do from here:
 
@@ -245,6 +335,7 @@ Here is a summary of the key commands:
 * ``push`` - push a workspace and all resources to their (remote) origins
 * ``pull`` - pull the workspace and all resources from their (remote) origins
 * ``clone`` - clone a workspace and all the associated resources to the local machine
+* ``report`` - various reports about the workspace
 * ``run`` - run a command and capture the lineage. This information is saved in a file for
   future calls to the same command. *(not yet implemented)*
 

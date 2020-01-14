@@ -5,83 +5,56 @@
 Let's build on the :ref:`Quick Start <quickstart>`.  If you haven't already, run
 through it so that you have a ``quickstart`` workspace with one tag (``SVC-1``).
 
-Status Command
---------------
-We can check the status and history of our workspace with the ``dws status --history``
-command::
-
-  $ dws status --history
-  Role source-data
-  ----------------
-    git repo sklearn-digits-dataset
-  Role intermediate-data
-  ----------------------
-    No items with role intermediate-data
-  Role code
-  ---------
-    git subdirectory code
-  Role results
-  ------------
-    git subdirectory results
-  
-  History of snapshots
-  Hash     Tags                 Created             Metric             Value        Message
-  5ac8708  SVC-1                2019-04-13T16:47:28 accuracy           0.989        first run wih SVC
-  Showing 1 of 1 snapshots
-  Have now successfully shown the current status
-
 Further Experiments
 -------------------
 Now, let's try to use Logistic Regression. Create a new Jupyter notebook called
 ``digits-lr`` in the ``code`` subdirectory of ``quickstart``. Enter the following
 code into a notebook cell::
 
-  import numpy as np
-  from os.path import join
   from sklearn.linear_model import LogisticRegression
-  from dataworkspaces.kits.scikit_learn import load_dataset_from_resource,\
-                                               train_and_predict_with_cv
+  from sklearn.model_selection import GridSearchCV
+  from sklearn.model_selection import train_test_split
+  from dataworkspaces.kits.scikit_learn import LineagePredictor, load_dataset_from_resource
   
-  RESULTS_DIR='../results'
-
+  # load the data from filesystem into a "Bunch"
   dataset = load_dataset_from_resource('sklearn-digits-dataset')
-  train_and_predict_with_cv(LogisticRegression,
-                            {'C':[1e-3, 1e-2, 1e-1, 1, 1e2], 'solver':['lbfgs'],
-                             'multi_class':['multinomial']},
-                            dataset, RESULTS_DIR, random_state=42)
+  
+  # split the training and test data
+  X_train, X_test, y_train, y_test = train_test_split(
+        dataset.data, dataset.target, test_size=0.5, shuffle=False)
+  
+  # Run the a grid search to find the best parameters
+  gs_params={'C':[1e-3, 1e-2, 1e-1, 1, 1e2], 'solver':['lbfgs'],
+             'multi_class':['multinomial']}
+  cv = GridSearchCV(LogisticRegression(), gs_params, cv=5, scoring='accuracy')
+  cv.fit(X_train, y_train)
+  
+  # Instantiate a LogisticRegression classifier with the best parameters
+  # and wrap it for dws
+  classifier = LineagePredictor(LogisticRegression(**cv.best_params_),
+                                'multiclass_classification',
+                                input_resource=dataset.resource,
+                                model_save_file='digits.joblib')
+  
+  
+  # train and score the classifier
+  classifier.fit(X_train, y_train)
+  classifier.score(X_test, y_test)
 
-Note the only differences in our call to ``train_and_predict_with_cv`` are that
-we pass a different classifier (``LogisticRegression``) and a ``param_grid``
-with parameters appropriate to that classifier. If you run this cell,
+There are two differences from our previous notebook:
+
+1. we use a LogisticRegression classifier rather than a Support Vector
+   classifier, and
+2. Before calling our wrapped classifier, we run a grid search to
+   find the best combination of model parameters.
+
+If you run this cell,
 you should see several no-convergence warnings (some of the values for ``C``
-must be bad for this data set) and then a final result::
-
-  Best params were: {'C': 0.01, 'multi_class': 'multinomial', 'solver': 'lbfgs'}
-  accuracy: 0.97
-  classification report:
-                precision    recall  f1-score   support
-  
-           0.0       1.00      1.00      1.00        33
-           1.0       0.97      1.00      0.98        28
-           2.0       0.97      1.00      0.99        33
-           3.0       1.00      0.97      0.99        34
-           4.0       1.00      0.98      0.99        46
-           5.0       0.94      0.94      0.94        47
-           6.0       0.97      0.97      0.97        35
-           7.0       1.00      0.97      0.99        34
-           8.0       0.97      0.97      0.97        30
-           9.0       0.95      0.97      0.96        40
-  
-     micro avg       0.97      0.97      0.97       360
-     macro avg       0.98      0.98      0.98       360
-  weighted avg       0.98      0.97      0.98       360
-  
-  Wrote results to results:results.json
-
+must be bad for this data set) and then a final accuracy result, around 94%
 
 Ok, so our Logistic Regression
-accuracy of 0.97 is not as good as we obtained from the
-Support Vector Classifier (0.989). Let's take a snapshot anyway,
+accuracy of 0.94 is not as good as we obtained from the
+Support Vector Classifier (0.97). Let's take a snapshot anyway,
 so we have this experiment for future reference. Maybe someone will
 ask us, "Did you try Logistic Regession?", and we can show them
 the full results and even use a ``restore`` command to re-run the
@@ -89,51 +62,17 @@ experiment for them. Here's how to take the snapshot::
 
   dws snapshot -m "Logistic Regession experiment" LR-1
 
-Saving a trained model
-----------------------
-Since the Support Vector Classifier gave the best results, let us train
-a model with the full data set and save it to our results directory.
-``train_and_predict_with_cv`` can do that for us if we specify the
-``model_name`` parameter. Start the ``digits-svc`` notebook and add
-``model_name='svc-best'`` to the call as follows::
+We can see both snapshots with the command ``dws report history``::
 
-  train_and_predict_with_cv(SVC, {'gamma':[0.01, 0.001, 0.0001]}, dataset,
-                            RESULTS_DIR, random_state=42,
-                            model_name='svc-best')
-
-Now, run the cell. It should print the metrics as before and then the message:
-"Wrote trained model to /path/to/results/svc-best.pkl". Save and quit
-the notebook. From the ``code`` directory, let's run an ``ls`` command to see
-what was generated::
-
-  $ ls ../results
-  README.txt	results.json	snapshots	svc-best.pkl
-
-We see that the results.json file was generated as before and we have a new
-file, ``svc-best.pkl``, which contains the pickled model. Let's now take a
-snapshot: ``dws snapshot -m "trained the best model (SVC)" SVC-2``. If we
-run the status command we can see the history of our experiments::
-
-  dws status --history
-  Role source-data
-  ----------------
-    git repo sklearn-digits-dataset
-  Role intermediate-data
-  ----------------------
-    No items with role intermediate-data
-  Role code
-  ---------
-    git subdirectory code
-  Role results
-  ------------
-    git subdirectory results
+  $ dws report history
   
   History of snapshots
-  Hash     Tags                 Created             Metric             Value        Message
-  69c469b  SVC-2                2019-04-14T08:05:17 accuracy           0.989        trained the best model (SVC)
-  ce702b1  LR-1                 2019-04-14T07:37:24 accuracy           0.975        Logistic Regession experiment
-  5ac8708  SVC-1                2019-04-13T16:47:28 accuracy           0.989        first run wih SVC
-  Showing 3 of 3 snapshots
+  | Hash    | Tags  | Created             | accuracy | classification_report     | Message                       |
+  |_________|_______|_____________________|__________|___________________________|_______________________________|
+  | bf9fb37 | LR-1  | 2020-01-14T14:27:37 |     0.94 | {'0.0': {'precision': 0.. | Logistic Regession experiment |
+  | f1401a8 | SVC-1 | 2020-01-14T13:00:39 |    0.969 | {'0.0': {'precision': 1.. | first run with SVC            |
+  2 snapshots total
+
 
 Publishing a workspace
 ----------------------
@@ -163,13 +102,12 @@ on the "Create Repository" button.
 
 Now, back on the command line,
 go to the directory containing the ``quickstart`` workspace on your
-local machine. Run the following commands replacing ``YOUR_USERNAME``
+local machine. Run the following command replacing ``YOUR_USERNAME``
 with your GitHub username::
 
-  git remote add origin git@github.com:YOUR_USERNAME/dws-tutorial.git
-  git push -u origin master
+  dws publish git@github.com:YOUR_USERNAME/dws-tutorial.git
 
-You have pushed the workspace's state to your GitHub Repository. [#tut1]_
+You have published your workspace and its history to a GitHub Repository.
 
 At this point, if you refresh the page for this repository on GitHub, you should see
 something like this:
@@ -177,11 +115,6 @@ something like this:
 .. image:: _static/tutorial-after-first-push.png
 
 You have successfully published your workspace!
-
-.. [#tut1] If the workspace contained updates to external git repositories or other
-   resources, we would also have to perform a ``dws push`` command at this point.
-   We can skip it, as the only changes we made were in the ``code`` and ``results``
-   resources, which are subdirectories of the main workspace.
 
 Cloning a workspace
 -------------------
@@ -209,37 +142,23 @@ workspace (in this case ``~/workspaces``) and run the following::
 
 where ``GITHUB_CLONE_URL`` is the URL you copied to your clipboard.
 
-It should ask you two questions:
+It should ask you for the hostname you want to use to identify this
+machine. It defaults to the system hostname.
 
-1. The hostname you want to use to identify this machine, which defaults to
-   the system hostname.
-2. The path for the cloned workspace, which, in this case will default to
-   ``./quickstart``, since "quickstart" was the name of the original repo.
-   The default is fine.
+By default, the clone will be in the directory ``./quickstart``, since
+"quickstart" was the name of the original repo. You can change this
+by adding the desired local directory name to the command line.
 
-We can now change to the workspace's directory and run the status command::
+We can now change to the workspace's directory and run the history command::
 
   $ cd ./quickstart
-  $ dws status --history
-  Role source-data
-  ----------------
-    git repo sklearn-digits-dataset
-  Role intermediate-data
-  ----------------------
-    No items with role intermediate-data
-  Role code
-  ---------
-    git subdirectory code
-  Role results
-  ------------
-    git subdirectory results
-  
+  $ dws report history
   History of snapshots
-  Hash     Tags                 Created             Metric             Value        Message
-  69c469b  SVC-2                2019-04-14T08:05:17 accuracy           0.989        trained the best model (SVC)
-  ce702b1  LR-1                 2019-04-14T07:37:24 accuracy           0.975        Logistic Regession experiment
-  5ac8708  SVC-1                2019-04-13T16:47:28 accuracy           0.989        first run wih SVC
-  Showing 3 of 3 snapshots
+  | Hash    | Tags  | Created             | accuracy | classification_report     | Message                       |
+  |_________|_______|_____________________|__________|___________________________|_______________________________|
+  | bf9fb37 | LR-1  | 2020-01-14T14:27:37 |     0.94 | {'0.0': {'precision': 0.. | Logistic Regession experiment |
+  | f1401a8 | SVC-1 | 2020-01-14T13:00:39 |    0.969 | {'0.0': {'precision': 1.. | first run with SVC            |
+  2 snapshots total
 
 We see the full history from the original workspace!
 
@@ -252,14 +171,14 @@ subdirectory in your workspace. Start the Jupyter notebook as follows::
   jupyter notebook digits-svc.ipynb
 
 This should bring up a browser with the notebook. You should see the code
-from our last experiment. Run the cell. You should get the same results as
-on the first machine (0.99 accuracy). Save and shutdown the notebook.
+from our first experiment. Run the cell. You should get close the same results as
+on the first machine (0.97 accuracy). Save and shutdown the notebook.
 
 Now, take a snapshot::
 
-  dws snapshot -m "reproduce on second machine" SVC-3
+  dws snapshot -m "reproduce on second machine" SVC-2
 
-We have tagged this snapshot with the tag ``SVC-3``. We want to push the
+We have tagged this snapshot with the tag ``SVC-2``. We want to push the
 entire workspace to GitHub. This can be done as follows::
 
   dws push
@@ -274,27 +193,12 @@ and run::
 
 After the pull, we should see the experiment we ran on the second machine::
 
-  dws status --history
-  Role source-data
-  ----------------
-    git repo sklearn-digits-dataset
-  Role intermediate-data
-  ----------------------
-    No items with role intermediate-data
-  Role code
-  ---------
-    git subdirectory code
-  Role results
-  ------------
-    git subdirectory results
-  
+  $ dws report history
   History of snapshots
-  Hash     Tags                 Created             Metric             Value        Message
-  fbc17eb  SVC-3                2019-04-14T13:21:59 accuracy           0.989        reproduce on second machine
-  69c469b  SVC-2                2019-04-14T08:05:17 accuracy           0.989        trained the best model (SVC)
-  ce702b1  LR-1                 2019-04-14T07:37:24 accuracy           0.975        Logistic Regession experiment
-  5ac8708  SVC-1                2019-04-13T16:47:28 accuracy           0.989        first run wih SVC
-  Showing 4 of 4 snapshots
-  Have now successfully shown the current status
-
+  | Hash    | Tags  | Created             | accuracy | classification_report     | Message                       |
+  |_________|_______|_____________________|__________|___________________________|_______________________________|
+  | 2c195ba | SVC-2 | 2020-01-14T15:20:23 |    0.969 | {'0.0': {'precision': 1.. | reproduce on second machine   |
+  | bf9fb37 | LR-1  | 2020-01-14T14:27:37 |     0.94 | {'0.0': {'precision': 0.. | Logistic Regession experiment |
+  | f1401a8 | SVC-1 | 2020-01-14T13:00:39 |    0.969 | {'0.0': {'precision': 1.. | first run with SVC            |
+  3 snapshots total
 

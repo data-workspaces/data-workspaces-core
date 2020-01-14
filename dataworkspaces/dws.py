@@ -546,7 +546,7 @@ cli.add_command(report)
 @click.command(name="status")
 @click.pass_context
 def report_status(ctx):
-    """Show the status of resources in this workspace"""
+    """Show the status of resources in this workspace. Subcommand of ``report``."""
     ns = ctx.obj
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     report_status_command(workspace)
@@ -557,7 +557,7 @@ report.add_command(report_status)
               help='Number of previous snapshots to show (most recent first)')
 @click.pass_context
 def report_history(ctx, limit):
-    """Show the history of snapshots"""
+    """Show the history of snapshots. Subcommand of ``report``."""
     ns = ctx.obj
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     report_history_command(workspace, limit)
@@ -568,7 +568,8 @@ report.add_command(report_history)
               help='Optional tag or hash for a snapshot. Otherwise, shows the current status.')
 @click.pass_context
 def report_lineage(ctx, snapshot=None):
-    """Show the history of snapshots"""
+    """Show a lineage table for either the current workspace or a specific snapshot.
+    Subcommand of ``report``."""
     ns = ctx.obj
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     report_lineage_command(workspace, snapshot)
@@ -581,7 +582,7 @@ report.add_command(report_lineage)
               help="Optional resource name. Otherwise, will look for first resource with a results file.")
 @click.pass_context
 def report_results(ctx, snapshot=None, resource=None):
-    """Show the contents of a results file."""
+    """Show the contents of a results file.  Subcommand of ``report``."""
     ns = ctx.obj
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     report_results_command(workspace, snapshot, resource)
@@ -594,7 +595,7 @@ report.add_command(report_results)
               help='Number of previous snapshots to show (most recent first)')
 @click.pass_context
 def status(ctx, workspace_dir, history, limit):
-    """Show the history of snapshots"""
+    """NOTE: this command is DEPRECATED. Please use ``dws report status`` and ``dws report history`` instead."""
     ns = ctx.obj
     if workspace_dir is None:
         if ns.batch:

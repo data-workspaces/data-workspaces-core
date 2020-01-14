@@ -53,7 +53,6 @@ def print_snapshot_history(workspace:SnapshotWorkspaceMixin, reverse:bool=True, 
         columns[m] = metrics[m]
         spec[m] = ColSpec(width=25, truncate=True)
     columns['Message'] = messages
-    click.echo("\n")
     print_columns(columns, null_value='', spec=spec,
                   paginate=False,
                   title="History of snapshots")
@@ -210,7 +209,7 @@ def report_results_command(workspace:Workspace, tag_or_hash:Optional[str]=None,
                     values.append(v)
                 elif serialize_dicts:
                     keys.append(k)
-                    values.append(str(v))
+                    values.append(', '.join(['%s: %s'%(mk,mv) for (mk, mv) in v.items()]))
             click.echo()
             print_columns({'Key':keys, 'Value':values},paginate=False,
                           title=name)

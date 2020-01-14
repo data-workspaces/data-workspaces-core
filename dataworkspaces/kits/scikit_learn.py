@@ -524,7 +524,10 @@ def train_and_predict_with_cv(classifier_class:ClassifierMixin,
                               model_name:Optional[str]=None,
                               random_state:Optional[int]=None,
                               run_description:Optional[str]=None) -> None:
-    """This function implements a common workflow for sklearn classifiers:
+    """NOTE: This function is DEPRICATED and will be removed from a future
+    version.
+
+    This function implements a common workflow for sklearn classifiers:
 
     1. Splits the data into training set and a final validation set.
     2. Runs a grid search cross validation to find the best combination
