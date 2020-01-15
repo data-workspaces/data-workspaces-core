@@ -1,4 +1,4 @@
 click
 mypy
 requests
-dws-repo2docker=0.10.0.1
+dws-repo2docker==0.10.0.1
