@@ -10,7 +10,8 @@ inspired by source control systems like Git.
 Data Workspaces is installed as a Python 3 package and provides a
 Git-like command line interface and programming APIs. Specific data
 science tools and workflows are supported through extensions
-called *kits*. The goal is to provide the reproducibility and collaboration
+called *kits*. Currently, this includes Scikit-learn, TensorFlow,
+and Jupyter Notebooks. The goal is to provide the reproducibility and collaboration
 benefits with minimal changes to your current projects and processes.
 
 Data Workspaces runs on
