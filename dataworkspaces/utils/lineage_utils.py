@@ -1432,7 +1432,7 @@ def make_lineage_table(instance:str, store:LineageStore, snapshot_hash:Optional[
                 lg = store.retrieve_entry(instance, cert.ref)
         except LineageNotFoundError:
             return "%s (%s)" % (ref_name(cert.ref), cert_name(cert))
-        cur_cert = lg.get_cert_for_ref(ref)
+        cur_cert = lg.get_cert_for_ref(cert.ref)
         if cur_cert is None or cur_cert!=cert:
             return "%s (%s)" % (ref_name(cert.ref), cert_name(cert))
         else:
