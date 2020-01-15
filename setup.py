@@ -20,7 +20,8 @@ setup(
     include_package_data=True, # needed for copying data files at install time
     install_requires=[
         'click',
-        'requests'
+        'requests',
+        'dws-repo2docker'
     ],
     entry_points="""
         [console_scripts]
