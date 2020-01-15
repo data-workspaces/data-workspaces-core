@@ -1,4 +1,4 @@
 click
 mypy
 requests
-git+https://github.com/data-workspaces/repo2docker.git
+dws-repo2docker=0.10.0.1
