@@ -16,7 +16,7 @@ from .subprocess_utils import \
     find_exe, call_subprocess,\
     call_subprocess_for_rc
 from .file_utils import remove_dir_if_empty
-from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.errors import ConfigurationError, InternalError, UserAbort
 
 def is_git_repo(dirpath):
     if isdir(join(dirpath, '.git')):
@@ -454,4 +454,36 @@ def ensure_entry_in_gitignore(repo_dir:str, gitignore_rel_path:str, entry:str,
                          'Add .gitignore entry for %s' % entry],
                         cwd=repo_dir, verbose=verbose)
     return True
+
+def verify_git_config_initialized(cwd:str, batch:bool=False, verbose:bool=False):
+    """When trying to clone or initialize a new git repo, git requires
+    that user.name and user.email are set. If not, it will error
+    out. We verify that they are set. If not, and in interactive
+    mode, we can ask the user and set them. If not, and in batch mode,
+    we will error out explaining the issue.
+    """
+    rc = call_subprocess_for_rc([GIT_EXE_PATH, 'config', 'user.name'], cwd=cwd,
+                                verbose=verbose)
+    name_set = True if rc==0 else False
+    rc = call_subprocess_for_rc([GIT_EXE_PATH, 'config', 'user.email'], cwd=cwd,
+                                verbose=verbose)
+    email_set = True if rc==0 else False
+    if name_set and email_set:
+        if verbose:
+            click.echo("Successfully verified that git user.name and user.email are configured.")
+        return
+    need_to_set = (['user.name'] if not name_set else []) + (['user.email'] if not email_set else [])
+    if batch:
+        raise ConfigurationError("Git is not fully configured, need to set the Git config parameter%s %s before running."
+                                 % ('s' if len(need_to_set)==2 else '', ' and '.join(need_to_set)))
+    # if we get here, we're going to interactively ask the user for the git config parameters
+    for param in need_to_set:
+        click.echo("Git is not fully configured - you need to set the Git config parameter '%s'." % param)
+        value = click.prompt("Please enter a value for %s or return to abort"%param,
+                             default='')
+        if value=='':
+            raise UserAbort("Need to configure git parameter %s"%param)
+        call_subprocess([GIT_EXE_PATH, 'config', '--global', param, value], cwd=cwd,
+                        verbose=verbose)
+        click.echo("Successfully set Git parameter %s" % param)
 

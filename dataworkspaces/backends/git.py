@@ -23,7 +23,7 @@ from dataworkspaces.utils.git_utils import \
     commit_changes_in_repo, git_init, git_add,\
     is_git_dirty,\
     is_pull_needed_from_remote, GIT_EXE_PATH,\
-    set_remote_origin, \
+    set_remote_origin, verify_git_config_initialized,\
     git_remove_file, git_remove_subtree, ensure_entry_in_gitignore
 from dataworkspaces.utils.git_fat_utils import \
     validate_git_fat_in_path_if_needed, \
@@ -512,6 +512,7 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             raise ConfigurationError("Found %s directory under %s"
                                      %(BASE_DIR, workspace_dir) +
                                      " Has this workspace already been initialized?")
+        verify_git_config_initialized(workspace_dir, batch=batch, verbose=verbose)
         os.mkdir(md_dir)
         snapshot_dir = join(workspace_dir, SNAPSHOT_DIR_PATH)
         os.mkdir(snapshot_dir)
@@ -589,6 +590,8 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             raise ConfigurationError("Parent directory '%s' does not exist" % parent_dir)
         if not os.access(parent_dir, os.W_OK):
             raise ConfigurationError("Unable to write into directory '%s'" % parent_dir)
+
+        verify_git_config_initialized(parent_dir, batch=batch, verbose=verbose)
 
         # ping the remote repo
         cmd = [GIT_EXE_PATH, 'ls-remote', '--quiet', repository]
