@@ -388,17 +388,20 @@ class DwsMagics(Magics):
                                        reverse=args.tail)
         entries = []
         index = []
+        columns = ['timestamp', 'hash', 'tags', 'message']
         for s in history:
-            d = {'timestamp':s.timestamp,
+            d = {'timestamp':s.timestamp[0:19],
                  'hash':s.hashval[0:8],
                  'tags':', '.join([tag for tag in s.tags]),
                  'message':s.message}
             if s.metrics is not None:
                 for (m, v) in s.metrics.items():
                     d[m] = v
+                    if m not in columns:
+                        columns.append(m)
             entries.append(d)
             index.append(s.snapshot_number)
-        history_df = pd.DataFrame(entries, index=index)
+        history_df = pd.DataFrame(entries, index=index, columns=columns)
         return history_df
 
     @line_magic
