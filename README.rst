@@ -1,7 +1,7 @@
 ===============
 Data Workspaces
 ===============
-Data Workspaces is an open source framework for maintaining the
+`Data Workspaces <https://dataworkspaces.ai>`_ is an open source framework for maintaining the
 state of a data science project, including data sets, intermediate
 data, results, and code. It supports reproducability through snapshotting
 and lineage models and collaboration through a push/pull model
