@@ -144,6 +144,18 @@ class HostParamType(click.ParamType):
 
 HOST_PARAM = HostParamType()
 
+class SnapshotParamType(click.ParamType):
+    name = "SNAPSHOT"
+    #name = "Must start with a letter or number and only contain letters, numbers, '.', '_', or '-'"
+
+    def convert(self, value, param, ctx):
+        # use the hostname re as that's a good approximation of the rules for tags
+        if not HOSTNAME_RE.match(value):
+            self.fail("Snapshot tag or hash: must start with a letter or number and only contain letters, numbers, '.', '_', or '-'")
+        return value
+
+SNAPSHOT_PARAM = SnapshotParamType()
+
 class ResourceParamType(click.ParamType):
     name = 'resources'
 
@@ -564,7 +576,7 @@ def report_history(ctx, limit):
 report.add_command(report_history)
 
 @click.command(name="lineage")
-@click.option('--snapshot', type=HOST_PARAM, default=None,
+@click.option('--snapshot', type=SNAPSHOT_PARAM, default=None,
               help='Optional tag or hash for a snapshot. Otherwise, shows the current status.')
 @click.pass_context
 def report_lineage(ctx, snapshot=None):
@@ -576,7 +588,7 @@ def report_lineage(ctx, snapshot=None):
 report.add_command(report_lineage)
 
 @click.command(name="results")
-@click.option('--snapshot', type=HOST_PARAM, default=None,
+@click.option('--snapshot', type=SNAPSHOT_PARAM, default=None,
               help='Optional tag or hash for a snapshot. Otherwise, shows the current status.')
 @click.option('--resource', type=str, default=None,
               help="Optional resource name. Otherwise, will look for first resource with a results file.")
@@ -688,7 +700,7 @@ cli.add_command(lineage)
 @click.command(name='graph')
 @click.option('--resource', type=str, default=None,
               help="name of the resource to graph the lineage for (default to the first results resource)")
-@click.option('--snapshot', type=str, default=None,
+@click.option('--snapshot', type=SNAPSHOT_PARAM, default=None,
               help="Snapshot hash or tag to use for lineage. If not specified, use current lineage.")
 @click.option('--format', default="html", type=click.Choice(["html", "dot"]),
               help="Format of the output graph (defaults to html)")
