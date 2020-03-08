@@ -29,15 +29,21 @@ def merge_snapshot_metadata(old, new, batch):
         message = new.message
     else:
         message = old.message
+    if old.tags==new.tags and old.message==new.message:
+        raise ConfigurationError("No differences from previous snapshot, doing nothing.")
+    click.echo("Snapshot %s already exists, updating metadata..."% old.hashval)
     return SnapshotMetadata(
         hashval=old.hashval,
         tags=tags,
         message=message,
-        hostname=old.hostname,
+        hostname=new.hostname,
         timestamp=old.timestamp,
-        relative_detination_path=old.relative_destination_path,
-        metric_name=old.metric_name,
-        metric_value=old.metric_value,
+        relative_destination_path=new.relative_destination_path,
+        # The restore hash may have changed, even if the content did not.
+        # E.g., in the git subdirectory, the restore hash reflects the hash of the overall
+        # repo rather than just the subdirectory.
+        restore_hashes=new.restore_hashes,
+        metrics=new.metrics,
         updated_timestamp=new.timestamp
     )
 

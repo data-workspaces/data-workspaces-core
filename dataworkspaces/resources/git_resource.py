@@ -10,7 +10,7 @@ import shutil
 import stat
 import click
 import json
-from typing import Set, Pattern, Union, Optional
+from typing import Set, Pattern, Union, Optional, Tuple
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -27,6 +27,8 @@ from dataworkspaces.utils.git_fat_utils import \
     is_a_git_fat_repo,\
     has_git_fat_been_initialized, validate_git_fat_in_path,\
     validate_git_fat_in_path_if_needed
+from dataworkspaces.utils.git_lfs_utils import \
+    ensure_git_lfs_configured_if_needed
 from dataworkspaces.workspace import Resource, ResourceFactory, ResourceRoles,\
     RESOURCE_ROLE_PURPOSES, LocalStateResourceMixin, FileResourceMixin,\
     SnapshotResourceMixin, JSONDict, JSONList, Workspace
@@ -405,6 +407,7 @@ class GitRepoFactory(ResourceFactory):
                                   verbose=workspace.verbose):
             raise ConfigurationError("%s is a git repository, but also part of the parent workspace's repo"%(local_path))
         validate_git_fat_in_path_if_needed(local_path)
+        ensure_git_lfs_configured_if_needed(local_path, verbose=workspace.verbose)
         remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
         (current, others) = get_branch_info(local_path, workspace.verbose)
         if branch!=current and branch not in others:
@@ -475,6 +478,7 @@ class GitRepoFactory(ResourceFactory):
             cmd = [GIT_EXE_PATH, 'pull', 'origin', 'master']
             call_subprocess(cmd, local_path, workspace.verbose)
         switch_git_branch_if_needed(local_path, branch, workspace.verbose, ok_if_not_present=True)
+        ensure_git_lfs_configured_if_needed(local_path, verbose=workspace.verbose)
         if is_a_git_fat_repo(local_path) and not has_git_fat_been_initialized(local_path):
             import dataworkspaces.third_party.git_fat as git_fat
             python2_exe = git_fat.find_python2_exe()
@@ -643,7 +647,9 @@ class GitRepoSubdirResource(GitResourceBase):
     def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-    def snapshot(self):
+    def snapshot(self) ->  Tuple[Optional[str], Optional[str]]:
+        """Returns (cmopare_hash, restore_hash)
+        """
         # Todo: handle tags
         commit_changes_in_repo_subdir(self.workspace_dir, self.relative_path, 'autocommit ahead of snapshot',
                                       verbose=self.workspace.verbose)
@@ -734,6 +740,7 @@ class GitRepoSubdirFactory(ResourceFactory):
         lpr = realpath(local_path)
         workspace_dir = _get_workspace_dir_for_git_backend(workspace)
         validate_git_fat_in_path_if_needed(workspace_dir)
+        ensure_git_lfs_configured_if_needed(workspace_dir, verbose=workspace.verbose)
         wdr = realpath(workspace_dir)
         if not lpr.startswith(wdr):
             raise ConfigurationError("Git subdirectories can only be used as resources when under the workspace repo.")
@@ -774,6 +781,8 @@ class GitRepoSubdirFactory(ResourceFactory):
             raise ConfigurationError("Git subdirectory resources are only supported with the Git workspace backend.")
         workspace_dir = workspace.get_workspace_local_path_if_any()
         assert workspace_dir is not None
+        # this should be redundant, as we already intialized for the parent repo, but run just in case.
+        ensure_git_lfs_configured_if_needed(workspace_dir, verbose=workspace.verbose)
         local_path = join(workspace_dir, relative_path)
         if not exists(local_path):
             # this subdirectory most have been created in the remote

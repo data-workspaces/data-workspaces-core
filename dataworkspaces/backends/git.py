@@ -29,6 +29,8 @@ from dataworkspaces.utils.git_fat_utils import \
     validate_git_fat_in_path_if_needed, \
     run_git_fat_pull_if_needed, validate_git_fat_in_path, run_git_fat_push_if_needed,\
     setup_git_fat_for_repo, is_a_git_fat_repo
+from dataworkspaces.utils.git_lfs_utils import \
+    init_git_lfs, is_a_git_lfs_repo, ensure_git_lfs_configured_if_needed
 from dataworkspaces.utils.file_utils import safe_rename, get_subpath_from_absolute
 from dataworkspaces.utils.param_utils import HOSTNAME, init_scratch_directory,\
     clone_scratch_directory, get_scratch_directory, SCRATCH_DIRECTORY,\
@@ -503,7 +505,8 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                        git_fat_remote:Optional[str]=None,
                        git_fat_user:Optional[str]=None,
                        git_fat_port:Optional[int]=None,
-                       git_fat_attributes:Optional[str]=None) -> ws.Workspace:
+                       git_fat_attributes:Optional[str]=None,
+                       git_lfs_attributes:Optional[str]=None) -> ws.Workspace:
         if not exists(workspace_dir):
             raise ConfigurationError("Directory for new workspace '%s' does not exist"%
                                      workspace_dir)
@@ -562,6 +565,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         if git_fat_remote is not None:
             setup_git_fat_for_repo(workspace_dir, git_fat_remote, git_fat_user,
                                    git_fat_port, git_fat_attributes, verbose)
+        if git_lfs_attributes or is_a_git_lfs_repo(workspace_dir):
+            if git_fat_remote:
+                raise ConfigurationError("Cannot have both git-lfs and git-fat for the same repo.")
+            init_git_lfs(workspace_dir, git_lfs_attributes, verbose=verbose)
         return Workspace(workspace_dir, batch, verbose)
 
     @staticmethod
@@ -655,6 +662,8 @@ class WorkspaceFactory(ws.WorkspaceFactory):
                 # pull the objects referenced by the current head
                 git_fat.run_git_fat(python2_exe, ['pull'], cwd=directory,
                                     verbose=verbose)
+            ensure_git_lfs_configured_if_needed(directory, verbose=verbose)
+
         except:
             if isdir(initial_path):
                 shutil.rmtree(initial_path)

@@ -206,10 +206,15 @@ RESOURCE_PARAM = ResourceParamType()
               help="Comma-separated list of file patterns to manage under git-fat."+
               " For example --git-fat-attributes='*.gz,*.zip'. If you do not specify"+
               " here, you can always add the .gitattributes file later.")
+@click.option('--git-lfs-attributes', type=str, default=None,
+              help="Comma-separated list of file patterns to manage under git-lfs."+
+              " For example --git-lfs-attributes='*.gz,*.zip'. If you do not specify"+
+              " here, you can always add the .gitattributes file later.")
 @click.argument('name', default=CURR_DIRNAME)
 @click.pass_context
 def init(ctx, hostname, name, create_resources, scratch_directory,
-         git_fat_remote, git_fat_user, git_fat_port, git_fat_attributes):
+         git_fat_remote, git_fat_user, git_fat_port, git_fat_attributes,
+         git_lfs_attributes):
     """Initialize a new workspace"""
     if hostname is None:
         if not ctx.obj.batch:
@@ -225,6 +230,7 @@ def init(ctx, hostname, name, create_resources, scratch_directory,
     init_command(name, hostname, create_resources, scratch_directory,
                  git_fat_remote,
                  git_fat_user, git_fat_port, git_fat_attributes,
+                 git_lfs_attributes,
                  batch=ctx.obj.batch, verbose=ctx.obj.verbose)
 
 
