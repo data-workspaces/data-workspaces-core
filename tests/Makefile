@@ -13,14 +13,16 @@ test: clean mypy pyflakes
 	./testcli.sh --batch
 	python -m unittest $(UNIT_TESTS)
 
+MYPY=mypy --config-file=$(shell pwd)/mypy.ini
+
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy workspace.py dws.py lineage.py api.py
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy utils/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy backends/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy resources/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); mypy commands/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) workspace.py dws.py lineage.py api.py
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) utils/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) backends/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) resources/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) commands/
 	cd $(DATAWORKSPACES)/kits; export MYPYPATH=$(MYPYPATH); \
-        mypy --ignore-missing-imports $(MYPY_KITS)
+        $(MYPY) --ignore-missing-imports $(MYPY_KITS)
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py api.py

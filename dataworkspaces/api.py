@@ -58,7 +58,7 @@ class SnapshotInfo(NamedTuple):
     to :func:`~get_snapshot_history`
     """
     snapshot_number: int
-    hashval : int
+    hashval : str
     tags : List[str]
     timestamp: str
     message: str

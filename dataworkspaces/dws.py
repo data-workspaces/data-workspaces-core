@@ -9,7 +9,7 @@ import sys
 import click
 import re
 from os.path import isdir, join, abspath, expanduser, basename, curdir
-from typing import Optional
+from typing import Optional, Union
 from argparse import Namespace
 from collections.abc import Sequence
 
@@ -159,15 +159,15 @@ SNAPSHOT_PARAM = SnapshotParamType()
 class ResourceParamType(click.ParamType):
     name = 'resources'
 
-    def convert(self, value, param, ctx):
+    def convert(self, value:Union[str,Sequence], param:Optional[click.Parameter], ctx):
         parsed = []
         if isinstance(value, str):
-            rl = value.lower().split(',')
+            rl = value.lower().split(',') # type: Sequence[str]
         elif isinstance(value, Sequence):
             rl = value
         else:
-            self.failed("Invalid resource role list '%s', must be a string or a sequence"
-                        % str(value))
+            self.fail("Invalid resource role list '%s', must be a string or a sequence"
+                      % str(value))
         for r in rl:
             if r=='all':
                 return [r for r in RESOURCE_ROLE_CHOICES]

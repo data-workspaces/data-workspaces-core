@@ -15,7 +15,8 @@ _CONF_MESSAGE=\
 "A snapshot with this hash already exists. Do you want to update "+\
 "the message from '%s' to '%s'?"
 
-def merge_snapshot_metadata(old, new, batch):
+def merge_snapshot_metadata(old:SnapshotMetadata, new:SnapshotMetadata, batch:bool) \
+    -> SnapshotMetadata:
     """Merge two snapshot metadatas for when someone creates
     a snapshot without making changes. They might have
     added more tags or changed the message.
@@ -23,9 +24,7 @@ def merge_snapshot_metadata(old, new, batch):
     assert old.hashval == new.hashval
     tags = old.tags + [tag for tag in new.tags
                        if tag not in old.tags]
-    if old.message!=new.message and (new.message is not None) \
-       (new.message!='') and (not batch) and \
-       click.confirm(_CONF_MESSAGE%(old.message, new.message)):
+    if old.message!=new.message and (new.message is not None) and (new.message!='') and (batch is False) and click.confirm(_CONF_MESSAGE%(old.message, new.message)): # type:ignore
         message = new.message
     else:
         message = old.message

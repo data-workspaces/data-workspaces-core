@@ -363,7 +363,7 @@ def switch_git_branch_if_needed(local_path, branch, verbose, ok_if_not_present=F
         switch_git_branch(local_path, branch, verbose)
 
 class GitLocalPathType(LocalPathType):
-    def __init__(self, remote_url, verbose):
+    def __init__(self, remote_url:str, verbose:bool):
         super().__init__()
         self.remote_url = remote_url
         self.verbose = verbose
@@ -377,7 +377,7 @@ class GitLocalPathType(LocalPathType):
                 remote = get_remote_origin(rv, verbose=self.verbose)
                 if remote!=self.remote_url:
                     self.fail('%s "%s" is a git repo with remote origin "%s", but dataworkspace has remote "%s"'%
-                              (self.path_type, rv), param, ctx)
+                              (self.path_type, rv, self.remote_url, remote), param, ctx)
             return rv
 
 
@@ -388,9 +388,11 @@ class GitRepoFactory(ResourceFactory):
         arguments"""
         workspace.validate_local_path_for_resource(name, local_path)
         lpr = realpath(local_path)
+        wspath = realpath(workspace.get_workspace_local_path_if_any()) \
+            if workspace.get_workspace_local_path_if_any() is not None else None
         if not is_git_repo(local_path):
-            if isinstance(workspace, git_backend.Workspace) and \
-               lpr.startswith(realpath(workspace.get_workspace_local_path_if_any())):
+            if isinstance(workspace, git_backend.Workspace) and wspath is not None and \
+               lpr.startswith(wspath):
                 if branch!='master':
                     raise ConfigurationError("Only the branch 'master' is available for resources that are within the workspace's git repository")
                 elif read_only:
@@ -402,7 +404,8 @@ class GitRepoFactory(ResourceFactory):
         # The local path is a git repo. Double-check that it isn't already part
         # of the workspace's repo. If it is, you will get an error when cloning.
         if isinstance(workspace, git_backend.Workspace) and \
-           lpr.startswith(realpath(workspace.get_workspace_local_path_if_any())) and \
+           wspath is not None and \
+           lpr.startswith(wspath) and \
            is_file_tracked_by_git(local_path, workspace.get_workspace_local_path_if_any(),
                                   verbose=workspace.verbose):
             raise ConfigurationError("%s is a git repository, but also part of the parent workspace's repo"%(local_path))

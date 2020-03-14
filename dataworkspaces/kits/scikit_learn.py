@@ -429,7 +429,7 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
                 target_name = model_save_file
             cast(FileResourceMixin, resource).upload_file(tempname, target_name)
         finally:
-            if exists(tempname):
+            if (tempname is not None) and exists(tempname):
                 os.remove(tempname)
             if self.verbose:
                 print("dws> saved model file to %s:%s" %
@@ -497,7 +497,7 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
             api_resource.pop_hash_state()
         predictions = self.predictor.predict(X)
         if isinstance(self.metrics, str):
-            metrics_inst = _METRICS[self.metrics](y, predictions, sample_weight=sample_weight)
+            metrics_inst = _METRICS[self.metrics](y, predictions, sample_weight=sample_weight)    # type: ignore
         else:
             metrics_inst = self.metrics(y, predictions, sample_weight=sample_weight)
         self._dws_state.write_metrics_and_complete(metrics_inst.to_dict())

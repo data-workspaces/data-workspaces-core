@@ -201,7 +201,7 @@ class _TfKerasSequenceWrapper(kerasutils.Sequence):
         _add_to_hash(inputs, self.hash_state)
         _add_to_hash(targets, self.hash_state)
         if sample_weights is not None:
-            _add_to_hash(sample_weights)
+            _add_to_hash(sample_weights, self.hash_state)
         return v
 
     def __len__(self):

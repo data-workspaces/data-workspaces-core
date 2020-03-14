@@ -60,9 +60,10 @@ class GitFileLineageStore(FileLineageStore):
                          join(workspace.workspace_dir, SNAPSHOT_LINEAGE_DIR_PATH))
         self.workspace = workspace
 
-    def _add_to_git(self, path):
-        git_add(self.workspace.workspace_dir,
-                [get_subpath_from_absolute(self.workspace.workspace_dir, path)],
+    def _add_to_git(self, path:str):
+        ws_dir = cast(str, self.workspace.workspace_dir)
+        git_add(ws_dir,
+                [get_subpath_from_absolute(ws_dir, path)], # type: ignore
                 verbose=self.workspace.verbose)
 
     def _save_rfile_to_snapshot(self, resource_name:str,
@@ -94,7 +95,7 @@ class GitFileLineageStore(FileLineageStore):
 class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin):
     def __init__(self, workspace_dir:str, batch:bool=False,
                  verbose:bool=False):
-        self.workspace_dir = workspace_dir
+        self.workspace_dir = workspace_dir # type: str
         cf_data = self._load_json_file(CONFIG_FILE_PATH)
         super().__init__(cf_data['name'], cf_data['dws-version'], batch, verbose)
         self.global_params = cf_data['global_params']
