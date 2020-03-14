@@ -877,7 +877,7 @@ class LineageStore(metaclass=ABCMeta):
 
     @abstractmethod
     def restore_lineage(self, instance:str, snapshot_hash:str,
-                        resources_to_restore:List[str], vebose:bool=False) -> None:
+                        resources_to_restore:List[str], verbose:bool=False) -> None:
         """Restore the lineage for the specified resources from the specified snapshot.
         Any existing entries for the specified resources should first be cleared.
         Then, any entries for those resources copied to the current lineage.

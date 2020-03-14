@@ -106,7 +106,8 @@ def restore_command(workspace:Workspace, tag_or_hash:str,
             raise UserAbort()
 
     # do the work!
-    mixin.restore(md.hashval, restore_hashes, restore_resource_list)
+    mixin.restore(md.hashval, restore_hashes,
+                  cast(List[SnapshotResourceMixin], restore_resource_list))
     workspace.save("Restore to %s" % md.hashval)
 
 

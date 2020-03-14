@@ -135,14 +135,6 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         """
         pass
 
-
-        
-    def add(self):
-        print("rclone: Add is called")
-        self.add_from_remote()
-
-
-
     def snapshot_precheck(self) -> None:
         pass
 

@@ -5,7 +5,7 @@ from typing import Optional, List, cast
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.workspace import Workspace, LocalStateResourceMixin,\
-    SyncedWorkspaceMixin, CentralWorkspaceMixin
+    SyncedWorkspaceMixin, CentralWorkspaceMixin, Resource
 
 def build_resource_list(workspace:Workspace, only:Optional[List[str]], skip:Optional[List[str]]) \
     -> List[str]:
@@ -64,11 +64,12 @@ def push_command(workspace:Workspace, only:Optional[List[str]]=None, skip:Option
             click.echo("No resources to push.")
             return 0
         else:
-            print("Pushing resources: %s" % ', '.join([r.name for r in resource_list]))
+            print("Pushing resources: %s" % ', '.join([cast(Resource,r).name for r in resource_list]))
             workspace.push_resources(resource_list)
     elif isinstance(workspace, SyncedWorkspaceMixin):
         if len(resource_list)>0:
-            click.echo("Pushing workspace and resources: %s" % ', '.join([r.name for r in resource_list]))
+            click.echo("Pushing workspace and resources: %s" % ', '.join([cast(Resource,r).name
+                                                                          for r in resource_list]))
         elif not only_workspace:
             click.echo("No resources to push, will still push workspace")
         else:

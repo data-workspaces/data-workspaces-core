@@ -160,9 +160,7 @@ def _verify_eager_if_dataset(x, y, api_resource):
     to evaluate the dataset outside the tensor graph.
     """
     if (not USING_TENSORFLOW2) and \
-       (isinstance(x, tensorflow.data.Dataset) or
-        isinstance(y, tensorflow.data.Dataset)) and \
-       (not tensorflow.executing_eagerly()):
+       (isinstance(x, tensorflow.data.Dataset) or isinstance(y, tensorflow.data.Dataset)) and (not tensorflow.executing_eagerly()): # type: ignore
         raise NotSupportedError("Using an API resource ("+ api_resource.name+
                                 ") with non-eager datasets is not "+
                                 "supported with TensorFlow 1.x.")
@@ -412,7 +410,7 @@ def add_lineage_to_keras_model_class(Cls:type,
                                                         save_freq=checkpoint_config.save_freq,
                                                         results_resource=results_resource,
                                                         workspace_dir=workspace_dir,
-                                                        verbose=verbose)
+                                                        verbose=verbose) # type: Optional[DwsModelCheckpoint]
             else:
                 self.checkpoint_cb = None
         def compile(self, optimizer,

@@ -112,13 +112,13 @@ class LocalPathType(click.Path):
             while not isdir(parent_dir) and parent_dir!='/':
                 parent_dir = parent_path(parent_dir)
         if not exists(parent_dir):
-            self.fail('%s "%s" does not exist.' % (self.path_type, parent_dir), param, ctx)
+            self.fail('%s "%s" does not exist.' % (self.path_type, parent_dir), param, ctx) # type: ignore
         if not isdir(parent_dir):
-            self.fail('%s "%s" is a file.' % (self.path_type, parent_dir), param, ctx)
+            self.fail('%s "%s" is a file.' % (self.path_type, parent_dir), param, ctx) # type: ignore
         if not os.access(parent_dir, os.W_OK):
-            self.fail('%s "%s" is not writable.' % (self.path_type, parent_dir), param, ctx)
+            self.fail('%s "%s" is not writable.' % (self.path_type, parent_dir), param, ctx) # type: ignore
         if (self.must_be_outside_of_workspace is not None) and \
            commonpath([self.must_be_outside_of_workspace, rv]) in (self.must_be_outside_of_workspace, rv):
             self.fail('%s must be outside of workspace "%s"' %
-                      (self.path_type, self.must_be_outside_of_workspace), param, ctx)
+                      (self.path_type, self.must_be_outside_of_workspace), param, ctx) # type: ignore
         return rv

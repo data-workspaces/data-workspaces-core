@@ -58,7 +58,7 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
     # Remove existing tag if present
     if tag is not None:
         try:
-            existing_tag_md = mixin.get_snapshot_by_tag(tag)
+            existing_tag_md = mixin.get_snapshot_by_tag(tag) # type: Optional[SnapshotMetadata]
         except ConfigurationError:
             existing_tag_md = None
         if existing_tag_md is not None:
@@ -75,7 +75,7 @@ def snapshot_command(workspace:Workspace, tag:Optional[str]=None, message:str=''
     (md, manifest) = mixin.snapshot(tag, message)
 
     try:
-        old_md = mixin.get_snapshot_metadata(md.hashval)
+        old_md = mixin.get_snapshot_metadata(md.hashval) # type: Optional[SnapshotMetadata]
     except:
         old_md = None
     if old_md is not None:

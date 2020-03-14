@@ -14,7 +14,7 @@ def delete_snapshot_command(workspace:Workspace, tag_or_hash:str,
     md = mixin.get_snapshot_by_tag_or_hash(tag_or_hash)
     snapshot_name = '%s (Tagged as: %s)' % (md.hashval[0:7], ', '.join(md.tags)) \
                      if md.tags is not None \
-                     else md.hashvale
+                     else md.hashval
     if not workspace.batch:
         if not click.confirm("Should I delete snapshot %s? This is not reversible." % snapshot_name):
             raise UserAbort()

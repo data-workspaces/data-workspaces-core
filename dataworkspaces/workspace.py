@@ -355,7 +355,7 @@ class Workspace(metaclass=ABCMeta):
             if not isinstance(r, LocalStateResourceMixin) or \
                r.get_local_path_if_any() is None:
                 continue
-            other_real_path = os.path.realpath(r.get_local_path_if_any())
+            other_real_path = os.path.realpath(cast(str, r.get_local_path_if_any()))
             common = os.path.commonpath([real_local_path, other_real_path])
             if other_real_path==common or real_local_path==common:
                 raise ConfigurationError("Proposed path %s for resource %s, conflicts with local path %s for resource %s"%
@@ -679,7 +679,7 @@ class FileResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+    def read_results_file(self, subpath:str) -> Union[JSONDict]:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file
         throw a ConfigurationError.
@@ -846,7 +846,9 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
         self._pull_resources_precheck(resource_list)
         assert isinstance(self, Workspace)
         for r in resource_list:
-            print("[pull] pulling resource %s" %r.name) # XXX
+            assert isinstance(r, Resource)
+            if self.verbose:
+                print("[pull] pulling resource %s" %r.name)
             r.pull()
 
         # We need to clear the current lineage for pulled resources since we
@@ -855,7 +857,7 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
             instance = self.get_instance()
             lstore = self.get_lineage_store()
             for r in resource_list:
-                print("[pull] clearing resource %s" %r.name) # XXX
+                assert isinstance(r, Resource)
                 if self.verbose:
                     print("Clearing lineage on resource %s" % r.name)
                 lstore.clear_entry(instance, ResourceRef(r.name, None))
@@ -966,7 +968,7 @@ class SnapshotMetadata:
         """A partial hash matches if the full hash starts with it,
         normalizing to lower case.
         """
-        return True if self.hashval.startwith(partial_hash.lower()) else False
+        return True if self.hashval.startswith(partial_hash.lower()) else False
 
     def to_json(self) -> JSONDict:
         v = {
@@ -1130,7 +1132,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                     print("Cleared lineage for results resource %s" % rname)
         return metadata, manifest_bytes
         
-    def _restore_precheck(self, restore_hashes:Dict[str,str],
+    def _restore_precheck(self, restore_hashes:Dict[str,Optional[str]],
                           restore_resources:List['SnapshotResourceMixin']) -> None:
         """Run any prechecks before restoring to the specified hash value
         (aka certificate). This should throw a ConfigurationError if the
@@ -1141,9 +1143,11 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         This method is called by restore()
         """
         for r in restore_resources:
-            r.restore_precheck(restore_hashes[cast(Resource, r).name])
+            hashval = restore_hashes[cast(Resource, r).name]
+            assert hashval is not None
+            r.restore_precheck(hashval)
 
-    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,str],
+    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,Optional[str]],
                 restore_resources:List['SnapshotResourceMixin']) -> None:
         """Restore the specified resources to the specified hashes.
         The list should have been previously filtered to include only
@@ -1152,13 +1156,15 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         self._restore_precheck(restore_hashes, restore_resources)
 
         for r in restore_resources:
-            r.restore(restore_hashes[cast(Resource, r).name])
+            hashval = restore_hashes[cast(Resource, r).name]
+            assert hashval is not None
+            r.restore(hashval)
 
         if self.supports_lineage():
             assert isinstance(self, Workspace)
             self.get_lineage_store().restore_lineage(self.get_instance(),
                                                      snapshot_hash,
-                                                     [r.name for r in
+                                                     [cast(Resource,r).name for r in
                                                       restore_resources],
                                                      verbose=self.verbose)
 
@@ -1205,7 +1211,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """
         pass
 
-    def get_snapshot_manifest(self, hash_val:str) -> JSONDict:
+    def get_snapshot_manifest(self, hash_val:str) -> JSONList:
         """Returns the snapshot manifest for the given hash
         as a parsed JSON structure. The top-level dict maps
         resource names resource parameters.
@@ -1263,8 +1269,12 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
             for rname in to_delete:
                 r = cast(Workspace, self).get_resource(rname)
                 if isinstance(r, SnapshotResourceMixin):
-                    r.delete_snapshot(md.hashval, md.restore_hashes[rname],
-                                      md.relative_destination_path)
+                    delete_hash = md.restore_hashes[rname]
+                    if delete_hash is not None:
+                        r.delete_snapshot(md.hashval, delete_hash,
+                                          md.relative_destination_path)
+                    else:
+                        print("Cannot delete snapshot for resource %s, no restore hash" % rname)
         self._delete_snapshot_metadata_and_manifest(hash_val)
         if self.supports_lineage():
             instance = cast(Workspace, self).get_instance()

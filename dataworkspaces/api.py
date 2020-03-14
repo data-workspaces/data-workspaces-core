@@ -122,7 +122,7 @@ def restore(tag_or_hash:str, workspace_uri_or_path:Optional[str]=None,
 
 def make_lineage_table(workspace_uri_or_path:Optional[str]=None,
                               tag_or_hash:Optional[str]=None, verbose:bool=False) \
-    -> Iterable[Tuple[str, str, str, str, Optional[List[str]]]]:
+    -> Iterable[Tuple[str, str, str, Optional[List[str]]]]:
     """Make a table of the lineage for each resource.
     The columns are: ref, lineage type, details, inputs
     """

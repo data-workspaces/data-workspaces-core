@@ -253,7 +253,7 @@ class DwsMagics(Magics):
         if self.disabled:
             print("Loaded Data Workspaces magic commands in disabled state.", file=sys.stderr)
             return
-        self._snapshot_args = None
+        self._snapshot_args = None # type: Optional[argparse.Namespace] 
         def target_func(comm, open_msg):
             self.comm = comm
             @comm.on_msg
@@ -295,6 +295,7 @@ class DwsMagics(Magics):
                 elif msg_type=='snapshot':
                     cell = data['cell']
                     try:
+                        assert self._snapshot_args is not None
                         r = take_snapshot(self.dws_jupyter_info.workspace_dir,
                                           tag=self._snapshot_args.tag,
                                           message=self._snapshot_args.message)

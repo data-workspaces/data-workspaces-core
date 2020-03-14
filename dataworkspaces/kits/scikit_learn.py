@@ -122,6 +122,7 @@ def load_dataset_from_resource(resource_name:str, subpath:Optional[str]=None,
         raise ConfigurationError("Unable to instantiate a data set for resource '%s': currently not supported for non-local resources"%
                                  resource_name)
     local_path = r.get_local_path_if_any()
+    assert local_path is not None
     dataset_path = join(local_path, subpath) if subpath is not None else local_path
     result = {} # this will be the args to the result Bunch
     # First load data and target files, which are required
@@ -412,6 +413,7 @@ class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
                                          self.results_resource)
 
     def _save_model(self):
+        assert self.model_save_file
         if not self.model_save_file.endswith('.joblib'):
             model_save_file = self.model_save_file + '.joblib'
         else:

@@ -83,11 +83,11 @@ def _add_to_hash(array_data, hash_state):
         # the columns of a CSV.
         for column in array_data.values():
             _add_to_hash(column, hash_state)
-    elif (tensorflow is not None) and isinstance(array_data, tensorflow.data.Dataset):
+    elif (tensorflow is not None) and isinstance(array_data, tensorflow.data.Dataset): # type: ignore
         # We need to iterate through the dataset, to force an eager evaluation
         for t in array_data:
             _add_to_hash(t, hash_state)
-    elif (tensorflow is not None) and isinstance(array_data, tensorflow.Tensor):
+    elif (tensorflow is not None) and isinstance(array_data, tensorflow.Tensor): # type: ignore
         if hasattr(array_data, 'numpy'):
             _add_to_hash(array_data.numpy(), hash_state)
         else:
