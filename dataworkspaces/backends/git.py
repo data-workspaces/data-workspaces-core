@@ -416,7 +416,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super()._snapshot_precheck(current_resources)
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-    def _restore_precheck(self, restore_hashes:Dict[str,str],
+    def _restore_precheck(self, restore_hashes:Dict[str,Optional[str]],
                           restore_resources:List[ws.SnapshotResourceMixin]) -> None:
         """Run any prechecks before restoring. This should throw
         a ConfigurationError if the restore would fail for some reason.
@@ -425,7 +425,7 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super()._restore_precheck(restore_hashes, restore_resources)
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,str],
+    def restore(self, snapshot_hash:str, restore_hashes:Dict[str,Optional[str]],
                 restore_resources:List[ws.SnapshotResourceMixin]) -> None:
         """We override restore to perform a git-fat pull at the end,
         if needed.
