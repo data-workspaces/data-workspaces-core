@@ -129,7 +129,7 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
         if self.workspace.verbose:
             click.echo("%s: Copied file to %s" % (self.name, rel_dest_path))
 
-    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+    def read_results_file(self, subpath:str) -> JSONDict:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file
         throw a ConfigurationError.

@@ -80,7 +80,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         return does_subpath_exist(self.local_path, subpath, must_be_file,
                                   must_be_directory)
 
-    def read_results_file(self, subpath:str) -> Union[JSONDict,JSONList]:
+    def read_results_file(self, subpath:str) -> JSONDict:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file
         throw a ConfigurationError.
