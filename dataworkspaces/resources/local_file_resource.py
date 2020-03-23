@@ -203,8 +203,9 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
 
 
 class LocalFileFactory(ResourceFactory):
-    def from_command_line(self, role, name, workspace, local_path, compute_hash):
+    def from_command_line(self, role, name, workspace, local_path, export, compute_hash):
         """Instantiate a resource object from the add command's arguments"""
+        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         if not os.path.isdir(local_path):
             raise ConfigurationError(local_path + ' does not exist')
         if not os.access(local_path, os.R_OK): 
@@ -272,6 +273,7 @@ class LocalFileFactory(ResourceFactory):
                 os.mkdir(non_git_hashes)
         return self.from_json(params, local_params, workspace)
 
-    def suggest_name(self, workspace, role, local_path, compute_hash):
+    def suggest_name(self, workspace, role, local_path, export, compute_hash):
+        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         return os.path.basename(local_path)
 

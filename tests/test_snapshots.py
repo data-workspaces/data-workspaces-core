@@ -90,7 +90,7 @@ class TestSnapshots(BaseCase):
         self._assert_results('test-001', metrics)
 
     def test_restore_short_hash(self):
-        HASH='cdce6a5'
+        HASH= '9a4e7dd'
         self._run_dws(['init', '--create-resources=code,results'])
         with open(join(CODE_DIR, 'test.py'), 'w') as f:
             f.write("print('this is a test')\n")

@@ -679,7 +679,7 @@ class FileResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def read_results_file(self, subpath:str) -> Union[JSONDict]:
+    def read_results_file(self, subpath:str) -> JSONDict:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file
         throw a ConfigurationError.

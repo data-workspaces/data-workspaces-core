@@ -264,9 +264,11 @@ cli.add_command(add)
               help="Short name for this resource")
 @click.option('--compute-hash', is_flag=True, default=False,
               help="Compute hashes for all files. If this option is not set, we use a lightweight comparison of file sizes only.")
+@click.option('--export', '-e', is_flag=True, default=False,
+              help="On snapshots, export lineage data for import into other workspaces")
 @click.argument('path', type=DIRECTORY_PARAM)
 @click.pass_context
-def local_files(ctx, role, name, path, compute_hash):
+def local_files(ctx, role, name, path, export:bool, compute_hash:bool):
     """Add a local file directory (not managed by git) to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
@@ -276,7 +278,10 @@ def local_files(ctx, role, name, path, compute_hash):
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
     path = abspath(expanduser(path))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    add_command('file', role, name, workspace, path, compute_hash)
+    if export and role in (ResourceRoles.SOURCE_DATA_SET, ResourceRoles.CODE):
+        raise click.BadOptionUsage(message="Cannot export a source data or code resource",
+                                   option_name="export")
+    add_command('file', role, name, workspace, path, export, compute_hash)
 
 add.add_command(local_files)
 
@@ -286,12 +291,14 @@ add.add_command(local_files)
               help="Short name for this resource")
 @click.option('--config', type=str, default=None,
               help="Configuration file for rclone")
+@click.option('--export', '-e', is_flag=True, default=False,
+              help="On snapshots, export lineage data for import into other workspaces")
 @click.option('--compute-hash', is_flag=True, default=False,
               help="Compute hashes for all files")
 @click.argument('source', type=str)
 @click.argument('dest', type=str) # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
-def rclone(ctx, role, name, config, compute_hash, source, dest): 
+def rclone(ctx, role, name, config, export, compute_hash, source, dest): 
     """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
@@ -303,9 +310,12 @@ def rclone(ctx, role, name, config, compute_hash, source, dest):
     if re.match(rclone_re, source) == None:
         raise click.BadOptionUsage(message="Source in rclone should be specified as remotename:filepath",
                                    option_name='source')
+    if export and role in (ResourceRoles.SOURCE_DATA_SET, ResourceRoles.CODE):
+        raise click.BadOptionUsage(message="Cannot export a source data or code resource",
+                                   option_name="export")
     dest = abspath(expanduser(dest))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    add_command('rclone', role, name, workspace, source, dest, config, compute_hash)
+    add_command('rclone', role, name, workspace, source, dest, config, export, compute_hash)
 
 add.add_command(rclone)
 
@@ -317,9 +327,11 @@ add.add_command(rclone)
               help="Branch of the repo to use, defaults to master.")
 @click.option('--read-only', '-r', is_flag=True, default=False,
               help='If specified, treat the origin repository as read-only and never push to it.')
+@click.option('--export', '-e', is_flag=True, default=False,
+              help="On snapshots, export lineage data for import into other workspaces")
 @click.argument('path', type=str)
 @click.pass_context
-def git(ctx, role, name, branch, read_only, path): 
+def git(ctx, role, name, branch, read_only, export, path): 
     """Add a local git repository as a resource. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
@@ -327,9 +339,12 @@ def git(ctx, role, name, branch, read_only, path):
             raise BatchModeError("--role")
         else:
             role = click.prompt("Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults", type=ROLE_PARAM)
+    if export and role in (ResourceRoles.SOURCE_DATA_SET, ResourceRoles.CODE):
+        raise click.BadOptionUsage(message="Cannot export a source data or code resource",
+                                   option_name="export")
     path = abspath(expanduser(path))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    add_command('git', role, name, workspace, path, branch, read_only)
+    add_command('git', role, name, workspace, path, branch, read_only, export)
 
 add.add_command(git)
 

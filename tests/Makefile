@@ -16,11 +16,8 @@ test: clean mypy pyflakes
 MYPY=mypy --config-file=$(shell pwd)/mypy.ini
 
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) workspace.py dws.py lineage.py api.py
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) utils/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) backends/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) resources/
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) commands/
+	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) workspace.py dws.py lineage.py api.py \
+      utils/ backends/ resources/ commands/
 	cd $(DATAWORKSPACES)/kits; export MYPYPATH=$(MYPYPATH); \
         $(MYPY) --ignore-missing-imports $(MYPY_KITS)
 

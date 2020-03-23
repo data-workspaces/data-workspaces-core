@@ -202,7 +202,8 @@ class RcloneFactory(ResourceFactory):
                 os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
     def from_command_line(self, role, name, workspace,
-                          remote_path, local_path, config, compute_hash):
+                          remote_path, local_path, config, export, compute_hash):
+        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         rclone = self._add_prechecks(local_path, remote_path, config)
         self._copy_from_remote(local_path, remote_path, rclone)
         return RcloneResource(name, role, workspace, remote_path, local_path, config,
@@ -234,6 +235,6 @@ class RcloneFactory(ResourceFactory):
 
 
 
-    def suggest_name(self, role, local_path, compute_hash):
+    def suggest_name(self, workspace, role, remote_path, local_path, config, export, compute_hash):
         return os.path.basename(local_path)
 
