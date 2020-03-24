@@ -21,6 +21,7 @@ from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixi
 import dataworkspaces.resources.hashtree as hashtree
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 import dataworkspaces.backends.git as git_backend
+from dataworkspaces.utils.param_utils import make_validate_by_type, parse_bool
 
 
 LOCAL_FILE = 'file'
@@ -35,12 +36,33 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
                  global_local_path:str, my_local_path:Optional[str],
                  ignore:List[str]=[], compute_hash:bool=False):
         super().__init__(LOCAL_FILE, name, role, workspace)
-        self.local_path = my_local_path if my_local_path is not None \
-                          else global_local_path
-        self.global_local_path = global_local_path
-        self.my_local_path = my_local_path
-        self.ignore = ignore
-        self.compute_hash = compute_hash
+        self.param_defs.define('global_local_path',
+                               default_value=None,
+                               optional=False,
+                               is_global=True,
+                               help="Location of files on local filesystem, as defined when the resource is created. "+
+                                    "May be overridden locally via my_local_path.",
+                               validation_fn=make_validate_by_type(str))
+        self.global_local_path = self.param_defs.get('global_local_path', global_local_path) # type: str
+        self.param_defs.define('my_local_path',
+                               default_value=None,
+                               optional=True,
+                               is_global=False,
+                               help="Override of global_local_path, just for this instance of the workspace.",
+                               validation_fn=make_validate_by_type(str))
+        self.my_local_path = self.param_defs.get('my_local_path', my_local_path) # type: Optional[str]
+        # the actual local path we'll use
+        self.local_path = self.my_local_path if self.my_local_path is not None \
+                          else self.global_local_path
+        self.param_defs.define('compute_hash',
+                               default_value=False,
+                               optional=True,
+                               is_global=True,
+                               help="If True, then compute the full hash of all files rather than using sizes.",
+                               validation_fn=make_validate_by_type(bool),
+                               parse_fn=parse_bool)
+        self.compute_hash = self.param_defs.get('compute_hash', compute_hash) # type: bool
+        self.ignore = ignore # TODO: should this be a parameter?
         if isinstance(workspace, git_backend.Workspace):
             # if the workspace is a git repo, then we can store our
             # hash files there.
@@ -205,7 +227,6 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
 class LocalFileFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace, local_path, export, compute_hash):
         """Instantiate a resource object from the add command's arguments"""
-        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         if not os.path.isdir(local_path):
             raise ConfigurationError(local_path + ' does not exist')
         if not os.access(local_path, os.R_OK): 
@@ -239,9 +260,11 @@ class LocalFileFactory(ResourceFactory):
                   workspace:Workspace) -> LocalFileResource:
         """Instantiate a resource object from saved params and local params"""
         return LocalFileResource(params['name'], params['role'], workspace,
-                                 params['local_path'],
-                                 local_params['local_path'] if 'local_path' in local_params
-                                 else None,
+                                 # for backward compatibility, we also check for "local_path"
+                                 params['global_local_path'] if 'global_local_path' in params else params['local_path'],
+                                 local_params['my_local_path'] if 'my_local_path' in local_params
+                                 else (local_params['local_path'] if 'local_path' in local_params
+                                       else None),
                                  compute_hash=params['compute_hash'])
 
     def has_local_state(self) -> bool:
@@ -253,7 +276,8 @@ class LocalFileFactory(ResourceFactory):
         it is in th correct place.
         """
         name = params['name']
-        global_local_path = params['local_path'] # type: str
+        # check local_path, too for backward compatibility
+        global_local_path = params['global_local_path'] if 'global_local_path' in params else params['local_path'] # type: str
         local_params = {} # type: JSONDict
         if exists(global_local_path):
             local_path = global_local_path
@@ -264,7 +288,7 @@ class LocalFileFactory(ResourceFactory):
                          click.prompt("Local files resource '%s' was located at '%s' on the original system. Where is it located on this system?"%
                                       (name, global_local_path),
                                       type=LocalPathType(exists=True)))
-                local_params['local_path'] = local_path
+                local_params['my_local_path'] = local_path
             else:
                 raise ConfigurationError("Local files resource %s is missing from %s." % (name, global_local_path))
         if not isinstance(workspace, git_backend.Workspace):

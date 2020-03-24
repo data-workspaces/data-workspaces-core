@@ -31,19 +31,9 @@ class ApiResource(Resource, LocalStateResourceMixin, SnapshotResourceMixin):
         super().__init__(API_RESOURCE_TYPE, name, role, workspace)
         self.hash_states = [] # type: List[Any]
 
-    def get_params(self) -> JSONDict:
-        return {
-            'resource_type':self.resource_type,
-            'name':self.name,
-            'role':self.role
-        }
-
     def validate_subpath_exists(self, subpath:str) -> None:
         raise ConfigurationError("Subpath %s is not valid for resource %s: API resources do not support subpaths"%
                                  (subpath, self.name))
-
-    def get_local_params(self) -> JSONDict:
-        return {}
 
     def get_local_path_if_any(self) -> Optional[str]:
         return None

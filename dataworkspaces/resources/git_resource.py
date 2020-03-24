@@ -10,7 +10,7 @@ import shutil
 import stat
 import click
 import json
-from typing import Set, Pattern, Union, Optional, Tuple, Dict, Any
+from typing import Set, Pattern, Union, Optional, Tuple
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import \
@@ -36,7 +36,7 @@ import dataworkspaces.backends.git as git_backend
 from dataworkspaces.utils.file_utils \
     import LocalPathType, does_subpath_exist, get_subpath_from_absolute
 from dataworkspaces.utils.param_utils import \
-    ResourceParams, make_validate_by_type, validate_relpath, parse_bool,\
+    make_validate_by_type, validate_relpath, parse_bool,\
     validate_abspath
 
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
@@ -75,7 +75,6 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
         super().__init__(resource_type, name, role, workspace)
 
         # define and validate the parameters
-        self.param_defs = ResourceParams()
         self.param_defs.define('export',
                                default_value=False,
                                optional=True,
@@ -97,12 +96,6 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
 
     def get_local_path_if_any(self):
         return self.local_path
-
-    def get_params(self) -> Dict[str,Any]:
-        return self.param_defs.get_params(self)
-
-    def get_local_params(self) -> Dict[str,Any]:
-        return self.param_defs.get_local_params(self)
 
     def validate_subpath_exists(self, subpath:str) -> None:
         super().validate_subpath_exists(subpath)

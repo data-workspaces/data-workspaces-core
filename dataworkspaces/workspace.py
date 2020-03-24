@@ -66,7 +66,7 @@ from dataworkspaces.utils.param_utils import PARAM_DEFS, LOCAL_PARAM_DEFS,\
                                              ParamNotFoundError,\
                                              RESULTS_DIR_TEMPLATE,\
                                              RESULTS_MOVE_EXCLUDE_FILES,\
-                                             HOSTNAME
+                                             HOSTNAME, ResourceParams
 from dataworkspaces.utils.snapshot_utils import validate_template,\
                                                 expand_dir_template,\
                                                 make_re_pattern_for_dir_template
@@ -626,16 +626,17 @@ class Resource(metaclass=ABCMeta):
         self.role = role
         #: attribute: The workspace that contains this resource (Workspace)
         self.workspace = workspace
+        # setup our parameter definitions
+        self.param_defs = ResourceParams()
 
     def has_results_role(self):
         return self.role==ResourceRoles.RESULTS
 
-    @abstractmethod
     def get_params(self) -> JSONDict:
         """Get the parameters that define the configuration
         of the resource globally.
         """
-        pass
+        return self.param_defs.get_params(self)
 
     @abstractmethod
     def validate_subpath_exists(self, subpath:str) -> None:
@@ -702,12 +703,11 @@ class LocalStateResourceMixin(metaclass=ABCMeta):
     """Mixin for the resource api for resources with local state
     that need to be "cloned"
     """
-    @abstractmethod
     def get_local_params(self) -> JSONDict:
         """Get the parameters that define any local configuration of
         the resource (e.g. local filepaths)
         """
-        pass
+        return cast(Resource, self).param_defs.get_local_params(cast(Resource, self))
 
     @abstractmethod
     def get_local_path_if_any(self) -> Optional[str]:
