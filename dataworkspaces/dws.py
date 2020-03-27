@@ -800,10 +800,12 @@ deploy.add_command(deploy_run)
 
 @click.command()
 @click.option('--workspace-dir', type=WORKSPACE_PARAM, default=DWS_PATHDIR)
+@click.option('--resource', type=str, default=None,
+              help="If specified, get/set parameters for the specified resource, rather than the workspace.")
 @click.argument('param_name', metavar="[PARAMETER_NAME]", default=None, required=False)
 @click.argument('param_value', metavar="[PARAMETER_VALUE]", default=None, required=False)
 @click.pass_context
-def config(ctx, workspace_dir, param_name, param_value):
+def config(ctx, workspace_dir, resource, param_name, param_value):
     """Get or set configuration parameters. Local parameters are only for this
     copy of the workspace, while global parameters are stored centrally and
     affect all copies.
@@ -822,7 +824,7 @@ def config(ctx, workspace_dir, param_name, param_value):
             workspace_dir = click.prompt("Please enter the workspace root dir",
                                          type=WORKSPACE_PARAM)
     workspace = find_and_load_workspace(ns.batch, ns.verbose, workspace_dir)
-    config_command(workspace, param_name, param_value)
+    config_command(workspace, param_name, param_value, resource)
 
 cli.add_command(config)
 

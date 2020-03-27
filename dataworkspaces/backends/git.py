@@ -208,6 +208,31 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         self._save_json_to_file(self.resource_local_params_by_name,
                                 RESOURCE_LOCAL_PARAMS_PATH)
 
+    def _set_global_param_for_resource(self, resource_name:str, name:str, value:Any) -> None:
+        """It is up to the caller to verify that the resource exists and has
+        this parameter defined. Value should be json-serializable (via the to_json() method
+        of the param type). Setting does not necessarily take effect until save() is called"""
+        assert resource_name in self.resource_params_by_name, "Missing resource params entry for resource %s"%resource_name
+        self.resource_params_by_name[resource_name][name] = value
+        for pdict in self.resource_params:
+            if pdict['name']==resource_name:
+                pdict[name] = value
+                self._save_json_to_file(self.resource_params, RESOURCES_FILE_PATH)
+                return
+        assert 0, "Did not find resource params entry"
+
+
+    def _set_local_param_for_resource(self, resource_name:str, name:str, value:Any) -> None:
+        """It is up to the caller to verify that the resource exists and has
+        this parameter defined. Value should be json-serializable (via the to_json() method
+        of the param type). Setting does not necessarily take effect until save() is called"""
+        assert resource_name in self.resource_local_params_by_name, \
+            "Missing resource local params entry for resource %s"%resource_name
+        self.resource_local_params_by_name[resource_name][name] = value
+        self._save_json_to_file(self.resource_local_params_by_name,
+                                RESOURCE_LOCAL_PARAMS_PATH)
+
+
     def get_workspace_local_path_if_any(self) -> Optional[str]:
         return self.workspace_dir
 

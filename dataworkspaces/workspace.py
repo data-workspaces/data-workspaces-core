@@ -247,6 +247,20 @@ class Workspace(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def _set_global_param_for_resource(self, resource_name:str, name:str, value:Any) -> None:
+        """It is up to the caller to verify that the resource exists and has
+        this parameter defined. Value should be json-serializable (via the to_json() method
+        of the param type). Setting does not necessarily take effect until save() is called"""
+        pass
+
+    @abstractmethod
+    def _set_local_param_for_resource(self, resource_name:str, name:str, value:Any) -> None:
+        """It is up to the caller to verify that the resource exists and has
+        this parameter defined. Value should be json-serializable (via the to_json() method
+        of the param type). Setting does not necessarily take effect until save() is called"""
+        pass
+
     def get_resource(self, name:str) -> 'Resource':
         """Get the associated resource from the workspace metadata.
         """
