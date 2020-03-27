@@ -298,7 +298,7 @@ add.add_command(local_files)
 @click.argument('source', type=str)
 @click.argument('dest', type=str) # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
-def rclone(ctx, role, name, config, export, compute_hash, source, dest): 
+def rclone(ctx, role, name, config:str, export:bool, compute_hash:bool, source:str, dest:str): 
     """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:

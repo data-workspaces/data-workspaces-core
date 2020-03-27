@@ -36,8 +36,7 @@ import dataworkspaces.backends.git as git_backend
 from dataworkspaces.utils.file_utils \
     import LocalPathType, does_subpath_exist, get_subpath_from_absolute
 from dataworkspaces.utils.param_utils import \
-    make_validate_by_type, validate_relpath, parse_bool,\
-    validate_abspath
+    BoolType, AbspathType, StringType, RelpathType
 
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 
@@ -80,8 +79,7 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                                optional=True,
                                help="True if metadata for export should be added each snapshot",
                                is_global=True,
-                               parse_fn=parse_bool,
-                               validation_fn=make_validate_by_type(bool))
+                               ptype=BoolType())
         self.export = self.param_defs.get('export', export) # type: bool
         self.param_defs.define('local_path',
                                default_value=None,
@@ -89,7 +87,7 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                                help="Always points to the root of this resource "+
                                      "(not necessarily the root of the repo)",
                                is_global=False,
-                               validation_fn=validate_abspath)
+                               ptype=AbspathType())
         self.local_path = self.param_defs.get('local_path', local_path) # type: str
 
         self.repo_dir = repo_dir # The root of the repo.
@@ -178,29 +176,28 @@ class GitRepoResource(GitResourceBase):
                                optional=False,
                                help="URL of the remote git repo",
                                is_global=True,
-                               validation_fn=make_validate_by_type(str))
+                               ptype=StringType())
         self.remote_origin_url = self.param_defs.get('remote_origin_url', remote_origin_url) # type: str
         self.param_defs.define('relative_local_path',
                                default_value=None,
                                optional=True,
                                help="Local path of repo relative to the workspace",
                                is_global=True,
-                               validation_fn=validate_relpath)
+                               ptype=RelpathType())
         self.relative_local_path = self.param_defs.get('relative_local_path', relative_local_path) # type: Optional[str]
         self.param_defs.define('branch',
                                default_value=None,
                                optional=False,
                                help="Git branch to use",
                                is_global=True,
-                               validation_fn=make_validate_by_type(str))
+                               ptype=StringType())
         self.branch = self.param_defs.get('branch', branch) # type: str
         self.param_defs.define('read_only',
                                default_value=False,
                                optional=True,
                                help="If True, than no pushes are done for this repo",
                                is_global=True,
-                               parse_fn=parse_bool,
-                               validation_fn=make_validate_by_type(bool))
+                               ptype=BoolType())
         self.read_only = self.param_defs.get('read_only', read_only) # type: bool
 
 
@@ -472,8 +469,8 @@ class GitRepoFactory(ResourceFactory):
                                workspace, params['remote_origin_url'],
                                params.get('relative_local_path', None),
                                local_path, params['branch'],
-                               params.get('read_only'),
-                               params.get('export'))
+                               params.get('read_only', False),
+                               params.get('export', False))
 
     def has_local_state(self):
         return True
@@ -487,7 +484,7 @@ class GitRepoFactory(ResourceFactory):
         default_local_path = join(workspace_dir, relative_local_path) \
                              if relative_local_path else join(workspace_dir, rname)
         branch = params['branch']
-        read_only = params.get('read_only')
+        read_only = params.get('read_only', False)
         if not workspace.batch:
             # ask the user for a local path
             local_path = \
@@ -526,7 +523,7 @@ class GitRepoFactory(ResourceFactory):
         return GitRepoResource(rname, params['role'],
                                workspace, remote_origin_url,
                                relative_local_path, local_path,
-                               branch, read_only, params['export'])
+                               branch, read_only, params.get('export', False))
 
     def suggest_name(self, workspace, role, local_path, branch,
                      read_only, export):
@@ -559,7 +556,7 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                                optional=False,
                                help="Path of resource's directory relative to the workspace root",
                                is_global=True,
-                               validation_fn=validate_relpath)
+                               ptype=RelpathType())
         self.relative_path = self.param_defs.get('relative_path', relative_path) # type: str
 
     def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
@@ -665,7 +662,7 @@ class GitRepoSubdirResource(GitResourceBase):
                                optional=False,
                                help="Path of resource's directory relative to the workspace root",
                                is_global=True,
-                               validation_fn=validate_relpath)
+                               ptype=RelpathType())
         self.relative_path = self.param_defs.get('relative_path', relative_path) # type: str
 
     def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
@@ -802,10 +799,10 @@ class GitRepoSubdirFactory(ResourceFactory):
         if params['role']==ResourceRoles.RESULTS:
             return GitRepoResultsSubdirResource(params['name'],
                                                 workspace,
-                                                params['relative_path'], params['export'])
+                                                params['relative_path'], params.get('export', False))
         else:
             return GitRepoSubdirResource(params['name'], params['role'],
-                                         workspace, params['relative_path'], params['export'])
+                                         workspace, params['relative_path'], params.get('export', False))
 
     def clone(self, params, workspace):
         assert params['resource_type']=='git-subdirectory'
@@ -825,9 +822,9 @@ class GitRepoSubdirFactory(ResourceFactory):
             # the contents, but will create a placeholder so our checks pass.
             os.mkdir(local_path)
         if role==ResourceRoles.RESULTS:
-            return GitRepoResultsSubdirResource(rname, workspace, relative_path, params['export'])
+            return GitRepoResultsSubdirResource(rname, workspace, relative_path, params.get('export', False))
         else:
-            return GitRepoSubdirResource(rname, role, workspace, relative_path, params['export'])
+            return GitRepoSubdirResource(rname, role, workspace, relative_path, params.get('export', False))
 
     def has_local_state(self) -> bool:
         return True

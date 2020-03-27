@@ -30,45 +30,123 @@ class UknownParamError(ConfigurationError):
     pass
 
 
-ParseFnType = Callable[[str], Any]
-ValidationFnType = Callable[[Any], None]
-JSONConvertFn = Callable[[Any], Any]
+class ParamType:
+    """Base class for a defining the type of the parameter.
+    Types are designed to be reusable across multiple parameters."""
+
+    def parse(self, str_value:str) -> Any:
+        """Convert the string representation into the
+        actual value. If the parameter's type is a string, parsing must
+        be itempotent - if parse is called multiple times, the same
+        parsed value is returned.
+
+        This function is used when parsing from the command line and potentally
+        when parsing from JSON.
+        """
+        return str_value
+
+    def validate(self, value:Any) -> None:
+        """Check the value and throw a ParamValidationError if value
+        is not of this type. Does not need to handle optional values,
+        this is handled by the ParamDef class."""
+        pass
+
+    def to_json(self, value:Any) -> Any:
+        """Convert the parameter value to a JSON-serializable value.
+        Usually, you can just use the default, which returns the value as-is.
+        In some cases, like dates, you might need a conversion function.
+        """
+        return value
+    def __repr__(self):
+        return self.__class__.__name__ + '()'
+
+    def __str__(self):
+        """Override this to return a more useful type name."""
+        return self.__class__.__name__
+
+class BoolType(ParamType):
+    def parse(self, str_value:str) -> bool:
+        if str_value.lower()=='true':
+            return True
+        elif str_value.lower()=='false':
+            return False
+        else:
+            raise ParamParseError("Unable to parse boolean parameter value was '%s'"%
+                                  repr(str_value))
+    def validate(self, value:Any) -> None:
+        if not isinstance(value, bool):
+            raise ParamValidationError("Parameter must be a bool, value was '%s'"% repr(value))
+    def __str__(self):
+        return 'bool'
+
+class StringType(ParamType):
+    def validate(self, value:Any) -> None:
+        if not isinstance(value, str):
+            raise ParamValidationError("Value '%s' is not a string" % repr(value))
+    def __str__(self):
+        return 'string'
+
+class AbspathType(ParamType):
+    def validate(self, value:Any)->None:
+        if not isinstance(value, str):
+            raise ParamValidationError("Path value '%s' should be a string, not %s" %
+                                       (repr(value), type(value)))
+        if not isabs(value):
+            raise ParamValidationError("Path value '%s' is not absolute" % repr(value))
+    def __str__(self):
+        return 'absolute_path'
+
+class RelpathType(ParamType):
+    def validate(self, value:Any)->None:
+        if not isinstance(value, str):
+            raise ParamValidationError("Path value '%s' should be a string, not %s" %
+                                       (repr(value), type(value)))
+        if isabs(value):
+            raise ParamValidationError("Path value '%s' is absolute, should be relative" % repr(value))
+    def __str__(self):
+        return 'relative_path'
+
+class HostnameType(ParamType):
+    def validate(self, name):
+        if not HOSTNAME_RE.match(name):
+            raise ParamValidationError("'%s' is not a valid hostname: must start with a letter and only contain letters, numbers, '-', '_', and '.'" % name)
+    def __str__(self):
+        return 'hostname'
+
 
 class ParamDef:
     def __init__(self, name:str, default_value:Any,
                  optional:bool,
                  help:str,
-                 parse_fn:Optional[ParseFnType]=None,
-                 validation_fn:Optional[ValidationFnType]=None,
-                 to_json_fn:Optional[JSONConvertFn]=None):
+                 ptype:ParamType):
         """Define a parameter - used for both workspace config params
         and resource params.
 
         If optional is True, that means that the parameter can take
         a value of None. If optional is False and the default_value is None,
-        then the parameter must be explicitly specified.
+        then the parameter must be explicitly specified. Also, set optional to
+        False if you never want to allow a value of None (user cannot override
+        default value to None).
         """
         self.name = name
         self.default_value = default_value
         self.optional = optional
         self.help = help
-        self.parse_fn = parse_fn
-        self.validation_fn = validation_fn
-        if validation_fn and default_value is not None:
+        self.ptype = ptype
+        if default_value is not None:
             # we validate our default value if it is specified
-            validation_fn(default_value)
-        self.to_json_fn = to_json_fn
+            ptype.validate(default_value)
 
     def parse(self, raw_value:Any) -> Any:
-        """If the value is a string, and a parse function has been defined, parse
-        it and return the parsed value. Otherwise, just return the original value.
+        """If the value is a string, parse it and return the parsed value. Otherwise,
+        just return the original value.
 
         NOTE: if the parameter's type is a string, and a parse function is defined,
         the parse function must return the value if a parsed value is passed in again.
         """
-        if self.parse_fn and isinstance(raw_value, str):
+        if isinstance(raw_value, str):
             try:
-                return self.parse_fn(raw_value)
+                return self.ptype.parse(raw_value)
             except Exception as e:
                 raise ParamParseError("Unable to parse parameter %s value %s"%
                                       (self.name, repr(raw_value))) from e
@@ -76,104 +154,80 @@ class ParamDef:
             return raw_value
 
     def validate(self, value:Any)->None:
-        """Validate required values and then check the validation function,
-        if provided."""
+        """Validate required values and then check the types's validation method"""
         if value is None and self.optional:
             return # if None and None is allowed, we can just skip validation
         elif value is None and self.default_value is None and not self.optional:
             raise ParamValidationError("Required parameter '%s' is None" % self.name)
-        elif self.validation_fn:
+        else:
             try:
-                self.validation_fn(value)
+                self.ptype.validate(value)
             except Exception as e:
                 raise ParamValidationError("Error in validation of configuration parameter '%s'"%
                                            self.name) from e
 
     def to_json(self, value:Any) -> Any:
-        """Convert the parameter value to a JSON-serializable value.
-        This uses the provided to_json_fn if available. Usually, you can
-        just pass the value as is, but in some cases (e.g. dates), you might
-        need a conversion function."""
-        if self.to_json_fn is not None:
-            return self.to_json_fn(value)
-        else:
-            return value
+        """Convert the parameter value to a JSON-serializable value, via the type's function.
+        """
+        return self.ptype.to_json(value)
 
 
 PARAM_DEFS = {} # type: Dict[str, ParamDef]
 LOCAL_PARAM_DEFS = {} # type: Dict[str, ParamDef]
 
+#########################################################
+#                  Global Params                        #
+#########################################################
+# These params are stored in the workspace's config.json
+# file, which is keep in git and synced across all instances
+# of the workspace.
+
 
 def define_param(name:str, default_value:Any, optional:bool, help:str,
-                 parse_fn:Optional[ParseFnType]=None,
-                 validation_fn:Optional[ValidationFnType]=None) -> str:
+                 ptype:ParamType) -> str:
     global PARAM_DEFS
     assert name not in PARAM_DEFS
     assert name not in LOCAL_PARAM_DEFS # don't want duplicates across local and global
-    PARAM_DEFS[name] = ParamDef(name, default_value, optional, help, parse_fn, validation_fn)
+    PARAM_DEFS[name] = ParamDef(name, default_value, optional, help, ptype)
     return name
+
+class TemplateType(ParamType):
+    def validate(self, value:Any) -> None:
+        validate_template(value)
+    def __str__(self):
+        return 'template'
 
 RESULTS_DIR_TEMPLATE=define_param(
     'results.dir_template',
-    "snapshots/{HOSTNAME}-{TAG}",
-    False,
-    "Template describing where results files will be moved during snapshot",
-    None,
-    validate_template
+    default_value="snapshots/{HOSTNAME}-{TAG}",
+    optional=False,
+    help="Template describing where results files will be moved during snapshot",
+    ptype=TemplateType()
 )
 
-def validate_move_exclude_files(value):
-    if not isinstance(value, list) and not isinstance(value, tuple):
-        raise ParamValidationError("Move excluded files parameter must be a list or a tuple")
-    for v in value:
-        if not isinstance(v, str):
-            raise ParamValidationError("Move excluded files parameter elements must be strings")
+class FileListType(ParamType):
+    def parse(self, str_value:str)->Any:
+        return json.loads(str_value)
+
+    def validate(self, value:Any) -> None:
+        if not isinstance(value, list) and not isinstance(value, tuple):
+            raise ParamValidationError("File list parameter must be a list or a tuple")
+        for v in value:
+            if not isinstance(v, str):
+                raise ParamValidationError("File list parameter elements must be strings")
+
+    def __str__(self):
+        return 'file_list'
 
 RESULTS_MOVE_EXCLUDE_FILES=define_param(
     'results.move_exclude_files',
-    ['README.txt', 'README.rst', 'README.md'],
-    False,
-    "List of files to exclude when moving results to a subdirectory during snapshot.",
-    lambda s:json.loads(s),
-    validate_move_exclude_files
+    default_value=['README.txt', 'README.rst', 'README.md'],
+    optional=False,
+    help="List of files to exclude when moving results to a subdirectory during snapshot.",
+    ptype=FileListType()
 )
 
-def make_validate_by_type(typ:type) -> Callable[[Any],None]:
-    def validate_fn(value:Any) -> None:
-        if not isinstance(value, typ):
-            raise ParamValidationError("Parameter must be of type %s, value was '%s'"%
-                                       (typ, repr(value)))
-    return validate_fn
 
-def parse_bool(raw_value:str) -> bool:
-    if raw_value.lower()=='true':
-        return True
-    elif raw_value.lower()=='false':
-        return False
-    else:
-        raise ParamParseError("Unable to parse boolean parameter value was '%s'"%
-                              repr(raw_value))
-
-def validate_abspath(value:Any):
-    if not isinstance(value, str):
-        raise ParamValidationError("Path value '%s' should be a string, not %s" %
-                                   (repr(value), type(value)))
-    if not isabs(value):
-        raise ParamValidationError("Path value '%s' is not absolute" % repr(value))
-
-def validate_relpath(value:Any):
-    if not isinstance(value, str):
-        raise ParamValidationError("Path value '%s' should be a string, not %s" %
-                                   (repr(value), type(value)))
-    if isabs(value):
-        raise ParamValidationError("Path value '%s' is absolute, should be relative" % repr(value))
-
-
-def validate_scratch_directory(value):
-    if not isinstance(value, str):
-        raise ParamValidationError("Directory path should be a string, not %s" % type(value))
-    if isabs(value):
-        raise ParamValidationError("Scratch directory path should be relative to the workspace")
 
 SCRATCH_DIRECTORY=define_param(
     "scratch_directory",
@@ -181,8 +235,7 @@ SCRATCH_DIRECTORY=define_param(
     optional=True,
     help="Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
     "If this is set, it is relative to the workspace directory.",
-    parse_fn=None,
-    validation_fn=validate_scratch_directory
+    ptype=RelpathType()
 )
 
 
@@ -202,12 +255,12 @@ def get_global_param_defaults():
 
 def define_local_param(name:str, default_value:Optional[Any],
                        optional:bool,
-                       help:str, parse_fn:Optional[ParseFnType]=None,
-                       validation_fn:Optional[ValidationFnType]=None):
+                       help:str,
+                       ptype:ParamType):
     global LOCAL_PARAM_DEFS
     assert name not in LOCAL_PARAM_DEFS
     assert name not in PARAM_DEFS # don't want duplicates across local and global
-    LOCAL_PARAM_DEFS[name] = ParamDef(name, default_value, optional, help, parse_fn, validation_fn)
+    LOCAL_PARAM_DEFS[name] = ParamDef(name, default_value, optional, help, ptype)
     return name
 
 
@@ -224,25 +277,14 @@ def get_local_param_defaults(hostname=None):
     return defaults
 
 
-def validate_hostname(name):
-    if not HOSTNAME_RE.match(name):
-        raise ParamValidationError("'%s' is not a valid hostname: must start with a letter and only contain letters, numbers, '-', '_', and '.'" % name)
-
 DEFAULT_HOSTNAME=socket.gethostname().split('.')[0]
 HOSTNAME=define_local_param(
     'hostname',
-    DEFAULT_HOSTNAME,
+    default_value=DEFAULT_HOSTNAME,
     optional=False,
     help="Hostname to identify this machine in snapshots.",
-    parse_fn=None,
-    validation_fn=validate_hostname
+    ptype=HostnameType()
 )
-
-def validate_local_scratch_directory(value):
-    if not isinstance(value, str):
-        raise ParamValidationError("Directory path should be a string, not %s" % type(value))
-    if not isabs(value):
-        raise ParamValidationError("Local scratch directory path should be absolute")
 
 LOCAL_SCRATCH_DIRECTORY=define_local_param(
     "local_scratch_directory",
@@ -250,8 +292,7 @@ LOCAL_SCRATCH_DIRECTORY=define_local_param(
     optional=True,
     help="Directory where scratch files are stored (checkpoints, temporary data, etc.). "+
          "If this is set, it is absolute and only specific to the local machine.",
-    parse_fn=None,
-    validation_fn=validate_local_scratch_directory
+    ptype=AbspathType()
 )
 
 def init_scratch_directory(scratch_dir:str, workspace_dir:str,
@@ -332,25 +373,22 @@ class ResourceParams:
         self.define('resource_type', default_value=None, optional=False,
                     is_global=True,
                     help="Type of this resource (e.g. git, local_files, api, etc.)",
-                    validation_fn=make_validate_by_type(str))
+                    ptype=StringType())
         self.define('name', default_value=None, optional=False,
                     is_global=True,
                     help="Name of the resource",
-                    validation_fn=make_validate_by_type(str))
+                    ptype=StringType())
         self.define('role', default_value=None, optional=False,
                     is_global=True,
                     help="Resource role (source-data, intermediate-data, code, results)",
-                    validation_fn=make_validate_by_type(str))
+                    ptype=StringType())
 
     def define(self, name:str, default_value:Any, optional:bool,
                help:str, is_global:bool,
-               parse_fn:Optional[ParseFnType]=None,
-               validation_fn:Optional[ValidationFnType]=None,
-               to_json_fn:Optional[JSONConvertFn]=None):
+               ptype:ParamType):
         assert name not in self.global_defs
         assert name not in self.local_defs
-        defn = ParamDef(name, default_value, optional, help, parse_fn=parse_fn,
-                        validation_fn=validation_fn, to_json_fn=to_json_fn)
+        defn = ParamDef(name, default_value, optional, help, ptype)
         if is_global:
             self.global_defs[name] = defn
         else:

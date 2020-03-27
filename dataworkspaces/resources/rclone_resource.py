@@ -5,17 +5,20 @@ Resource for files copied in by rclone
 import os
 import os.path 
 import stat
-from typing import Tuple, List, Set, Pattern, Optional, Union
+from typing import Tuple, List, Set, Pattern, Optional, Union, Any, cast
 import json
 import shutil
+import click
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin,\
     FileResourceMixin, SnapshotResourceMixin, JSONDict, JSONList,\
     ResourceRoles, ResourceFactory
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
-from dataworkspaces.utils.file_utils import does_subpath_exist
+from dataworkspaces.utils.file_utils import does_subpath_exist, LocalPathType
 from dataworkspaces.third_party.rclone import RClone
+from dataworkspaces.utils.param_utils import \
+    ParamType, ParamParseError, ParamValidationError, StringType, BoolType
 
 RCLONE_RESOURCE_TYPE = 'rclone'
 
@@ -25,37 +28,92 @@ dws add rclone [options] remote local
 See 
 """
 
+class RemoteOriginType(ParamType):
+    """Custom param type for maintaining the remote origin in the form
+    remote:abspath.
+    """
+    def parse(self, str_value:str) -> str:
+        if ':' not in str_value:
+            raise ParamParseError(f"Remote origin '{str_value}' is missing a ':', should be of the form remote:path")
+        (remote_name, rpath) = str_value.split(':')
+        if os.path.isabs(rpath):
+            return str_value
+        else:
+            return remote_name + ":" + os.path.abspath(rpath)
+
+    def validate(self, value:Any) -> None:
+        if not isinstance(value, str):
+            raise ParamValidationError(f"Remote origin '{repr(value)}' is not a string")
+        if ':' not in value:
+            raise ParamValidationError(f"Remote origin '{value}' is missing a ':', should be of the form remote:path")
+
+    def __str__(self):
+        return 'remote_origin'
+
 
 class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
     def __init__(self, name:str, role:str, workspace:Workspace,
-                 remote_origin:str, local_path:str, config:Optional[str]=None,
-                 compute_hash:bool=False, ignore:List[str]=[], verbose:bool=False):
+                 remote_origin:str, global_local_path:str, my_local_path:Optional[str],
+                 config:Optional[str]=None,
+                 export:bool=False, compute_hash:bool=False,
+                 ignore:List[str]=[]):
         super().__init__(RCLONE_RESOURCE_TYPE, name, role, workspace)
-        (self.remote_name, rpath) = remote_origin.split(':')
-        self.remote_path = os.path.abspath(rpath)
-        self.remote_origin = self.remote_name + ':' + self.remote_path
-        self.local_path = os.path.abspath(local_path)
-        self.compute_hash = compute_hash
-        self.ignore = ignore
-        self.verbose = verbose
-        self.config = config
+        self.param_defs.define('remote_origin',
+                               default_value=None,
+                               optional=False,
+                               is_global=True,
+                               help="Rclone remote origin in the form remote:path",
+                               ptype=RemoteOriginType())
+        self.remote_origin = self.param_defs.get('remote_origin', remote_origin) # type: str
+        (self.remote_name, remote_path) = self.remote_origin.split(':')
+        self.param_defs.define('global_local_path',
+                               default_value=None,
+                               optional=False,
+                               is_global=True,
+                               help="Location of files on local filesystem, as defined when the resource is created. "+
+                                    "May be overridden locally via my_local_path.",
+                               ptype=StringType())
+        self.global_local_path = self.param_defs.get('global_local_path', global_local_path) # type: str
+        self.param_defs.define('my_local_path',
+                               default_value=None,
+                               optional=True,
+                               is_global=False,
+                               help="Override of global_local_path, just for this instance of the workspace.",
+                               ptype=StringType())
+        self.my_local_path = self.param_defs.get('my_local_path', my_local_path) # type: Optional[str]
+        # the actual local path we'll use
+        self.local_path = os.path.abspath(self.my_local_path if self.my_local_path is not None
+                                          else self.global_local_path)
+        self.param_defs.define('export',
+                               default_value=False,
+                               optional=True,
+                               help="True if metadata for export should be added each snapshot",
+                               is_global=True,
+                               ptype=BoolType())
+        self.export = self.param_defs.get('export', export) # type: bool
+        self.param_defs.define('compute_hash',
+                               default_value=False,
+                               optional=True,
+                               is_global=True,
+                               help="If True, then compute the full hash of all files rather than using sizes.",
+                               ptype=BoolType())
+        self.compute_hash = self.param_defs.get('compute_hash', compute_hash) # type: bool
+        self.param_defs.define('config',
+                               default_value=None,
+                               optional=True,
+                               is_global=True,
+                               help="Optional path to rclone config file (otherwise uses the default)",
+                               ptype=StringType())
+        self.config = self.param_defs.get('config', config) # type: Optional[str]
+
+        self.ignore = ignore # TODO: should this be a parameter?
+
         if config:
             self.rclone = RClone(cfgfile=self.config)
         else:
             self.rclone = RClone()
 
-    def get_params(self) -> JSONDict:
-        return {
-            'resource_type':self.resource_type,
-            'name':self.name,
-            'role':self.role,
-            'remote_origin':self.remote_origin,
-            'local_path':self.local_path,
-            'config':self.config,
-            'compute_hash':self.compute_hash
-        }
-
-    def get_local_path_if_any(self) -> str:
+    def get_local_path_if_any(self):
         return self.local_path
 
     def results_move_current_files(self, rel_dest_root:str, exclude_files:Set[str],
@@ -140,7 +198,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
 
     def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
         if self.workspace.verbose:
-            print("In snapshot: ", self.remote_name,  self.remote_path, self.local_path)
+            print(f"In snapshot: {self.remote_origin} {self.local_path}")
         if self.compute_hash:
             (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way']) 
         else:
@@ -203,20 +261,25 @@ class RcloneFactory(ResourceFactory):
 
     def from_command_line(self, role, name, workspace,
                           remote_path, local_path, config, export, compute_hash):
-        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         rclone = self._add_prechecks(local_path, remote_path, config)
         self._copy_from_remote(local_path, remote_path, rclone)
-        return RcloneResource(name, role, workspace, remote_path, local_path, config,
-                              compute_hash)
+        return RcloneResource(name, role, workspace, remote_path,
+                              global_local_path=local_path, my_local_path=None,
+                              config=config, export=export, compute_hash=compute_hash)
 
     def from_json(self, params:JSONDict, local_params:JSONDict,
                   workspace:Workspace) -> RcloneResource:
         """Instantiate a resource object from the parsed resources.json file"""
         assert params['resource_type']==RCLONE_RESOURCE_TYPE
         return RcloneResource(params['name'],
-                                 params['role'],  
-                                 workspace,  params['remote_origin'], params['local_path'],
-                                 params['config'], params['compute_hash'])
+                              params['role'],  
+                              workspace,  params['remote_origin'],
+                              # for backward compatibility, we also check for "local_path"
+                              global_local_path=params['global_local_path'] if 'global_local_path' in params else params['local_path'],
+                              my_local_path=local_params['my_local_path'] if 'my_local_path' in local_params
+                                            else (local_params['local_path'] if 'local_path' in local_params
+                                            else None),
+                              config=params['config'], export=params.get('export', False), compute_hash=params['compute_hash'])
 
     def has_local_state(self) -> bool:
         return True
@@ -225,13 +288,34 @@ class RcloneFactory(ResourceFactory):
         """Instantiate a resource that was created remotely. In this case, we will
         copy from the remote origin.
         """
-        local_path = params['local_path']
         remote_origin = params['remote_origin']
         config = params['config']
+        name = params['name']
+        # check local_path, too for backward compatibility
+        global_local_path = params['global_local_path'] if 'global_local_path' in params else params['local_path'] # type: str
+        if os.path.exists(global_local_path):
+            local_path = global_local_path
+            my_local_path = None # type: Optional[str]
+        else:
+            if not workspace.batch:
+                # TODO: consider whether we can just create the directory the user specifies rather than
+                # requiring it to pre-exist (since we will download anyway).
+                local_path = \
+                    cast(str,
+                         click.prompt("Rclone resource '%s' was located at '%s' on the original system. Where is it located on this system?"%
+                                      (name, global_local_path),
+                                      type=LocalPathType(exists=True)))
+                my_local_path = local_path
+            else:
+                raise ConfigurationError("Local files resource %s is missing from %s." % (name, global_local_path))
+
+
         rclone = self._add_prechecks(local_path, remote_origin, config)
         self._copy_from_remote(local_path, remote_origin, rclone)
-        return RcloneResource(params['name'], params['role'], workspace, remote_origin, local_path, config,
-                              params['compute_hash'])
+        return RcloneResource(name, params['role'], workspace, remote_origin,
+                              global_local_path=global_local_path, my_local_path=my_local_path,
+                              config=config, export=params.get('export', False),
+                              compute_hash=params['compute_hash'])
 
 
 

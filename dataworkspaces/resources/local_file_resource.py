@@ -21,7 +21,7 @@ from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixi
 import dataworkspaces.resources.hashtree as hashtree
 from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
 import dataworkspaces.backends.git as git_backend
-from dataworkspaces.utils.param_utils import make_validate_by_type, parse_bool
+from dataworkspaces.utils.param_utils import StringType, BoolType
 
 
 LOCAL_FILE = 'file'
@@ -34,7 +34,7 @@ def _relative_rsrc_dir_for_git_workspace(role, name):
 class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
     def __init__(self, name:str, role:str, workspace:Workspace,
                  global_local_path:str, my_local_path:Optional[str],
-                 ignore:List[str]=[], compute_hash:bool=False):
+                 export:bool, compute_hash:bool, ignore:List[str]=[]):
         super().__init__(LOCAL_FILE, name, role, workspace)
         self.param_defs.define('global_local_path',
                                default_value=None,
@@ -42,25 +42,31 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
                                is_global=True,
                                help="Location of files on local filesystem, as defined when the resource is created. "+
                                     "May be overridden locally via my_local_path.",
-                               validation_fn=make_validate_by_type(str))
+                               ptype=StringType())
         self.global_local_path = self.param_defs.get('global_local_path', global_local_path) # type: str
         self.param_defs.define('my_local_path',
                                default_value=None,
                                optional=True,
                                is_global=False,
                                help="Override of global_local_path, just for this instance of the workspace.",
-                               validation_fn=make_validate_by_type(str))
+                               ptype=StringType())
         self.my_local_path = self.param_defs.get('my_local_path', my_local_path) # type: Optional[str]
         # the actual local path we'll use
         self.local_path = self.my_local_path if self.my_local_path is not None \
                           else self.global_local_path
+        self.param_defs.define('export',
+                               default_value=False,
+                               optional=True,
+                               help="True if metadata for export should be added each snapshot",
+                               is_global=True,
+                               ptype=BoolType())
+        self.export = self.param_defs.get('export', export) # type: bool
         self.param_defs.define('compute_hash',
                                default_value=False,
                                optional=True,
                                is_global=True,
                                help="If True, then compute the full hash of all files rather than using sizes.",
-                               validation_fn=make_validate_by_type(bool),
-                               parse_fn=parse_bool)
+                               ptype=BoolType())
         self.compute_hash = self.param_defs.get('compute_hash', compute_hash) # type: bool
         self.ignore = ignore # TODO: should this be a parameter?
         if isinstance(workspace, git_backend.Workspace):
@@ -78,15 +84,6 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
             # data. It will also need changes to the hashtree file.
             self.rsrcdir = os.path.abspath(os.path.join(self.local_path, '.hashes'))
             self.ignore.append('.hashes')
-
-    def get_params(self) -> JSONDict:
-        return {
-            'resource_type':self.resource_type,
-            'name':self.name,
-            'role':self.role,
-            'local_path':self.global_local_path,
-            'compute_hash':self.compute_hash
-        }
 
     def get_local_path_if_any(self):
         return self.local_path
@@ -227,12 +224,12 @@ class LocalFileResource(Resource, LocalStateResourceMixin, FileResourceMixin, Sn
 class LocalFileFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace, local_path, export, compute_hash):
         """Instantiate a resource object from the add command's arguments"""
+        workspace_path = workspace.get_workspace_local_path_if_any()
         if not os.path.isdir(local_path):
             raise ConfigurationError(local_path + ' does not exist')
         if not os.access(local_path, os.R_OK): 
             raise ConfigurationError(local_path + ' does not have read permission')
         if isinstance(workspace, git_backend.Workspace):
-            workspace_path = workspace.get_workspace_local_path_if_any()
             assert workspace_path is not None
             hash_path = join(workspace_path, _relative_rsrc_dir_for_git_workspace(role, name))
             try:
@@ -254,7 +251,7 @@ class LocalFileFactory(ResourceFactory):
             if not exists(non_git_hashes):
                 os.mkdir(non_git_hashes)
         return LocalFileResource(name, role, workspace, local_path, None,
-                                 compute_hash=compute_hash)
+                                 export=export, compute_hash=compute_hash)
 
     def from_json(self, params:JSONDict, local_params:JSONDict,
                   workspace:Workspace) -> LocalFileResource:
@@ -265,7 +262,7 @@ class LocalFileFactory(ResourceFactory):
                                  local_params['my_local_path'] if 'my_local_path' in local_params
                                  else (local_params['local_path'] if 'local_path' in local_params
                                        else None),
-                                 compute_hash=params['compute_hash'])
+                                 export=params.get('export', False), compute_hash=params['compute_hash'])
 
     def has_local_state(self) -> bool:
         return True
@@ -298,6 +295,5 @@ class LocalFileFactory(ResourceFactory):
         return self.from_json(params, local_params, workspace)
 
     def suggest_name(self, workspace, role, local_path, export, compute_hash):
-        print("local_path=%s, export=%s, compute_hash=%s" % (local_path, export, compute_hash)) # XXX
         return os.path.basename(local_path)
 
