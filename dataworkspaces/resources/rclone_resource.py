@@ -34,7 +34,8 @@ class RemoteOriginType(ParamType):
     """
     def parse(self, str_value:str) -> str:
         if ':' not in str_value:
-            raise ParamParseError(f"Remote origin '{str_value}' is missing a ':', should be of the form remote:path")
+            raise ParamParseError("Remote origin '%s' is missing a ':', should be of the form remote:path"%
+                                  str_value)
         (remote_name, rpath) = str_value.split(':')
         if os.path.isabs(rpath):
             return str_value
@@ -43,9 +44,9 @@ class RemoteOriginType(ParamType):
 
     def validate(self, value:Any) -> None:
         if not isinstance(value, str):
-            raise ParamValidationError(f"Remote origin '{repr(value)}' is not a string")
+            raise ParamValidationError("Remote origin '%s' is not a string"% repr(value))
         if ':' not in value:
-            raise ParamValidationError(f"Remote origin '{value}' is missing a ':', should be of the form remote:path")
+            raise ParamValidationError("Remote origin '%s' is missing a ':', should be of the form remote:path"%value)
 
     def __str__(self):
         return 'remote_origin'
@@ -198,7 +199,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
 
     def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
         if self.workspace.verbose:
-            print(f"In snapshot: {self.remote_origin} {self.local_path}")
+            print("In snapshot: %s %s"% (self.remote_origin, self.local_path))
         if self.compute_hash:
             (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=['--one-way']) 
         else:
