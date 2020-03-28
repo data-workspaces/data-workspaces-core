@@ -79,7 +79,7 @@ from dataworkspaces.errors import InternalError
 #         return fname
 
 
-def run_command(workspace:Workspace, step_name:str, cwd:str, command:str, args:List[str]):
+def run_command(workspace: Workspace, step_name: str, cwd: str, command: str, args: List[str]):
     raise InternalError("Run command not yet supported")
     # XXX Need to port and finish implementing
     # ns = actions.Namespace()
@@ -123,4 +123,3 @@ def run_command(workspace:Workspace, step_name:str, cwd:str, command:str, args:L
     #     if exists(lineage_file):
     #         os.remove(lineage_file)
     #     raise
-

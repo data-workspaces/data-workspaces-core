@@ -5,10 +5,10 @@ import traceback
 
 import click
 
-from .errors import CalledProcessError, UserAbort, ConfigurationError,\
-                              InternalError, BatchModeError
+from .errors import CalledProcessError, UserAbort, ConfigurationError, InternalError, BatchModeError
 
 from .dws import cli, is_verbose_mode
+
 
 def main():
     try:
@@ -34,8 +34,7 @@ def main():
         if is_verbose_mode():
             tb = traceback.format_exc()
             click.echo(tb, err=True)
-        click.echo("Running in --batch mode, but user input required for %s"%
-                   str(e), err=True)
+        click.echo("Running in --batch mode, but user input required for %s" % str(e), err=True)
         sys.exit(1)
     except InternalError as e:
         tb = traceback.format_exc()
@@ -47,4 +46,3 @@ def main():
         click.echo(tb, err=True)
         click.echo("Aborting due to unexpected exception: %s" % repr(e), err=True)
         sys.exit(1)
-

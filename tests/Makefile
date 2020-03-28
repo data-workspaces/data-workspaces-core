@@ -3,7 +3,7 @@ MYPYPATH:=$(shell cd ..; pwd)
 DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 
 help:
-	@echo targets are: test clean mypy pyflakes check help install-rclone-deb
+	@echo targets are: test clean mypy pyflakes check help install-rclone-deb format-with-black
 
 UNIT_TESTS=test_git_utils test_file_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_hashtree test_lineage_utils test_git_fat_integration test_git_lfs test_lineage test_jupyter_kit test_sklearn_kit test_api test_wrapper_utils test_tensorflow test_scratch_dir
 
@@ -47,7 +47,11 @@ $(RCLONE_CONFIG):
 	echo "type = local" >>$(RCLONE_CONFIG)
 	echo "nounce =" >>$(RCLONE_CONFIG)
 
+# Warning - this will change the source code, use with care!
+format-with-black:
+	cd $(DATAWORKSPACES); black -l 100 -t py35 --exclude dataworkspaces/third_party .
+
 clean:
 	rm -rf ./test ./remotes ./clones rclone*.deb
 
-.PHONY: test help clean mypy pyflakes check install-rclone-deb
+.PHONY: test help clean mypy pyflakes check install-rclone-deb format-with-black

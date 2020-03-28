@@ -39,17 +39,19 @@ from dataworkspaces.errors import ConfigurationError
 #         return '  Step %s has no lineage differences.\n' % data1['step_name']
 
 
-def diff_command(workspace:Workspace, snapshot_or_tag1:str, snapshot_or_tag2:str) -> None:
+def diff_command(workspace: Workspace, snapshot_or_tag1: str, snapshot_or_tag2: str) -> None:
     if not isinstance(workspace, SnapshotWorkspaceMixin):
-        raise ConfigurationError("Diff command not supported for workspace %s as backend does not support snapshots"%
-                                 workspace.name)
+        raise ConfigurationError(
+            "Diff command not supported for workspace %s as backend does not support snapshots"
+            % workspace.name
+        )
     md1 = workspace.get_snapshot_by_tag_or_hash(snapshot_or_tag1)
-    manifest1 = {r['name']:r for r in workspace.get_snapshot_manifest(md1.hashval)}
-    snstr1 = "%s, tags %s" % (md1.hashval, ','.join(md1.tags)) if len(md1.tags)>0 else md1.hashval
+    manifest1 = {r["name"]: r for r in workspace.get_snapshot_manifest(md1.hashval)}
+    snstr1 = "%s, tags %s" % (md1.hashval, ",".join(md1.tags)) if len(md1.tags) > 0 else md1.hashval
     sn1_names = frozenset([n for n in manifest1.keys()])
     md2 = workspace.get_snapshot_by_tag_or_hash(snapshot_or_tag2)
-    manifest2 = {r['name']:r for r in workspace.get_snapshot_manifest(md2.hashval)}
-    snstr2 = "%s, tags %s" % (md2.hashval, ','.join(md2.tags)) if len(md2.tags)>0 else md2.hashval
+    manifest2 = {r["name"]: r for r in workspace.get_snapshot_manifest(md2.hashval)}
+    snstr2 = "%s, tags %s" % (md2.hashval, ",".join(md2.tags)) if len(md2.tags) > 0 else md2.hashval
     sn2_names = frozenset([n for n in manifest2.keys()])
 
     click.echo("Comparing:\n    Snapshot %s to\n    Snapshot %s" % (snstr1, snstr2))
@@ -57,36 +59,36 @@ def diff_command(workspace:Workspace, snapshot_or_tag1:str, snapshot_or_tag2:str
     same_resources = []
     different_resources = []
     for name in sorted(common_names):
-        h1 = manifest1[name]['hash']
-        h2 = manifest2[name]['hash']
-        if h1==h2:
+        h1 = manifest1[name]["hash"]
+        h2 = manifest2[name]["hash"]
+        if h1 == h2:
             same_resources.append(name)
         else:
             different_resources.append(name)
-    if len(same_resources)>0:
+    if len(same_resources) > 0:
         click.echo("  Resources with the same value:")
         for name in same_resources:
             click.echo("    " + name)
     else:
         click.echo("  Resources with the same value: None")
-    if len(different_resources)>0:
+    if len(different_resources) > 0:
         click.echo("  Resources with different values:")
         for name in different_resources:
             click.echo("    " + name)
     else:
         click.echo("  Resources with different values: None")
     added_resources = sorted(sn2_names.difference(sn1_names))
-    if len(added_resources)>0:
+    if len(added_resources) > 0:
         click.echo("  Added resources:")
         for name in added_resources:
-            click.echo("    "+name)
+            click.echo("    " + name)
     else:
         click.echo("  Added resources: None")
     removed_resources = sorted(sn1_names.difference(sn2_names))
-    if len(removed_resources)>0:
+    if len(removed_resources) > 0:
         click.echo("  Removed resources:")
         for name in removed_resources:
-            click.echo("    "+name)
+            click.echo("    " + name)
     else:
         click.echo("  Removed resources: None")
 
@@ -110,5 +112,3 @@ def diff_command(workspace:Workspace, snapshot_or_tag1:str, snapshot_or_tag2:str
     #                                                         for basename in removed_basenames]))
     # else:
     #     click.echo("  No removed lineage steps.")
-    
-

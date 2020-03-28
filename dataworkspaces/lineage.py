@@ -118,36 +118,52 @@ from argparse import ArgumentParser, Namespace
 from copy import copy
 
 from dataworkspaces.errors import ConfigurationError
-from dataworkspaces.workspace import Workspace, load_workspace, FileResourceMixin,\
-                                     PathNotAResourceError, SnapshotWorkspaceMixin,\
-                                     ResourceRoles, _find_containing_workspace
-from dataworkspaces.utils.lineage_utils import \
-    ResourceRef, StepLineage, infer_step_name, infer_script_path, LineageError
-
+from dataworkspaces.workspace import (
+    Workspace,
+    load_workspace,
+    FileResourceMixin,
+    PathNotAResourceError,
+    SnapshotWorkspaceMixin,
+    ResourceRoles,
+    _find_containing_workspace,
+)
+from dataworkspaces.utils.lineage_utils import (
+    ResourceRef,
+    StepLineage,
+    infer_step_name,
+    infer_script_path,
+    LineageError,
+)
 
 
 ##########################################################################
 #                   Main lineage API
 ##########################################################################
 
+
 class Lineage(contextlib.AbstractContextManager):
     """This is the main object for tracking the execution of a step.
     Rather than instantiating it directly, use the :class:`~LineageBuilder`
     class to construct your :class:`~Lineage` instance.
     """
-    def __init__(self, step_name:str, start_time:datetime.datetime,
-                 parameters:Dict[str,Any],
-                 inputs:List[Union[str, ResourceRef]],
-                 code:List[Union[str, ResourceRef]],
-                 workspace:Workspace,
-                 command_line:Optional[List[str]]=None,
-                 current_directory:Optional[str]=None):
-        self.workspace = workspace # type: Workspace
+
+    def __init__(
+        self,
+        step_name: str,
+        start_time: datetime.datetime,
+        parameters: Dict[str, Any],
+        inputs: List[Union[str, ResourceRef]],
+        code: List[Union[str, ResourceRef]],
+        workspace: Workspace,
+        command_line: Optional[List[str]] = None,
+        current_directory: Optional[str] = None,
+    ):
+        self.workspace = workspace  # type: Workspace
         self.instance = workspace.get_instance()
         # if not isinstance(workspace, SnapshotWorkspaceMixin) or not workspace.supports_lineage():
         #     raise ConfigurationError("Backend for workspace %s does not support lineage" % workspace.name)
         self.store = cast(SnapshotWorkspaceMixin, workspace).get_lineage_store()
-        input_resource_refs=[] # type: List[ResourceRef]
+        input_resource_refs = []  # type: List[ResourceRef]
         for r_or_p in inputs:
             if isinstance(r_or_p, ResourceRef):
                 workspace.validate_resource_name(r_or_p.name, r_or_p.subpath)
@@ -155,15 +171,15 @@ class Lineage(contextlib.AbstractContextManager):
             else:
                 ref = workspace.map_local_path_to_resource(r_or_p)
                 input_resource_refs.append(ref)
-        code_resource_refs=[] # type: List[ResourceRef]
+        code_resource_refs = []  # type: List[ResourceRef]
         for r_or_p in code:
             if isinstance(r_or_p, ResourceRef):
-                self.workspace.validate_resource_name(r_or_p.name, r_or_p.subpath,
-                                                      expected_role=ResourceRoles.CODE)
+                self.workspace.validate_resource_name(
+                    r_or_p.name, r_or_p.subpath, expected_role=ResourceRoles.CODE
+                )
                 code_resource_refs.append(r_or_p)
             else:
-                ref = workspace.map_local_path_to_resource(r_or_p,
-                                                           expecting_a_code_resource=True)
+                ref = workspace.map_local_path_to_resource(r_or_p, expecting_a_code_resource=True)
                 # For now, we will resolve code paths at the resource level.
                 # We drop the subpath, unless the user provided it explicitly
                 # through a ResourceRef.
@@ -177,40 +193,46 @@ class Lineage(contextlib.AbstractContextManager):
             if current_directory is not None:
                 if not isabs(current_directory):
                     current_directory = abspath(expanduser((current_directory)))
-                run_from_directory = workspace.map_local_path_to_resource(current_directory) # type: Optional[ResourceRef]
+                run_from_directory = workspace.map_local_path_to_resource(
+                    current_directory
+                )  # type: Optional[ResourceRef]
             else:
                 run_from_directory = None
         except PathNotAResourceError:
             run_from_directory = None
 
-        self.step = StepLineage.make_step_lineage(workspace.get_instance(),
-                                                  step_name, start_time,
-                                                  parameters, input_resource_refs,
-                                                  code_resource_refs,
-                                                  self.store,
-                                                  command_line=command_line,
-                                                  run_from_directory=run_from_directory)
+        self.step = StepLineage.make_step_lineage(
+            workspace.get_instance(),
+            step_name,
+            start_time,
+            parameters,
+            input_resource_refs,
+            code_resource_refs,
+            self.store,
+            command_line=command_line,
+            run_from_directory=run_from_directory,
+        )
         self.in_progress = True
 
-    def add_input_path(self, path:str) -> None:
+    def add_input_path(self, path: str) -> None:
         if not exists(path):
             raise LineageError("Path %s does not exist" % path)
-        ref = self.workspace.map_local_path_to_resource(path) # mypy: ignore
-        self.step.add_input(self.workspace.get_instance(), self.store, ref) # mypy: ignore
+        ref = self.workspace.map_local_path_to_resource(path)  # mypy: ignore
+        self.step.add_input(self.workspace.get_instance(), self.store, ref)  # mypy: ignore
 
-    def add_input_ref(self, ref:ResourceRef) -> None:
+    def add_input_ref(self, ref: ResourceRef) -> None:
         self.step.add_input(self.workspace.get_instance(), self.store, ref)
 
-    def add_output_path(self, path:str) -> None:
+    def add_output_path(self, path: str) -> None:
         """Resolve the path to a resource name and subpath. Add
         that to the lineage as an output of the step. From this point on,
         if the step fails (:func:`~abort` is called), the associated resource
         and subpath will be marked as being in an "unknown" state.
         """
-        ref = self.workspace.map_local_path_to_resource(path) # mypy: ignore
-        self.step.add_output(self.workspace.get_instance(), self.store, ref) # mypy: ignore
+        ref = self.workspace.map_local_path_to_resource(path)  # mypy: ignore
+        self.step.add_output(self.workspace.get_instance(), self.store, ref)  # mypy: ignore
 
-    def add_output_ref(self, ref:ResourceRef):
+    def add_output_ref(self, ref: ResourceRef):
         """Add the resource reference to the lineage as an output of the step.
         From this point on, if the step fails (:func:`~abort` is called), the
         associated resource and subpath will be marked as being in an
@@ -218,12 +240,11 @@ class Lineage(contextlib.AbstractContextManager):
         """
         self.step.add_output(self.workspace.get_instance(), self.store, ref)
 
-    def add_param(self, name:str, value) -> None:
+    def add_param(self, name: str, value) -> None:
         """Add or update one of the step's parameters.
         """
-        assert self.in_progress # should only do while step running
+        assert self.in_progress  # should only do while step running
         self.step.parameters[name] = value
-
 
     def abort(self):
         """The step has failed, so we mark its outputs in an unknown state.
@@ -231,8 +252,11 @@ class Lineage(contextlib.AbstractContextManager):
         called for you automatically.
         """
         if not self.in_progress:
-            print("WARNING: Lineage.abort() called after complete() or abort() call for %s" %
-                  self.step.step_name, file=sys.stderr)
+            print(
+                "WARNING: Lineage.abort() called after complete() or abort() call for %s"
+                % self.step.step_name,
+                file=sys.stderr,
+            )
         else:
             self.in_progress = False
         for output_cert in self.step.output_resources:
@@ -248,8 +272,9 @@ class Lineage(contextlib.AbstractContextManager):
         be ok.
         """
         if self.step.execution_time_seconds is None and self.step.start_time is not None:
-            self.step.execution_time_seconds = (datetime.datetime.now() -
-                                                self.step.start_time).total_seconds()
+            self.step.execution_time_seconds = (
+                datetime.datetime.now() - self.step.start_time
+            ).total_seconds()
 
     def complete(self):
         """The step has completed. Save the outputs.
@@ -257,8 +282,11 @@ class Lineage(contextlib.AbstractContextManager):
         called for you automatically.
         """
         if not self.in_progress:
-            print("WARNING: Lineage.complete() called after complete() or abort() call for %s" %
-                  self.step.step_name, file=sys.stderr)
+            print(
+                "WARNING: Lineage.complete() called after complete() or abort() call for %s"
+                % self.step.step_name,
+                file=sys.stderr,
+            )
         else:
             self.in_progress = False
         self._set_execution_time()
@@ -269,7 +297,7 @@ class Lineage(contextlib.AbstractContextManager):
             self.complete()
         else:
             self.abort()
-        return False # don't suppress any exception
+        return False  # don't suppress any exception
 
 
 class ResultsLineage(Lineage):
@@ -283,17 +311,30 @@ class ResultsLineage(Lineage):
     when the next snapshot is taken. This file contains the full
     lineage graph collected for the resource.
     """
-    def __init__(self, step_name:str, start_time:datetime.datetime,
-                 parameters:Dict[str,Any],
-                 inputs:List[Union[str, ResourceRef]],
-                 code:List[Union[str, ResourceRef]],
-                 results_dir_or_ref:Union[str, ResourceRef],
-                 workspace:Workspace,
-                 run_description:Optional[str]=None,
-                 command_line:Optional[List[str]]=None,
-                 current_directory:Optional[str]=None):
-        super().__init__(step_name, start_time, parameters,
-                         inputs, code, workspace, command_line, current_directory)
+
+    def __init__(
+        self,
+        step_name: str,
+        start_time: datetime.datetime,
+        parameters: Dict[str, Any],
+        inputs: List[Union[str, ResourceRef]],
+        code: List[Union[str, ResourceRef]],
+        results_dir_or_ref: Union[str, ResourceRef],
+        workspace: Workspace,
+        run_description: Optional[str] = None,
+        command_line: Optional[List[str]] = None,
+        current_directory: Optional[str] = None,
+    ):
+        super().__init__(
+            step_name,
+            start_time,
+            parameters,
+            inputs,
+            code,
+            workspace,
+            command_line,
+            current_directory,
+        )
         if isinstance(results_dir_or_ref, str):
             self.results_ref = self.workspace.map_local_path_to_resource(results_dir_or_ref)
         else:
@@ -302,10 +343,12 @@ class ResultsLineage(Lineage):
         self.add_output_ref(self.results_ref)
         self.run_description = run_description
         if not isinstance(self.results_resource, FileResourceMixin):
-            raise ConfigurationError("Resource '%s' does not support a file API and thus won't support writing results."%
-                                     self.results_ref.name)
+            raise ConfigurationError(
+                "Resource '%s' does not support a file API and thus won't support writing results."
+                % self.results_ref.name
+            )
 
-    def write_results(self, metrics:Dict[str, Any]):
+    def write_results(self, metrics: Dict[str, Any]):
         """Write a ``results.json`` file to the results directory
         specified when creating the lineage object (e.g. via
         :func:`~LineageBuilder.as_results_step`).
@@ -315,21 +358,19 @@ class ResultsLineage(Lineage):
         """
         self._set_execution_time()
         data = {
-            'step':self.step.step_name,
-            'start_time':self.step.start_time.isoformat(),
-            'execution_time_seconds':self.step.execution_time_seconds,
-            'parameters': self.step.parameters,
-            'run_description':self.run_description,
-            'metrics': metrics
+            "step": self.step.step_name,
+            "start_time": self.step.start_time.isoformat(),
+            "execution_time_seconds": self.step.execution_time_seconds,
+            "parameters": self.step.parameters,
+            "run_description": self.run_description,
+            "metrics": metrics,
         }
         if self.results_ref.subpath is not None:
             results_relpath = join(self.results_ref.subpath, "results.json")
         else:
             results_relpath = "results.json"
-        cast(FileResourceMixin, self.results_resource).add_results_file(data,
-                                                                        results_relpath)
+        cast(FileResourceMixin, self.results_resource).add_results_file(data, results_relpath)
         print("Wrote results to %s:%s" % (self.results_ref.name, results_relpath))
-
 
 
 class LineageBuilder:
@@ -395,37 +436,38 @@ class LineageBuilder:
 
     **Methods**
     """
-    def __init__(self):
-        self.step_name = None         # type: Optional[str]
-        self.command_line = None      # type: Optional[List[str]]
-        self.current_directory = None # type: Optional[str]
-        self.parameters = None        # type: Optional[Dict[str, Any]]
-        self.inputs = None            # type: Optional[List[Union[str, ResourceRef]]]
-        self.no_inputs = False        # type: Optional[bool]
-        self.code = []                # type: List[Union[str, ResourceRef]]
-        self.workspace_dir = None     # type: Optional[str]
-        self.results_dir = None       # type: Optional[str]
-        self.run_description = None   # type: Optional[str]
 
-    def as_script_step(self) -> 'LineageBuilder':
+    def __init__(self):
+        self.step_name = None  # type: Optional[str]
+        self.command_line = None  # type: Optional[List[str]]
+        self.current_directory = None  # type: Optional[str]
+        self.parameters = None  # type: Optional[Dict[str, Any]]
+        self.inputs = None  # type: Optional[List[Union[str, ResourceRef]]]
+        self.no_inputs = False  # type: Optional[bool]
+        self.code = []  # type: List[Union[str, ResourceRef]]
+        self.workspace_dir = None  # type: Optional[str]
+        self.results_dir = None  # type: Optional[str]
+        self.run_description = None  # type: Optional[str]
+
+    def as_script_step(self) -> "LineageBuilder":
         assert self.step_name is None, "attempting to set step name twice!"
         self.step_name = infer_step_name()
-        self.command_line = [sys.executable]+sys.argv
+        self.command_line = [sys.executable] + sys.argv
         self.current_directory = curdir
         self.code.append(infer_script_path())
         return self
 
-    def with_step_name(self, step_name:str) -> 'LineageBuilder':
+    def with_step_name(self, step_name: str) -> "LineageBuilder":
         assert self.step_name is None, "attempting to set step name twice!"
         self.step_name = step_name
         return self
 
-    def with_parameters(self, parameters:Dict[str, Any]) -> 'LineageBuilder':
+    def with_parameters(self, parameters: Dict[str, Any]) -> "LineageBuilder":
         assert self.parameters is None, "attemping to specify parameters twice"
         self.parameters = parameters
         return self
 
-    def with_input_path(self, path:str) -> 'LineageBuilder':
+    def with_input_path(self, path: str) -> "LineageBuilder":
         assert self.no_inputs is False, "Cannot specify both inputs and no inputs"
         if self.inputs is None:
             self.inputs = [path]
@@ -433,7 +475,7 @@ class LineageBuilder:
             self.inputs.append(path)
         return self
 
-    def with_input_paths(self, paths:List[str]) -> 'LineageBuilder':
+    def with_input_paths(self, paths: List[str]) -> "LineageBuilder":
         assert self.no_inputs is False, "Cannot specify both inputs and no inputs"
         if self.inputs is None:
             self.inputs = cast(Optional[List[Union[str, ResourceRef]]], copy(paths))
@@ -441,7 +483,7 @@ class LineageBuilder:
             self.inputs.extend(paths)
         return self
 
-    def with_input_ref(self, ref:ResourceRef) -> 'LineageBuilder':
+    def with_input_ref(self, ref: ResourceRef) -> "LineageBuilder":
         assert self.no_inputs is False, "Cannot specify both inputs and no inputs"
         if self.inputs is None:
             self.inputs = [ref]
@@ -449,28 +491,28 @@ class LineageBuilder:
             self.inputs.append(ref)
         return self
 
-    def with_no_inputs(self) -> 'LineageBuilder':
+    def with_no_inputs(self) -> "LineageBuilder":
         assert self.inputs is None, "Cannot specify inputs and with_no_inputs()"
         self.no_inputs = True
         return self
 
-    def with_code_path(self, path:str) -> 'LineageBuilder':
+    def with_code_path(self, path: str) -> "LineageBuilder":
         self.code.append(path)
         return self
-    
-    def with_code_ref(self, ref:ResourceRef) -> 'LineageBuilder':
+
+    def with_code_ref(self, ref: ResourceRef) -> "LineageBuilder":
         self.code.append(ref)
         return self
 
-    def with_workspace_directory(self, workspace_dir:str) -> 'LineageBuilder':
-        load_workspace('git:'+workspace_dir, False, False)
-        self.workspace_dir = workspace_dir # does validation
+    def with_workspace_directory(self, workspace_dir: str) -> "LineageBuilder":
+        load_workspace("git:" + workspace_dir, False, False)
+        self.workspace_dir = workspace_dir  # does validation
         return self
 
-    def as_results_step(self, results_dir:str, run_description:Optional[str]=None)\
-        -> 'LineageBuilder':
-        assert self.results_dir is None, \
-            "attempting to specify results directory twice"
+    def as_results_step(
+        self, results_dir: str, run_description: Optional[str] = None
+    ) -> "LineageBuilder":
+        assert self.results_dir is None, "attempting to specify results directory twice"
         self.results_dir = results_dir
         self.run_description = run_description
         return self
@@ -482,113 +524,133 @@ class LineageBuilder:
         """
         assert self.step_name is not None, "Need to specify step name"
         assert self.parameters is not None, "Need to specify parameters"
-        assert self.no_inputs or (self.inputs is not None),\
-            'Need to specify either inputs or no inputs'
-        inputs = self.inputs if self.inputs is not None else [] # type: List[Union[str, Any]]
+        assert self.no_inputs or (
+            self.inputs is not None
+        ), "Need to specify either inputs or no inputs"
+        inputs = self.inputs if self.inputs is not None else []  # type: List[Union[str, Any]]
         if self.workspace_dir is None:
             self.workspace_dir = _find_containing_workspace()
         if self.workspace_dir is None:
             raise ConfigurationError("Could not find a workspace, starting at %s" % curdir)
         # TODO: need to make this handle other backends as well.
-        workspace = load_workspace('git:'+self.workspace_dir, False, False)
+        workspace = load_workspace("git:" + self.workspace_dir, False, False)
         if self.results_dir is not None:
-            return ResultsLineage(self.step_name, datetime.datetime.now(),
-                                  self.parameters, inputs, self.code,
-                                  self.results_dir,
-                                  workspace=workspace,
-                                  run_description=self.run_description,
-                                  command_line=self.command_line,
-                                  current_directory=self.current_directory)
+            return ResultsLineage(
+                self.step_name,
+                datetime.datetime.now(),
+                self.parameters,
+                inputs,
+                self.code,
+                self.results_dir,
+                workspace=workspace,
+                run_description=self.run_description,
+                command_line=self.command_line,
+                current_directory=self.current_directory,
+            )
         else:
-            return Lineage(self.step_name, datetime.datetime.now(),
-                           self.parameters, inputs, self.code,
-                           workspace,
-                           self.command_line, self.current_directory)
+            return Lineage(
+                self.step_name,
+                datetime.datetime.now(),
+                self.parameters,
+                inputs,
+                self.code,
+                workspace,
+                self.command_line,
+                self.current_directory,
+            )
 
 
 ##########################################################################
 #        Helper classes for defining program parameters
 ##########################################################################
 
+
 class LineageParameter(ABC):
-    def __init__(self, name:str, default:Any):
+    def __init__(self, name: str, default: Any):
         self.name = name
         self.default = default
 
     @abstractmethod
-    def get_value(self, parsed_args:Namespace):
+    def get_value(self, parsed_args: Namespace):
         pass
 
     @abstractmethod
-    def add_to_arg_parser(self, arg_parser:ArgumentParser):
+    def add_to_arg_parser(self, arg_parser: ArgumentParser):
         pass
 
 
 class CmdLineParameter(LineageParameter):
-    def __init__(self, name:str, default:Any, type:Type, help:str):
+    def __init__(self, name: str, default: Any, type: Type, help: str):
         super().__init__(name, default)
         self.type = type
         self.help = help
 
     def get_arg_name(self) -> str:
-        return '--' + self.name.replace('_', '-')
+        return "--" + self.name.replace("_", "-")
 
-    def add_to_arg_parser(self, arg_parser:ArgumentParser):
-        arg_parser.add_argument(self.get_arg_name(), type=self.type,
-                                default=self.default,
-                                help=self.help)
+    def add_to_arg_parser(self, arg_parser: ArgumentParser):
+        arg_parser.add_argument(
+            self.get_arg_name(), type=self.type, default=self.default, help=self.help
+        )
 
-    def get_value(self, parsed_args:Namespace):
+    def get_value(self, parsed_args: Namespace):
         return getattr(parsed_args, self.name)
 
 
 class BooleanParameter(CmdLineParameter):
-    def __init__(self, name:str, default:bool, help:str):
+    def __init__(self, name: str, default: bool, help: str):
         super().__init__(name, default, bool, help)
         if self.default:
-            self.action='store_false'
+            self.action = "store_false"
         else:
-            self.action='store_true'
+            self.action = "store_true"
 
     def get_arg_name(self) -> str:
         if self.default:
-            return '--no-' + self.name.replace('_', '-')
+            return "--no-" + self.name.replace("_", "-")
         else:
-            return '--' + self.name.replace('_', '-')
+            return "--" + self.name.replace("_", "-")
 
-    def add_to_arg_parser(self, arg_parser:ArgumentParser):
-        arg_parser.add_argument(self.get_arg_name(), default=self.default,
-                                action=self.action,
-                                help=self.help, dest=self.name)
+    def add_to_arg_parser(self, arg_parser: ArgumentParser):
+        arg_parser.add_argument(
+            self.get_arg_name(),
+            default=self.default,
+            action=self.action,
+            help=self.help,
+            dest=self.name,
+        )
 
 
 class ChoiceParameter(CmdLineParameter):
-    def __init__(self, name:str, choices:Iterable[Any], default:Any, type:Type,
-                 help:str):
+    def __init__(self, name: str, choices: Iterable[Any], default: Any, type: Type, help: str):
         super().__init__(name, default, type, help)
         self.choices = choices
         assert default in choices
 
-    def add_to_arg_parser(self, arg_parser:ArgumentParser):
-        arg_parser.add_argument(self.get_arg_name(), type=self.type, default=self.default,
-                                choices=self.choices,
-                                help=self.help)
+    def add_to_arg_parser(self, arg_parser: ArgumentParser):
+        arg_parser.add_argument(
+            self.get_arg_name(),
+            type=self.type,
+            default=self.default,
+            choices=self.choices,
+            help=self.help,
+        )
 
 
 class ConstantParameter(LineageParameter):
-    def get_value(self, parsed_args:Namespace):
+    def get_value(self, parsed_args: Namespace):
         return self.default
 
 
-def add_lineage_parameters_to_arg_parser(parser:ArgumentParser,
-                                         params:Iterable[LineageParameter]):
+def add_lineage_parameters_to_arg_parser(
+    parser: ArgumentParser, params: Iterable[LineageParameter]
+):
     for param in params:
         param.add_to_arg_parser(parser)
 
 
-def get_lineage_parameter_values(params:Iterable[LineageParameter],
-                                 parsed_args:Namespace):
-    values = OrderedDict() # type: Dict[str,Any]
+def get_lineage_parameter_values(params: Iterable[LineageParameter], parsed_args: Namespace):
+    values = OrderedDict()  # type: Dict[str,Any]
     for param in params:
         values[param.name] = param.get_value(parsed_args)
     return values
