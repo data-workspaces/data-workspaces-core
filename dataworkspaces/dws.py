@@ -13,6 +13,7 @@ from typing import Optional, Union
 from argparse import Namespace
 from collections.abc import Sequence
 
+from dataworkspaces import __version__
 from dataworkspaces.commands.init import init_command
 from dataworkspaces.commands.add import add_command
 from dataworkspaces.commands.snapshot import snapshot_command
@@ -902,6 +903,15 @@ def status(ctx, workspace_dir, history, limit):
 
 cli.add_command(status)
 
+
+@click.command()
+def version():
+    """Print the version of Data Workspaces and exit.
+    """
+    click.echo("Data Workspaces version %s" % __version__)
+    sys.exit(0)
+
+cli.add_command(version)
 
 # Disable run command for now, until we better understand how it interacts with the
 # Lineage API. TODO: re-enable with the proper integration.
