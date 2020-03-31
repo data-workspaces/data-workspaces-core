@@ -14,7 +14,6 @@ from abc import ABCMeta, abstractmethod
 from sklearn.base import ClassifierMixin
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.externals import joblib
 from sklearn.utils import Bunch
 from sklearn.base import _pprint
 import sys
@@ -36,6 +35,10 @@ from dataworkspaces.utils.lineage_utils import ResourceRef
 from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
 
 from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
+try:
+    import joblib
+except ImportError as e:
+    raise ConfigurationError("Please install the joblib package (via \"pip install joblib\")") from e
 
 
 def _load_dataset_file(dataset_path, filename):

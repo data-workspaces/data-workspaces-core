@@ -527,9 +527,6 @@ class GitRepoFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace, local_path, branch, read_only, export):
         """Instantiate a resource object from the add command's
         arguments"""
-        print(
-            "from_command_line branch=%s, read_only=%s, export=%s" % (branch, read_only, export)
-        )  # XXX
         workspace.validate_local_path_for_resource(name, local_path)
         lpr = realpath(local_path)
         wspath = (
