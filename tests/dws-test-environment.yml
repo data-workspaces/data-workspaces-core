@@ -1,0 +1,15 @@
+# Defines a conda environment which includes all the dependencies
+# needed to run all the tests (none skipped).
+# Note that dws itself is not installed, so you can install the
+# local in-development copy.
+name: dws-test-environment
+dependencies:
+  - python=3.6.*
+  - jupyter
+  - matplotlib
+  - pandas
+  - scikit-learn
+  - pip
+  - pip:
+    - tensorflow>=2.0
+    - pytest

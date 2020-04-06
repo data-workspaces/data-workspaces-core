@@ -113,7 +113,9 @@ def validate_json_keys(obj, classobj, keys, filename=None):
         if key not in obj:
             raise JsonKeyError(classobj, key, filename=filename)
 
-
+# Note: This is using Python 3.6+ syntax and is incompatible for 3.5.
+# We could backport to 3.5 if there's demand, but there's other code that
+# currently makes 3.6+ asumptions.
 class ResourceRef(NamedTuple):
     """A namedtuple that is used to identify an input or output of a step.
     The ``name`` parameter is the name of a resource. The optional
@@ -1790,6 +1792,8 @@ def make_simplified_lineage_graph_for_resource(
     width=1024,
     height=800,
 ) -> None:
+    """In this graph, the nodes are resources and the edges are steps.
+    """
     nodes = []  # type: List[Dict[str, Any]]
     links = []  # type: List[Dict[str, Any]]
 

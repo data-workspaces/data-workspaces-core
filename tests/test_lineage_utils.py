@@ -74,7 +74,7 @@ class TestResourceCert(unittest.TestCase):
 
 
 
-class TestStoreMixin(metaclass=ABCMeta):
+class TstStoreMixin(metaclass=ABCMeta):
     """This is a mixin for testing a LineageStore. It is independent of
     the implementation. You can use this as a building block to
     implement implementation-specific tests
@@ -379,7 +379,7 @@ SNAPSHOT_DIR=os.path.join(TEMPDIR, 'lineage_snapshots')
 SNAPSHOT1_DIR=os.path.join(SNAPSHOT_DIR, 'snapshot1')
 SNAPSHOT2_DIR=os.path.join(SNAPSHOT_DIR, 'snapshot2')
 
-class TestFileLineageStore(unittest.TestCase, TestStoreMixin):
+class TestFileLineageStore(unittest.TestCase, TstStoreMixin):
     """Tests for the lineage store api file-based implementation"""
     def setUp(self):
         if os.path.exists(TEMPDIR):

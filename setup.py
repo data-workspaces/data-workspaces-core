@@ -18,6 +18,7 @@ setup(
     url="https://github.com/data-workspaces/data-workspaces-core",
     packages=find_packages(),
     include_package_data=True, # needed for copying data files at install time
+    python_requires=">=3.6",
     install_requires=[
         'click',
         'requests',

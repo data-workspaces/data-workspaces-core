@@ -7,6 +7,7 @@ import sys
 from os.path import dirname, abspath, expanduser, isfile, join, exists, curdir
 import subprocess
 import click
+from typing import Optional, Dict, Any
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 
@@ -61,7 +62,8 @@ def run_git_fat(python2_exe, args, cwd=curdir, verbose=False):
     cmd = [python2_exe, fat_script]+args
     if verbose:
         click.echo("%s from %s" % (' '.join(cmd), cwd))
-        env = os.environ.copy()
+        env = os.environ.copy() # type: Optional[Dict[str,Any]]
+        assert env is not None
         env['GIT_FAT_VERBOSE'] = "1"
     else:
         env = None

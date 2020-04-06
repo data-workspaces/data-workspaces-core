@@ -30,7 +30,7 @@ except Exception as e:
     ERROR = e
     JUPYTER=None
 
-@unittest.skipUnless(JUPYTER is not None, "No Jupyter install found: %s"%ERROR)
+@unittest.skipUnless(JUPYTER is not None, "SKIP: No Jupyter install found: %s"%ERROR)
 class TestJupyterKit(unittest.TestCase):
     def setUp(self):
         if exists(TEMPDIR):

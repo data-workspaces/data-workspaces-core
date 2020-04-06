@@ -57,7 +57,7 @@ class TestTensorflowKit(SimpleCase):
     def _take_snapshot(self):
         self._run_dws(['snapshot', 'S1'], cwd=WS_DIR)
 
-    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
+    @unittest.skipUnless(TF_INSTALLED, "SKIP: Tensorflow not available")
     def test_wrapper_for_numpy(self):
         """This test follows the basic classification tutorial.
         """
@@ -95,9 +95,9 @@ class TestTensorflowKit(SimpleCase):
         self.assertAlmostEqual(test_loss, data['metrics']['loss'])
         self._take_snapshot()
 
-    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
-    @unittest.skipUnless(NUMPY_INSTALLED, "numpy not installed")
-    @unittest.skipUnless(PANDAS_INSTALLED, 'pandas not available')
+    @unittest.skipUnless(TF_INSTALLED, "SKIP: Tensorflow not available")
+    @unittest.skipUnless(NUMPY_INSTALLED, "SKIP: numpy not installed")
+    @unittest.skipUnless(PANDAS_INSTALLED, 'SKIP: pandas not available')
     def test_wrapper_for_dataset(self):
         """This follows the csv tutorial (titanic data set)
         """
@@ -213,7 +213,7 @@ class TestTensorflowKit(SimpleCase):
         self.assertAlmostEqual(test_loss, data['metrics']['loss'])
         self._take_snapshot()
 
-    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
+    @unittest.skipUnless(TF_INSTALLED, "SKIP: Tensorflow not available")
     def test_wrapper_for_generators(self):
         """This test follows the basic classification tutorial, modified for using
         the fit_generator() and eval_generator() methods.
@@ -244,9 +244,9 @@ class TestTensorflowKit(SimpleCase):
                       metrics=['accuracy'])
         g = generator_from_arrays(train_images, train_labels)
         self.assertTrue(inspect.isgenerator(g))
-        model.fit_generator(g, epochs=5, steps_per_epoch=2)
+        model.fit(g, epochs=5, steps_per_epoch=2)
         g2 = generator_from_arrays(test_images, test_labels)
-        test_loss, test_acc = model.evaluate_generator(g2, steps=len(test_labels), verbose=2)
+        test_loss, test_acc = model.evaluate(g2, steps=len(test_labels), verbose=2)
         print("test accuracy: %s" % test_acc)
         results_file = join(WS_DIR, 'results/results.json')
         self.assertTrue(exists(results_file), "missing file %s" % results_file)
@@ -256,7 +256,7 @@ class TestTensorflowKit(SimpleCase):
         self.assertAlmostEqual(test_loss, data['metrics']['loss'])
         self._take_snapshot()
 
-    @unittest.skipUnless(TF_INSTALLED, "Tensorflow not available")
+    @unittest.skipUnless(TF_INSTALLED, "SKIP: Tensorflow not available")
     def test_wrapper_for_keras_sequence(self):
         """This test follows the basic classification tutorial, modified for using
         the fit_generator() and eval_generator() methods.
@@ -304,9 +304,9 @@ class TestTensorflowKit(SimpleCase):
                       loss='sparse_categorical_crossentropy',
                       metrics=['accuracy'])
         g = KSequence(train_images, train_labels)
-        model.fit_generator(g, epochs=5, steps_per_epoch=2)
+        model.fit(g, epochs=5, steps_per_epoch=2)
         g2 = KSequence(test_images, test_labels)
-        test_loss, test_acc = model.evaluate_generator(g2, steps=len(test_labels), verbose=2)
+        test_loss, test_acc = model.evaluate(g2, steps=len(test_labels), verbose=2)
         print("test accuracy: %s" % test_acc)
         results_file = join(WS_DIR, 'results/results.json')
         self.assertTrue(exists(results_file), "missing file %s" % results_file)

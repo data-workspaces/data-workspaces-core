@@ -35,10 +35,11 @@ from dataworkspaces.utils.lineage_utils import ResourceRef
 from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
 
 from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
+
 try:
     import joblib
 except ImportError as e:
-    raise ConfigurationError("Please install the joblib package (via \"pip install joblib\")") from e
+    raise ConfigurationError('Please install the joblib package (via "pip install joblib")') from e
 
 
 def _load_dataset_file(dataset_path, filename):

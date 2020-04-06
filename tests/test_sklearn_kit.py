@@ -9,6 +9,11 @@ try:
     SKLEARN_INSTALLED=True
 except ImportError:
     SKLEARN_INSTALLED=False
+try:
+    import joblib
+    JOBLIB_INSTALLED=True
+except ImportError:
+    JOBLIB_INSTALLED=False
 
 class TestSklearnKit(SimpleCase):
     def _add_digits_dataset(self):
@@ -20,7 +25,6 @@ class TestSklearnKit(SimpleCase):
     def wrapper_tc(self, model_save_file):
         from sklearn.svm import SVC
         from sklearn.model_selection import train_test_split
-        from sklearn.externals import joblib
         import dataworkspaces.kits.scikit_learn as skkit
         self._setup_initial_repo(git_resources='code,results')
         self._add_digits_dataset()
@@ -50,7 +54,8 @@ class TestSklearnKit(SimpleCase):
         self.assertAlmostEqual(score, 0.9688, 3,
                                "Score of %s not almost equal to 0.9688" % score)
 
-    @unittest.skipUnless(SKLEARN_INSTALLED, "Sklearn not available")
+    @unittest.skipUnless(SKLEARN_INSTALLED, "SKIP: Sklearn not available")
+    @unittest.skipUnless(JOBLIB_INSTALLED, "SKIP: joblib not available")
     def test_wrapper(self):
         self.wrapper_tc('digits.joblib')
 

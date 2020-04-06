@@ -135,6 +135,7 @@ import os
 from os.path import join, isdir, exists, basename
 import re
 import glob
+from types import GeneratorType
 
 import tensorflow
 
@@ -435,16 +436,14 @@ def add_lineage_to_keras_model_class(
     * :func:`~compile` - captures the ``optimizer`` and ``loss_function`` parameter values
     * :func:`~fit` - captures the ``epochs`` and ``batch_size`` parameter values;
       if input is an API resource, capture hash values of training data, otherwise capture
-      input resource name.
-    * :func:`~fit_generator` - captues the ``epochs`` and ``steps_per_epoch`` parameter
-      values; if input is an API resource, wraps the generator and captures the hashes
-      of returned values from the generator as it is iterated through.
+      input resource name. If the input is an API resource, and it is either a Keras Sequence
+      or a generator, writes the generator and captures the hashes of returned values as it
+      is iterated through.
     * :func:`~evaluate` - captures the ``batch_size`` parameter value; if input is an
       API resource, capture hash values of test data, otherwise capture input resource
-      name; capture metrics and write them to results resource.
-    * :func:`~evaluate_generator` - captures the ``steps`` parameter value; if input is
-      an API resource, wraps the generator and captures the hashes of returned values
-      from the generator as it is iterated through.
+      name; capture metrics and write them to results resource. If the input is an API resource,
+      and it is either a Keras Sequence or a generator, writes the generator and captures
+      the hashes of returned values as it is iterated through.
     """
     if hasattr(Cls, "_dws_model_wrap") and Cls._dws_model_wrap is True:  # type: ignore
         print("dws>> %s or a superclass is already wrapped" % Cls.__name__)
@@ -506,6 +505,8 @@ def add_lineage_to_keras_model_class(
             )
 
         def fit(self, x, y=None, **kwargs):
+            """x, y can be arrays or x can be a generator.
+            """
             if "epochs" in kwargs:
                 self._dws_state.lineage.add_param("fit.epochs", kwargs["epochs"])
             else:
@@ -519,10 +520,23 @@ def add_lineage_to_keras_model_class(
                 _verify_eager_if_dataset(x, y, api_resource)
                 api_resource.init_hash_state()
                 hash_state = api_resource.get_hash_state()
-                _add_to_hash(x, hash_state)
-                if y is not None:
-                    _add_to_hash(y, hash_state)
-                api_resource.save_current_hash()  # in case we evaluate in a separate process
+                if isinstance(x, kerasutils.Sequence):
+                    if y is not None:
+                        raise NotSupportedError(
+                            "fit() method does not suppport a generator for x AND a y value"
+                        )
+                    x = _TfKerasSequenceWrapper(x, hash_state)
+                elif isinstance(x, GeneratorType):
+                    if y is not None:
+                        raise NotSupportedError(
+                            "fit() method does not suppport a generator for x AND a y value"
+                        )
+                    x = _wrap_generator(x, hash_state)
+                else:  # x and y are provided as full arrays
+                    _add_to_hash(x, hash_state)
+                    if y is not None:
+                        _add_to_hash(y, hash_state)
+                    api_resource.save_current_hash()  # in case we evaluate in a separate process
             if self.checkpoint_cb:
                 if "callbacks" in kwargs:
                     kwargs["callbacks"].append(self.checkpoint_cb)
@@ -597,13 +611,28 @@ def add_lineage_to_keras_model_class(
                 _verify_eager_if_dataset(x, y, api_resource)
                 api_resource.dup_hash_state()
                 hash_state = api_resource.get_hash_state()
-                _add_to_hash(x, hash_state)
-                if y is not None:
-                    _add_to_hash(y, hash_state)
-                api_resource.save_current_hash()
-                api_resource.pop_hash_state()
+                if isinstance(x, kerasutils.Sequence):
+                    if y is not None:
+                        raise NotSupportedError(
+                            "evaluate() method does not suppport a generator for x AND a y value"
+                        )
+                    x = _TfKerasSequenceWrapper(x, hash_state)
+                elif isinstance(x, GeneratorType):
+                    if y is not None:
+                        raise NotSupportedError(
+                            "evaluate() method does not suppport a generator for x AND a y value"
+                        )
+                    x = _wrap_generator(x, hash_state)
+                else:
+                    _add_to_hash(x, hash_state)
+                    if y is not None:
+                        _add_to_hash(y, hash_state)
             results = super().evaluate(x, y, **kwargs)
             assert len(results) == len(self.metrics_names)
+            if api_resource is not None:
+                api_resource.save_current_hash()
+                print("saved hash!!!")  # XXX
+                api_resource.pop_hash_state()
             self._dws_state.write_metrics_and_complete(
                 {n: v for (n, v) in zip(self.metrics_names, results)}
             )

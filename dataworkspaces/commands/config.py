@@ -1,6 +1,8 @@
 # Copyright 2018,2019 by MPI-SWS and Data-ken Research. Licensed under Apache 2.0. See LICENSE.txt.
 import click
 from typing import Optional, Dict, Any, List
+
+assert List  # make pyflakes happy
 from abc import ABCMeta, abstractmethod
 
 from dataworkspaces.workspace import Workspace, Resource, LocalStateResourceMixin
@@ -96,8 +98,8 @@ class LocalResourceHandler(ParamConfigHandler):
     def __init__(self, resource: Resource, workspace: Workspace):
         assert isinstance(resource, LocalStateResourceMixin)
         super().__init__(resource.get_local_params(), resource.param_defs.local_defs)
-        self.resource = resource
-        self.workspace = workspace
+        self.resource = resource  # type: Resource
+        self.workspace = workspace  # type: Workspace
 
     def get_scope(self) -> str:
         return "local"

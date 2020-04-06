@@ -1,6 +1,9 @@
 import os
 from os.path import join, exists
 from typing import Tuple, Optional, List, Any
+
+assert List  # make pyflakes happy
+assert Any
 import hashlib
 
 import click
