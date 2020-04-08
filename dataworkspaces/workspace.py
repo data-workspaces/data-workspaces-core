@@ -718,6 +718,12 @@ class Resource(metaclass=ABCMeta):
         resource. Otherwise should raise a ConfigurationError."""
         pass
 
+    def exported(self) -> bool:
+        """Returns True if this resource has an export parameter and it
+        is True.
+        """
+        return hasattr(self, "export") and getattr(self, "export") == True
+
 
 class FileResourceMixin(metaclass=ABCMeta):
     """This is a mixin to be implemented by resources
@@ -740,8 +746,29 @@ class FileResourceMixin(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def results_copy_current_files(
+        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
+    ) -> None:
+        """A snapshot is being taken, and we want to copy the
+        files in the resource to the relative subdirectory rel_dest_root.
+        We should exclude the files in the set exclude_files and exclude
+        any directories matching exclude_dirs_re (e.g. the directory to
+        which the files are being moved).
+
+        By default results_move_current_files() is called, but the copy is used when
+        we export the resource.
+        """
+        pass
+
+    @abstractmethod
     def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
-        """Save JSON results data to the specified path in the resource.
+        """Save JSON results data to the specified path in the resource. Note that,
+        although this is usually used for results role resources, it could also be
+        used for intermediate-data resources if they are exported (causing the lineage
+        file to be written to the resource).
+
+        TODO: this is used for both results and lineage files. Perhaps we should either rename
+        it to something like add_json_file() or create a separate call for lineage.
         """
         pass
 
@@ -770,6 +797,13 @@ class FileResourceMixin(metaclass=ABCMeta):
         return True only if the subpath corresponds to content.
         If must_be_directory is True, return True only if the subpath
         corresponds to a directory.
+        """
+        pass
+
+    @abstractmethod
+    def delete_file(self, rel_path: str) -> None:
+        """Delete a file from the resource. If the resource is read-only or
+        otherwise does not support modifications, should throw a NotSupportedError.
         """
         pass
 
@@ -1163,6 +1197,15 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
 
         self._snapshot_precheck(current_resources)
 
+        # For exported resources, we need to delete any stale lineage.json files before the snapshot
+        for r in current_resources:
+            if (
+                r.exported()
+                and isinstance(r, FileResourceMixin)
+                and r.does_subpath_exist("lineage.json")
+            ):
+                r.delete_file("lineage.json")
+
         # now, move the files for result resources
         resources_with_moved_files = []  # type: List[str]
         metrics = None
@@ -1173,9 +1216,17 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                     data = file_mixin.read_results_file("results.json")
                     if isinstance(data, dict) and "metrics" in data:
                         metrics = data["metrics"]
-                file_mixin.results_move_current_files(rel_dest_root, exclude_files, exclude_dirs_re)
-                resources_with_moved_files.append(r.name)
+                if not r.exported():
+                    file_mixin.results_move_current_files(
+                        rel_dest_root, exclude_files, exclude_dirs_re
+                    )
+                    resources_with_moved_files.append(r.name)
+                else:  # copy the results, but leave the current results in-place
+                    file_mixin.results_copy_current_files(
+                        rel_dest_root, exclude_files, exclude_dirs_re
+                    )
 
+        # Take the actual snapshot
         manifest = []
         map_of_restore_hashes = {}  # type: Dict[str,Optional[str]]
         # compare hashes used for lineage
@@ -1219,7 +1270,10 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
             # include everything from the snapshot. Since results resources are
             # additive, we won't be missing anything if we
             # restore to this snapshot.
-            self.write_result_lineage_for_snapshot(metadata.relative_destination_path)
+            self.write_result_lineage_for_snapshot(
+                current_resources, metadata.relative_destination_path
+            )
+            self.write_export_lineage_for_snapshot(current_resources)
 
             # For all the results resources for which we moved the files to a
             # snapshot-specific subdirectory, we need to clear the lineage.
@@ -1400,28 +1454,60 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         """
         pass
 
-    def write_result_lineage_for_snapshot(self, rel_dest_path: str) -> None:
+    def write_result_lineage_for_snapshot(
+        self, current_resources: List[Resource], rel_dest_path: str
+    ) -> None:
+        """For all results resources, we write out the lineage.json files
+        in the snapshot directory.
+        """
         assert self.supports_lineage()
         assert isinstance(self, Workspace)
         instance = self.get_instance()
         store = self.get_lineage_store()
-        for rname in self.get_resource_names():
-            if self.get_resource_role(rname) != ResourceRoles.RESULTS:
+        for r in current_resources:
+            if r.role != ResourceRoles.RESULTS:
                 continue
-            r = self.get_resource(rname)
             if not isinstance(r, FileResourceMixin):
                 continue
-            (lineage, warnings) = store.get_lineage_for_resource(instance, rname)
+            (lineage, warnings) = store.get_lineage_for_resource(instance, r.name)
             if len(lineage) > 0:
                 lineage_dict = {
-                    "resource_name": rname,
+                    "resource_name": r.name,
                     "complete": warnings == 0,
                     "lineages": [l.to_json() for l in lineage],
                 }
                 r.add_results_file(lineage_dict, os.path.join(rel_dest_path, "lineage.json"))
-                print("Wrote lineage for %s to lineage.json" % rname)
+                print("Wrote lineage for %s to lineage.json" % r.name)
             elif self.verbose:
-                print("No lineage available for %s, not writing a lineage.json file" % rname)
+                print("No lineage available for %s, not writing a lineage.json file" % r.name)
+
+    def write_export_lineage_for_snapshot(self, current_resources: List[Resource]) -> None:
+        """For all exported resources, we write out the lineage.json file in the
+        root directoryfor the resource.
+        """
+        assert self.supports_lineage()
+        assert isinstance(self, Workspace)
+        instance = self.get_instance()
+        store = self.get_lineage_store()
+        for r in current_resources:
+            if not isinstance(r, FileResourceMixin):
+                continue
+            if not r.exported():
+                continue
+            (lineage, warnings) = store.get_lineage_for_resource(instance, r.name)
+            if len(lineage) > 0:
+                lineage_dict = {
+                    "resource_name": r.name,
+                    "complete": warnings == 0,
+                    "lineages": [l.to_json() for l in lineage],
+                }
+                r.add_results_file(lineage_dict, "lineage.json")
+                print("Exported lineage for %s to lineage.json" % r.name)
+            elif self.verbose:
+                print(
+                    "No lineage available for %s, not writing an exported lineage.json file"
+                    % r.name
+                )
 
 
 class SnapshotResourceMixin(metaclass=ABCMeta):

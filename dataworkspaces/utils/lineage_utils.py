@@ -113,6 +113,7 @@ def validate_json_keys(obj, classobj, keys, filename=None):
         if key not in obj:
             raise JsonKeyError(classobj, key, filename=filename)
 
+
 # Note: This is using Python 3.6+ syntax and is incompatible for 3.5.
 # We could backport to 3.5 if there's demand, but there's other code that
 # currently makes 3.6+ asumptions.

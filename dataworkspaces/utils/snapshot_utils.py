@@ -126,6 +126,12 @@ def move_file_and_set_readonly(src: str, dest: str) -> None:
     os.chmod(dest, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
 
+def copy_file_and_set_readonly(src: str, dest: str) -> None:
+    shutil.copyfile(src, dest)
+    mode = os.stat(dest).st_mode
+    os.chmod(dest, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+
+
 DOT_GIT_RE = re.compile("^" + re.escape(".git") + "$")
 
 
@@ -212,6 +218,84 @@ def move_current_files_local_fs(
     for dirpath in dirs_to_remove_if_empty:
         remove_dir_if_empty(dirpath, base_dir, verbose=verbose)
     return moved_files
+
+
+def copy_current_files_local_fs(
+    resource_name: str,
+    base_dir: str,
+    rel_dest_root: str,
+    exclude_files: Set[str],
+    exclude_dirs_res: Union[Pattern, List[Pattern]],
+    copy_fn: Callable[[str, str], None] = copy_file_and_set_readonly,
+    verbose: bool = False,
+) -> List[str]:
+    """Utility for impelementing Resource.results_copy_current_file()
+    for when the files are stored on the local filesystem (e.g. local or git
+    resources).
+    exclude_dirs_res is either a single regular expression object or a list
+    of regular expression objects. It should not include .git, as that will always
+    be appended to the list.
+
+    The copy function should also set file to read-only. For git, this should
+    be done before adding the file to the staging area.
+
+    This returns the list of the copied relative path pairs.
+    """
+    abs_dest_root = join(base_dir, rel_dest_root)
+    created_dir = False  # only create when we actually have a file to move
+    copied_files = []  # type: List[str]
+    exclude_dirs_re_list = (
+        exclude_dirs_res if isinstance(exclude_dirs_res, list) else [exclude_dirs_res,]
+    )  # type: List[Pattern]
+    exclude_dirs_re_list.append(DOT_GIT_RE)
+    for (dirpath, dirnames, filenames) in os.walk(base_dir):
+        assert dirpath.startswith(base_dir)
+        rel_dirpath = dirpath[len(base_dir) + 1 :]
+
+        def join_to_rel_dirpath(f):
+            return join(rel_dirpath, f)
+
+        join_rel_path = join_to_rel_dirpath if len(rel_dirpath) > 0 else lambda f: f
+        # find directories we should skip, as they represent results from
+        # prior runs
+        skip = []
+        for (i, dir_name) in enumerate(dirnames):
+            abs_dirpath = join(dirpath, dir_name)
+            rel_dirpath = abs_dirpath[len(base_dir) + 1 :]
+            for exclude_dirs_re in exclude_dirs_re_list:
+                if exclude_dirs_re.match(rel_dirpath):
+                    skip.append(i)
+                    if verbose:
+                        print("Skipping directory %s" % rel_dirpath)
+        skip.reverse()
+        for i in skip:
+            del dirnames[i]
+        # copy files to our new directory
+        for f in filenames:
+            rel_src_file = join_rel_path(f)
+            if rel_src_file in exclude_files:
+                if verbose:
+                    click.echo("[%s] Leaving %s" % (resource_name, rel_src_file))
+                continue
+            assert not rel_src_file.startswith("snapshot/"), (
+                "Internal error: file %s should have been excluded from move" % rel_src_file
+            )
+            rel_dest_file = join(rel_dest_root, join_rel_path(f))
+            abs_src_file = join(dirpath, f)
+            abs_dest_file = join(abs_dest_root, join_rel_path(f))
+            if verbose:
+                click.echo("[%s] Copying %s to %s" % (resource_name, rel_src_file, rel_dest_file))
+                click.echo("     Absolute %s => %s" % (abs_src_file, abs_dest_file))
+            dest_parent = os.path.dirname(abs_dest_file)
+            if not created_dir:
+                # lazily create the root directory
+                os.makedirs(abs_dest_root)
+                created_dir = True
+            if not exists(dest_parent):
+                os.makedirs(dest_parent)
+            copy_fn(abs_src_file, abs_dest_file)
+            copied_files.append(rel_dest_file)
+    return copied_files
 
 
 def write_and_hash_file(write_fn, filename_template, verbose):

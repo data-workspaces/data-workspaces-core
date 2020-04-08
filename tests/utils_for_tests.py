@@ -132,11 +132,13 @@ class SimpleCase(HelperMethods, unittest.TestCase):
         if os.path.exists(TEMPDIR):
             shutil.rmtree(TEMPDIR)
 
-    def _setup_initial_repo(self, git_resources=None, api_resources=None):
+    def _setup_initial_repo(self, git_resources=None, api_resources=None, hostname=None):
+        args = ['init']
+        if hostname is not None:
+            args.extend(['--hostname', hostname])
         if git_resources is not None:
-            self._run_dws(['init', '--create-resources='+git_resources], cwd=WS_DIR)
-        else:
-            self._run_dws(['init'], cwd=WS_DIR)
+            args.append('--create-resources='+git_resources)
+        self._run_dws(args, cwd=WS_DIR)
         if api_resources is not None:
             for rname in api_resources.split(','):
                 self._add_api_resource(rname, cwd=WS_DIR)

@@ -23,11 +23,13 @@ from dataworkspaces.workspace import (
     SnapshotResourceMixin,
     JSONDict,
     JSONList,
-    ResourceRoles,
     ResourceFactory,
 )
 import dataworkspaces.resources.hashtree as hashtree
-from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
+from dataworkspaces.utils.snapshot_utils import (
+    move_current_files_local_fs,
+    copy_current_files_local_fs,
+)
 import dataworkspaces.backends.git as git_backend
 from dataworkspaces.utils.param_utils import StringType, BoolType
 
@@ -131,10 +133,22 @@ class LocalFileResource(
             verbose=self.workspace.verbose,
         )
 
+    def results_copy_current_files(
+        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
+    ) -> None:
+        copy_current_files_local_fs(
+            self.name,
+            self.local_path,
+            rel_dest_root,
+            exclude_files,
+            exclude_dirs_re,
+            verbose=self.workspace.verbose,
+        )
+
     def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
         """save JSON results data to the specified path in the resource.
         """
-        assert self.role == ResourceRoles.RESULTS
+        # assert self.role == ResourceRoles.RESULTS
         abs_dest_path = os.path.join(self.local_path, rel_dest_path)
         parent_dir = os.path.dirname(abs_dest_path)
         if not os.path.isdir(parent_dir):
@@ -159,6 +173,9 @@ class LocalFileResource(
         self, subpath: str, must_be_file: bool = False, must_be_directory: bool = False
     ) -> bool:
         return does_subpath_exist(self.local_path, subpath, must_be_file, must_be_directory)
+
+    def delete_file(self, rel_path: str) -> None:
+        os.remove(os.path.join(self.local_path, rel_path))
 
     def read_results_file(self, subpath: str) -> JSONDict:
         """Read and parse json results data from the specified path
@@ -353,7 +370,7 @@ class LocalFileFactory(ResourceFactory):
                 local_path = cast(
                     str,
                     click.prompt(
-                        "Local files resource '%s' was located at '%s' on the original system. Where is it located on this system?"
+                        "Local files resource '%s' was located at '%s' on the original system. W\here is it located on this system?"
                         % (name, global_local_path),
                         type=LocalPathType(exists=True),
                     ),

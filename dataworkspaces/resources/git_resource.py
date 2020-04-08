@@ -37,7 +37,9 @@ from dataworkspaces.utils.git_utils import (
     get_subdirectory_hash,
     is_pull_needed_from_remote,
     git_remove_subtree,
+    git_remove_file,
     git_commit,
+    git_add,
     is_git_staging_dirty,
 )
 from dataworkspaces.utils.git_fat_utils import (
@@ -67,7 +69,10 @@ from dataworkspaces.utils.file_utils import (
 )
 from dataworkspaces.utils.param_utils import BoolType, AbspathType, StringType, RelpathType
 
-from dataworkspaces.utils.snapshot_utils import move_current_files_local_fs
+from dataworkspaces.utils.snapshot_utils import (
+    move_current_files_local_fs,
+    copy_current_files_local_fs,
+)
 
 
 def git_move_and_add(srcabspath, destabspath, git_root, verbose):
@@ -90,7 +95,28 @@ def git_move_and_add(srcabspath, destabspath, git_root, verbose):
     # either way, we change the permissions and then do an add at the end
     mode = os.stat(destabspath)[stat.ST_MODE]
     os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
-    call_subprocess([GIT_EXE_PATH, "add", destrelpath], cwd=git_root, verbose=verbose)
+    git_add(git_root, [destrelpath], verbose)
+
+
+def git_copy_and_add(srcabspath, destabspath, git_root, verbose):
+    """
+    This is for an exported results resource.
+    Copy a file that might or might not be tracked by git to
+    a new location (snapshot directory), set it to read-only and make sure
+    that it is now tracked by git. We add it to the original location if it is not
+    already in the repo.
+    """
+    assert srcabspath.startswith(git_root)
+    assert destabspath.startswith(git_root)
+    srcrelpath = srcabspath[len(git_root) + 1 :]
+    destrelpath = destabspath[len(git_root) + 1 :]
+    shutil.copyfile(srcabspath, destabspath)
+    add_files = [destrelpath]
+    if not is_file_tracked_by_git(srcrelpath, git_root, verbose):
+        add_files.append(srcrelpath)
+    mode = os.stat(destabspath)[stat.ST_MODE]
+    os.chmod(destabspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+    git_add(git_root, add_files, verbose)
 
 
 class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
@@ -204,6 +230,15 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
                     "Parse error when reading %s in resource %s" % (subpath, self.name)
                 ) from e
 
+    def delete_file(self, rel_path: str) -> None:
+        """Delete a file from the resource. If the resource is read-only or
+        otherwise does not support modifications, should throw a NotSupportedError.
+        """
+        if is_file_tracked_by_git(rel_path, self.local_path, self.workspace.verbose):
+            git_remove_file(self.local_path, rel_path, verbose=self.workspace.verbose)
+        else:
+            os.remove(join(self.local_path, rel_path))
+
 
 def get_workspace_dir(workspace: Workspace) -> str:
     workspace_local_path = workspace.get_workspace_local_path_if_any()
@@ -301,6 +336,31 @@ class GitRepoResource(GitResourceBase):
         if len(moved_files) > 0:
             call_subprocess(
                 [GIT_EXE_PATH, "commit", "-m", "Move current results to %s" % rel_dest_root],
+                cwd=self.local_path,
+                verbose=self.workspace.verbose,
+            )
+
+    def results_copy_current_files(
+        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
+    ):
+        switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
+        validate_git_fat_in_path_if_needed(self.local_path)
+        copied_files = copy_current_files_local_fs(
+            self.name,
+            self.local_path,
+            rel_dest_root,
+            exclude_files,
+            exclude_dirs_re,
+            copy_fn=lambda src, dest: git_copy_and_add(
+                src, dest, self.local_path, self.workspace.verbose
+            ),
+            verbose=self.workspace.verbose,
+        )
+        # If there were no files in the results dir, then we do not
+        # create a subdirectory for this snapshot
+        if len(copied_files) > 0:
+            call_subprocess(
+                [GIT_EXE_PATH, "commit", "-m", "Copy current results to %s" % rel_dest_root],
                 cwd=self.local_path,
                 verbose=self.workspace.verbose,
             )
@@ -762,6 +822,37 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                 verbose=self.workspace.verbose,
             )
 
+    def results_copy_current_files(
+        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
+    ):
+        validate_git_fat_in_path_if_needed(self.workspace_dir)
+        copied_files = copy_current_files_local_fs(
+            self.name,
+            self.local_path,
+            rel_dest_root,
+            exclude_files,
+            exclude_dirs_re,
+            copy_fn=lambda src, dest: git_copy_and_add(
+                src, dest, self.local_path, self.workspace.verbose
+            ),
+            verbose=self.workspace.verbose,
+        )
+        # If there were no files in the results dir, then we do not
+        # create a subdirectory for this snapshot
+        if len(copied_files) > 0:
+            call_subprocess(
+                [
+                    GIT_EXE_PATH,
+                    "commit",
+                    "--only",
+                    self.relative_path,
+                    "-m",
+                    "Copy current results to %s" % rel_dest_root,
+                ],
+                cwd=self.workspace_dir,
+                verbose=self.workspace.verbose,
+            )
+
     def snapshot_precheck(self):
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
@@ -874,15 +965,35 @@ class GitRepoSubdirResource(GitResourceBase):
         self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
     ):
         raise InternalError(
-            "res<ults_move_current_files should not be called for %s" % self.__class__.__name__
+            "results_move_current_files should not be called for %s" % self.__class__.__name__
         )
 
-    def add_results_file(self, data, rel_dest_path) -> None:
-        """Copy a results file from the temporary location to
-        the specified path in the resource. Caller responsible for cleanup.
-        """
+    def results_copy_current_files(
+        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
+    ):
         raise InternalError(
-            "add_results_file should not be called for %s" % self.__class__.__name__
+            "results_copy_current_files should not be called for %s" % self.__class__.__name__
+        )
+
+    def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
+        """Save JSON results data to the specified path in the resource.
+        """
+        abs_dest_path = join(self.local_path, rel_dest_path)
+        parent_dir = dirname(abs_dest_path)
+        if not exists(parent_dir):
+            os.makedirs(parent_dir)
+        with open(abs_dest_path, "w") as f:
+            json.dump(data, f, indent=2)
+        rel_to_repo_path = join(self.relative_path, rel_dest_path)
+        call_subprocess(
+            [GIT_EXE_PATH, "add", rel_to_repo_path],
+            cwd=self.workspace_dir,
+            verbose=self.workspace.verbose,
+        )
+        call_subprocess(
+            [GIT_EXE_PATH, "commit", "-m", "Added %s" % rel_to_repo_path],
+            cwd=self.workspace_dir,
+            verbose=self.workspace.verbose,
         )
 
     def snapshot_precheck(self):
