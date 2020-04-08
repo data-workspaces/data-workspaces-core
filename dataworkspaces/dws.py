@@ -911,6 +911,7 @@ def version():
     click.echo("Data Workspaces version %s" % __version__)
     sys.exit(0)
 
+
 cli.add_command(version)
 
 # Disable run command for now, until we better understand how it interacts with the

@@ -482,7 +482,7 @@ def add_lineage_to_keras_model_class(
             weighted_metrics=None,
             target_tensors=None,
             distribute=None,
-            **kwargs
+            **kwargs,
         ):
             if isinstance(optimizer, str):
                 self._dws_state.lineage.add_param("optimizer", optimizer)

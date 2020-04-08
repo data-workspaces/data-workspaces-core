@@ -515,7 +515,7 @@ class WorkspaceFactory(metaclass=ABCMeta):
         batch: bool,
         verbose: bool,
         *args,
-        **kwargs
+        **kwargs,
     ) -> Workspace:
         pass
 
@@ -624,7 +624,7 @@ def init_workspace(
     verbose: bool,
     scratch_dir: str,
     *args,
-    **kwargs
+    **kwargs,
 ) -> Workspace:
     """Given a requested workspace backend, and backend-specific parameters,
     initialize a new workspace, then instantitate and return it.

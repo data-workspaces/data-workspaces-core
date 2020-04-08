@@ -49,7 +49,7 @@ $(RCLONE_CONFIG):
 
 # Warning - this will change the source code, use with care!
 format-with-black:
-	cd $(DATAWORKSPACES); black -l 100 -t py35 --exclude dataworkspaces/third_party .
+	cd $(DATAWORKSPACES); black -l 100 -t py36 --exclude dataworkspaces/third_party .
 
 clean:
 	rm -rf ./test ./remotes ./clones rclone*.deb
