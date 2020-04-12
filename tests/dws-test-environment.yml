@@ -13,3 +13,5 @@ dependencies:
   - pip:
     - tensorflow>=2.0
     - pytest
+    - mypy
+    - pyflakes

@@ -27,6 +27,7 @@ pyflakes:
 	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes *.py
 	cd $(DATAWORKSPACES)/commands; pyflakes *.py
+	cd $(DATAWORKSPACES)/kits; pyflakes *.py
 
 # shortcut for static checks
 check: mypy pyflakes

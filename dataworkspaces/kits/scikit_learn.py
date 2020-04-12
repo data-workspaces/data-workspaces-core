@@ -15,12 +15,10 @@ from sklearn.base import ClassifierMixin
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.utils import Bunch
-from sklearn.base import _pprint
 import sys
 import numpy as np
 import os
 from os.path import join, abspath, expanduser, exists, isabs
-import pickle
 from tempfile import NamedTemporaryFile
 
 
