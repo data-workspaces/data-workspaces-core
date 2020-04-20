@@ -116,12 +116,14 @@ class TestImport(SimpleCase):
                                    'source-data:/data.csv'])
         actual_refs = frozenset([t[0] for t in tlist])
         self.assertEqual(expected_refs, actual_refs)
-        graph_output_file = join(TEMPDIR, 'graph.html')
+        graph_output_file = join(TEMPDIR, 'graph_pre_snapshot.html')
         make_lineage_graph(graph_output_file, WS_DIR, verbose=True)
+
         self._run_dws(["snapshot", "tag1"])
         tlist = make_lineage_table(WS_DIR, tag_or_hash='tag1', verbose=True)
         actual_refs = frozenset([t[0] for t in tlist])
         self.assertEqual(expected_refs, actual_refs)
+        graph_output_file = join(TEMPDIR, 'graph_post_snapshot.html')
         make_lineage_graph(graph_output_file, WS_DIR, tag_or_hash='tag1', verbose=True)
 
 

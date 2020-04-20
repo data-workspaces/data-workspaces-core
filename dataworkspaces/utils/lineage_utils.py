@@ -961,12 +961,31 @@ class ImportedLineage:
 
     def get_cert_for_ref(self, ref: ResourceRef) -> Optional[Certificate]:
         """Return the certificate if this resource/subpath, or one that covers
-        this ref, is contained in this lineage object. If not, return None
+        this ref, is contained in the outputs of the nested lineage. If not,
+        return None.
         """
         for cert in self.output_certs:
             if cert.ref == ref or cert.ref.covers(ref):
                 return cert
         return None
+
+    def has_lineage_for_cert(self, cert: Certificate) -> bool:
+        """Does the nested lineage contain any lineage for this cert?"""
+        for l in self.nested_lineage:
+            if cert in l.get_certs():
+                return True
+        return False
+
+    def get_cert_and_lineage_for_ref(self, ref: ResourceRef) -> Tuple[Certificate, ResourceLineage]:
+        """Search through all the nested lineages and return the one which provides
+        this cert. If none is found, raise a LineageError"""
+        for l in self.nested_lineage:
+            for cert in l.get_certs():
+                if cert.ref == ref or cert.ref.covers(ref):
+                    return (cert, l)
+        raise LineageError(
+            "Did not find lineage for ref %s in nested lineage for %s" % (ref, self.resource_name)
+        )
 
     def replace_placeholders(self, hash_mapping: Dict[str, str]) -> bool:
         return False  # since lineage was exported, it will not have any placeholders
@@ -1805,6 +1824,8 @@ def make_lineage_graph_for_visualization(
 ) -> None:
     """This builds a lineage graph of the entire repo, mostly for debugging
     purposes.
+
+    TODO: Make this handle imported lineage
     """
     next_node_id = 1
     ref_nodes = {}  # type: Dict[ResourceRef, int]
@@ -1965,6 +1986,35 @@ def make_simplified_lineage_graph_for_resource(
             return False
 
     cn = CertNodes()
+
+    def process_imported_subgraph(entry_cert, imported_lineage):
+        # Uses a loop and worklist similar to the main one below,
+        # but retrieving from the nested lineage instead of the store.
+        nested_worklist = [
+            entry_cert.ref,
+        ]
+        while len(nested_worklist) > 0:
+            next_nested_worklist = []
+            for ref in nested_worklist:
+                (cert, lineage) = imported_lineage.get_cert_and_lineage_for_ref(ref)
+                # cert = imported_lineage.get_cert_for_ref(ref)
+                # assert cert is not None, "did not find cert for ref %s"%repr(ref)
+                # lineage = imported_lineage.get_lineage_for_cert(cert)
+                (node_id, is_new) = cn.get_cert_node(cert)
+                if lineage is not None and isinstance(lineage, StepLineage):
+                    for input_cert in lineage.get_input_certs():
+                        (input_node_id, input_is_new) = cn.get_cert_node(input_cert)
+                        links.append(
+                            {
+                                "source": input_node_id,
+                                "target": node_id,
+                                "type": step_lineage_to_name(lineage),
+                            }
+                        )
+                        if input_is_new and imported_lineage.has_lineage_for_cert(input_cert):
+                            next_nested_worklist.append(input_cert.ref)
+            nested_worklist = next_nested_worklist
+
     if snapshot_hash is not None:
         worklist = [
             ref
@@ -1993,6 +2043,8 @@ def make_simplified_lineage_graph_for_resource(
                     )
                     if input_is_new and cert_in_lineage(input_cert):
                         next_worklist.append(input_cert.ref)
+            elif lineage is not None and isinstance(lineage, ImportedLineage):
+                process_imported_subgraph(cert, lineage)
         worklist = next_worklist
     if format == "html":
         if not exists(GRAPH_TEMPLATE_FILE):
