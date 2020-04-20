@@ -394,6 +394,8 @@ class ResourceLineage(metaclass=ABCMeta):
             return SourceDataLineage.from_json(obj, filename=filename)
         elif restype == "code":
             return CodeLineage.from_json(obj, filename=filename)
+        elif restype == "imported":
+            return ImportedLineage.from_json(obj, filename=filename)
         else:
             raise JsonValueError(ResourceLineage, "type", ["step", "source_data"], restype)
 
@@ -927,6 +929,85 @@ class CodeLineage(ResourceLineage):
             return False
 
 
+class ImportedLineage:
+    """A nested lineage for a source data resource
+    that was exported from another workspace. This subgraph
+    gets stored as a single file under the exported resource
+    name but expanded when building the lineage graph.
+
+    This cannot be a subclass of ResourceLineage, as multiple
+    independent subpaths for the same resource may be present
+    (due to different writers in the orginal workspace).
+    """
+
+    __slots__ = ["resource_name", "nested_lineage", "output_certs"]
+
+    def __init__(self, resource_name: str, nested_lineage: List[ResourceLineage]):
+        self.resource_name = resource_name
+        self.nested_lineage = nested_lineage
+        self.output_certs = []  # type: List[Certificate]
+        for l in nested_lineage:
+            for cert in l.get_certs():
+                if cert.ref.name == resource_name:
+                    self.output_certs.append(cert)
+        if len(self.output_certs) == 0:
+            raise LineageError(
+                "Imported lineage for %s does not have any references to the resource"
+                % resource_name
+            )
+
+    def get_certs(self) -> List[Certificate]:
+        return self.output_certs
+
+    def get_cert_for_ref(self, ref: ResourceRef) -> Optional[Certificate]:
+        """Return the certificate if this resource/subpath, or one that covers
+        this ref, is contained in this lineage object. If not, return None
+        """
+        for cert in self.output_certs:
+            if cert.ref == ref or cert.ref.covers(ref):
+                return cert
+        return None
+
+    def replace_placeholders(self, hash_mapping: Dict[str, str]) -> bool:
+        return False  # since lineage was exported, it will not have any placeholders
+
+    def iterate(self) -> Iterable[Tuple[ResourceRef, ResourceLineage]]:
+        """Iterate through all the nested lineages in this export"""
+        for l in self.nested_lineage:
+            for cert in l.get_certs():
+                yield (cert.ref, l)
+
+    def to_json(self) -> Dict[str, Any]:
+        return {
+            "type": "imported",
+            "resource_name": self.resource_name,
+            "nested_lineage": [r.to_json() for r in self.nested_lineage],
+        }
+
+    @staticmethod
+    def from_json(obj, filename=None) -> "ImportedLineage":
+        assert obj["type"] == "imported"
+        nested_lineage = [
+            ResourceLineage.from_json(d, filename=filename) for d in obj["nested_lineage"]
+        ]
+        return ImportedLineage(obj["resource_name"], nested_lineage)
+
+    def __str__(self):
+        return "ImportedLineage(%s)" % self.resource_name
+
+    def pp(self, indent: int = 2) -> str:
+        return (
+            "ImportedLineage(%s, [\n%s" % (self.resource_name, " " * (indent + 2))
+            + (",\n%s" % (" " * (indent + 2))).join(
+                [l.pp(indent=indent + 2) for l in self.nested_lineage]
+            )
+            + "])"
+        )
+
+    def __repr__(self):
+        return self.pp()
+
+
 class LineageStore(metaclass=ABCMeta):
     """Abstract interface for storing lineage data. This can have mutiple
     implementations. Workspaces that support lineage should include a lineage store
@@ -1097,6 +1178,12 @@ class LineageStore(metaclass=ABCMeta):
         This can be an empty list, if the resource is not in the lineage store,
         a one-element list if the resource name with no subpath is in the store, or
         a multi-element list of multiple subpaths for the resource are in the store
+        """
+        pass
+
+    @abstractmethod
+    def import_lineage_file(self, resource_name: str, lineages_as_json: List[Dict[str, Any]]):
+        """Import the lineage file from a resource that was exported from another workspace.
         """
         pass
 
@@ -1558,7 +1645,15 @@ class FileLineageStore(LineageStore):
         self._load_resource_cache()
         for (rname, mapping) in self.resource_cache.items():
             for (ref, lineage) in mapping.items():
-                yield (ref, lineage)
+                if isinstance(lineage, ImportedLineage):
+                    for (ref, lineage) in lineage.iterate():
+                        yield (ref, lineage)
+                    # There could be other entries in tne mapping,
+                    # but they will also point to this same
+                    # ImportedLineage
+                    break
+                else:  # normal case
+                    yield (ref, lineage)
 
     def iterate_all_as_of_snapshot(
         self, instance: str, snapshot_hash: str
@@ -1567,7 +1662,13 @@ class FileLineageStore(LineageStore):
         """
         for rname in self._get_resources_in_snapshot(snapshot_hash):
             for ref in self.get_refs_for_resource_as_of_snapshot(instance, rname, snapshot_hash):
-                yield (ref, self.retrieve_entry_as_of_snapshot(instance, ref, snapshot_hash))
+                lineage = self.retrieve_entry_as_of_snapshot(instance, ref, snapshot_hash)
+                if isinstance(lineage, ImportedLineage):
+                    for (ref, lineage) in lineage.iterate():
+                        yield (ref, lineage)
+                    break  # other entries for resource handled by the iterate()
+                else:  # normal case
+                    yield (ref, self.retrieve_entry_as_of_snapshot(instance, ref, snapshot_hash))
 
     def dump(self, instance: str) -> None:
         self._load_resource_cache()
@@ -1629,6 +1730,16 @@ class FileLineageStore(LineageStore):
             return []
         mapping = self._parse_snapshot_rfile(resource_name, snapshot_hash)
         return mapping.keys()
+
+    def import_lineage_file(self, resource_name: str, lineages_as_json: List[Dict[str, Any]]):
+        nested_lineage = [ResourceLineage.from_json(d) for d in lineages_as_json]
+        r = ImportedLineage(resource_name, nested_lineage)
+        rfile_path = join(self.current_lineage_path, resource_name + ".json")
+        # for backward compability, we just save the lineage values
+        with open(rfile_path, "w") as f:
+            json.dump(
+                {"resource_name": resource_name, "lineages": [r.to_json()],}, f, indent=2,
+            )
 
 
 def make_lineage_table(

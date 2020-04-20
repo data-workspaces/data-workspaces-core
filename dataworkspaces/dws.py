@@ -458,13 +458,22 @@ add.add_command(rclone)
     default=False,
     help="On snapshots, export lineage data for import into other workspaces",
 )
+@click.option(
+    "--imported",
+    is_flag=True,
+    default=False,
+    help="This resource was exported from another workspace. Import the lineage data. "
+    + " An imported resource implies --read-only and --role=source-data.",
+)
 @click.argument("path", type=str)
 @click.pass_context
-def git(ctx, role, name, branch, read_only, export, path):
+def git(ctx, role, name, branch, read_only, export, imported, path):
     """Add a local git repository as a resource. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
-        if ns.batch:
+        if imported:
+            role = ResourceRoles.SOURCE_DATA_SET
+        elif ns.batch:
             raise BatchModeError("--role")
         else:
             role = click.prompt(
@@ -475,9 +484,19 @@ def git(ctx, role, name, branch, read_only, export, path):
         raise click.BadOptionUsage(
             message="Cannot export a source data or code resource", option_name="export"
         )
+    if export and imported:
+        raise click.BadOptionUsage(
+            message="Cannot specify both --export and --imported", option_name="imported"
+        )
+    if imported and role != ResourceRoles.SOURCE_DATA_SET:
+        raise click.BadOptionUsage(
+            message="--imported only for source-data roles", option_name="imported"
+        )
+    if imported:
+        read_only = True
     path = abspath(expanduser(path))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    add_command("git", role, name, workspace, path, branch, read_only, export)
+    add_command("git", role, name, workspace, path, branch, read_only, export, imported)
 
 
 add.add_command(git)

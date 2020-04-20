@@ -20,7 +20,7 @@ import shutil
 import stat
 import click
 import json
-from typing import Set, Pattern, Union, Optional, Tuple
+from typing import Set, Pattern, Union, Optional, Tuple, cast
 
 from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.subprocess_utils import call_subprocess, call_subprocess_for_rc
@@ -57,6 +57,7 @@ from dataworkspaces.workspace import (
     LocalStateResourceMixin,
     FileResourceMixin,
     SnapshotResourceMixin,
+    SnapshotWorkspaceMixin,
     JSONDict,
     JSONList,
     Workspace,
@@ -257,6 +258,7 @@ class GitRepoResource(GitResourceBase):
         branch: str,
         read_only: bool,
         export: bool,
+        imported: bool,
     ):
         super().__init__(
             "git", name, role, workspace, local_path, export=export, repo_dir=local_path
@@ -303,6 +305,15 @@ class GitRepoResource(GitResourceBase):
             ptype=BoolType(),
         )
         self.read_only = self.param_defs.get("read_only", read_only)  # type: bool
+        self.param_defs.define(
+            "imported",
+            default_value=False,
+            optional=True,
+            help="If True, then this resource has lineage imported from another workspace",
+            is_global=True,
+            ptype=BoolType(),
+        )
+        self.imported = self.param_defs.get("imported", imported)  # type: bool
 
     def get_local_params(self):
         use_relative = (
@@ -368,7 +379,8 @@ class GitRepoResource(GitResourceBase):
     def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
         """Save JSON results data to the specified path in the resource.
         """
-        assert self.role == ResourceRoles.RESULTS
+        # TODO: We are abusing add results file for other things, see workspace.py
+        # assert self.role == ResourceRoles.RESULTS
         switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
         abs_dest_path = join(self.local_path, rel_dest_path)
         parent_dir = dirname(abs_dest_path)
@@ -584,9 +596,12 @@ class GitLocalPathType(LocalPathType):
 
 
 class GitRepoFactory(ResourceFactory):
-    def from_command_line(self, role, name, workspace, local_path, branch, read_only, export):
+    def from_command_line(
+        self, role, name, workspace, local_path, branch, read_only, export, imported
+    ):
         """Instantiate a resource object from the add command's
         arguments"""
+        print("export=%s, imported=%s" % (export, imported))  # XXX
         workspace.validate_local_path_for_resource(name, local_path)
         lpr = realpath(local_path)
         wspath = (
@@ -607,6 +622,10 @@ class GitRepoFactory(ResourceFactory):
                 elif read_only:
                     raise ConfigurationError(
                         "The --read-only parameter is only valid for separate git repositories, not subdirectories."
+                    )
+                elif imported:
+                    raise ConfigurationError(
+                        "The --imported parameter is only valid for separate git repositories, not subdirectories."
                     )
                 return GitRepoSubdirFactory().from_command_line(
                     role, name, workspace, local_path, export=export
@@ -630,6 +649,11 @@ class GitRepoFactory(ResourceFactory):
         validate_git_fat_in_path_if_needed(local_path)
         ensure_git_lfs_configured_if_needed(local_path, verbose=workspace.verbose)
         remote_origin = get_remote_origin(local_path, verbose=workspace.verbose)
+        if remote_origin is None:
+            raise ConfigurationError(
+                "Remote origin is missing for git repository at %s. " % local_path
+                + "Please configure before adding resource."
+            )
         (current, others) = get_branch_info(local_path, workspace.verbose)
         if branch != current and branch not in others:
             raise ConfigurationError(
@@ -643,6 +667,29 @@ class GitRepoFactory(ResourceFactory):
             )
         else:
             switch_git_branch(local_path, branch, workspace.verbose)
+        if imported:
+            lineage_path = join(local_path, "lineage.json")
+            if not exists(lineage_path):
+                raise ConfigurationError(
+                    "--imported was specified, but missing exported lineage file %s" % lineage_path
+                )
+            if (
+                not isinstance(workspace, SnapshotWorkspaceMixin)
+                or not workspace.supports_lineage()
+            ):
+                raise ConfigurationError(
+                    "--imported was specified, but this workspace does not support lineage"
+                )
+            with open(lineage_path, "r") as f:
+                lineage_data = json.load(f)
+            if lineage_data["resource_name"] != name:
+                raise ConfigurationError(
+                    "Resource name in imported lineage '%s' does not match '%s'"
+                    % (lineage_data["resource_name"], name)
+                )
+            cast(SnapshotWorkspaceMixin, workspace).get_lineage_store().import_lineage_file(
+                name, lineage_data["lineages"]
+            )
         workspace_dir = get_workspace_dir(workspace)
         relative_local_path = None  # type: Optional[str]
         if commonpath([workspace_dir, local_path]) == workspace_dir:
@@ -657,6 +704,7 @@ class GitRepoFactory(ResourceFactory):
             branch,
             read_only,
             export,
+            imported,
         )
 
     def from_json(self, params, local_params, workspace):
@@ -675,6 +723,7 @@ class GitRepoFactory(ResourceFactory):
             params["branch"],
             params.get("read_only", False),
             params.get("export", False),
+            params.get("imported", False),
         )
 
     def has_local_state(self):
@@ -744,9 +793,10 @@ class GitRepoFactory(ResourceFactory):
             branch,
             read_only,
             params.get("export", False),
+            params.get("imported", False),
         )
 
-    def suggest_name(self, workspace, role, local_path, branch, read_only, export):
+    def suggest_name(self, workspace, role, local_path, branch, read_only, export, imported):
         return basename(local_path)
 
 
