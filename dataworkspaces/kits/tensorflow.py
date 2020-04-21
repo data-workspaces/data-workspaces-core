@@ -631,7 +631,6 @@ def add_lineage_to_keras_model_class(
             assert len(results) == len(self.metrics_names)
             if api_resource is not None:
                 api_resource.save_current_hash()
-                print("saved hash!!!")  # XXX
                 api_resource.pop_hash_state()
             self._dws_state.write_metrics_and_complete(
                 {n: v for (n, v) in zip(self.metrics_names, results)}
