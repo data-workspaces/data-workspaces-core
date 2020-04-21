@@ -367,13 +367,22 @@ cli.add_command(add)
     default=False,
     help="On snapshots, export lineage data for import into other workspaces",
 )
+@click.option(
+    "--imported",
+    is_flag=True,
+    default=False,
+    help="This resource was exported from another workspace. Import the lineage data. "
+    + "An imported resource implies --read-only and --role=source-data.",
+)
 @click.argument("path", type=DIRECTORY_PARAM)
 @click.pass_context
-def local_files(ctx, role, name, path, export: bool, compute_hash: bool):
+def local_files(ctx, role, name, compute_hash: bool, export: bool, imported: bool, path: str):
     """Add a local file directory (not managed by git) to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
-        if ns.batch:
+        if imported:
+            role = ResourceRoles.SOURCE_DATA_SET
+        elif ns.batch:
             raise BatchModeError("--role")
         else:
             role = click.prompt(
@@ -386,7 +395,15 @@ def local_files(ctx, role, name, path, export: bool, compute_hash: bool):
         raise click.BadOptionUsage(
             message="Cannot export a source data or code resource", option_name="export"
         )
-    add_command("file", role, name, workspace, path, export, compute_hash)
+    if export and imported:
+        raise click.BadOptionUsage(
+            message="Cannot specify both --export and --imported", option_name="imported"
+        )
+    if imported and role != ResourceRoles.SOURCE_DATA_SET:
+        raise click.BadOptionUsage(
+            message="--imported only for source-data roles", option_name="imported"
+        )
+    add_command("file", role, name, workspace, path, compute_hash, export, imported)
 
 
 add.add_command(local_files)
@@ -396,6 +413,7 @@ add.add_command(local_files)
 @click.option("--role", type=ROLE_PARAM)
 @click.option("--name", type=str, default=None, help="Short name for this resource")
 @click.option("--config", type=str, default=None, help="Configuration file for rclone")
+@click.option("--compute-hash", is_flag=True, default=False, help="Compute hashes for all files")
 @click.option(
     "--export",
     "-e",
@@ -403,17 +421,35 @@ add.add_command(local_files)
     default=False,
     help="On snapshots, export lineage data for import into other workspaces",
 )
-@click.option("--compute-hash", is_flag=True, default=False, help="Compute hashes for all files")
+@click.option(
+    "--imported",
+    is_flag=True,
+    default=False,
+    help="This resource was exported from another workspace. Import the lineage data. "
+    + "An imported resource implies --read-only and --role=source-data.",
+)
 @click.argument("source", type=str)
 @click.argument(
     "dest", type=str
 )  # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
-def rclone(ctx, role, name, config: str, export: bool, compute_hash: bool, source: str, dest: str):
+def rclone(
+    ctx,
+    role,
+    name,
+    config: str,
+    compute_hash: bool,
+    export: bool,
+    imported: bool,
+    source: str,
+    dest: str,
+):
     """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
-        if ns.batch:
+        if imported:
+            role = ResourceRoles.SOURCE_DATA_SET
+        elif ns.batch:
             raise BatchModeError("--role")
         else:
             role = click.prompt(
@@ -430,9 +466,19 @@ def rclone(ctx, role, name, config: str, export: bool, compute_hash: bool, sourc
         raise click.BadOptionUsage(
             message="Cannot export a source data or code resource", option_name="export"
         )
+    if export and imported:
+        raise click.BadOptionUsage(
+            message="Cannot specify both --export and --imported", option_name="imported"
+        )
+    if imported and role != ResourceRoles.SOURCE_DATA_SET:
+        raise click.BadOptionUsage(
+            message="--imported only for source-data roles", option_name="imported"
+        )
     dest = abspath(expanduser(dest))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
-    add_command("rclone", role, name, workspace, source, dest, config, export, compute_hash)
+    add_command(
+        "rclone", role, name, workspace, source, dest, config, compute_hash, export, imported
+    )
 
 
 add.add_command(rclone)
@@ -463,7 +509,7 @@ add.add_command(rclone)
     is_flag=True,
     default=False,
     help="This resource was exported from another workspace. Import the lineage data. "
-    + " An imported resource implies --read-only and --role=source-data.",
+    + "An imported resource implies --read-only and --role=source-data.",
 )
 @click.argument("path", type=str)
 @click.pass_context

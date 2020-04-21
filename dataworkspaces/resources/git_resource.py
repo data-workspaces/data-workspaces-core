@@ -601,7 +601,6 @@ class GitRepoFactory(ResourceFactory):
     ):
         """Instantiate a resource object from the add command's
         arguments"""
-        print("export=%s, imported=%s" % (export, imported))  # XXX
         workspace.validate_local_path_for_resource(name, local_path)
         lpr = realpath(local_path)
         wspath = (

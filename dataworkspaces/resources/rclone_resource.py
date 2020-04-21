@@ -17,6 +17,7 @@ from dataworkspaces.workspace import (
     LocalStateResourceMixin,
     FileResourceMixin,
     SnapshotResourceMixin,
+    SnapshotWorkspaceMixin,
     JSONDict,
     JSONList,
     ResourceFactory,
@@ -82,8 +83,9 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         global_local_path: str,
         my_local_path: Optional[str],
         config: Optional[str] = None,
-        export: bool = False,
         compute_hash: bool = False,
+        export: bool = False,
+        imported: bool = False,
         ignore: List[str] = [],
     ):
         super().__init__(RCLONE_RESOURCE_TYPE, name, role, workspace)
@@ -125,14 +127,14 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             self.my_local_path if self.my_local_path is not None else self.global_local_path
         )
         self.param_defs.define(
-            "export",
-            default_value=False,
+            "config",
+            default_value=None,
             optional=True,
-            help="True if metadata for export should be added each snapshot",
             is_global=True,
-            ptype=BoolType(),
+            help="Optional path to rclone config file (otherwise uses the default)",
+            ptype=StringType(),
         )
-        self.export = self.param_defs.get("export", export)  # type: bool
+        self.config = self.param_defs.get("config", config)  # type: Optional[str]
         self.param_defs.define(
             "compute_hash",
             default_value=False,
@@ -143,14 +145,23 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         )
         self.compute_hash = self.param_defs.get("compute_hash", compute_hash)  # type: bool
         self.param_defs.define(
-            "config",
-            default_value=None,
+            "export",
+            default_value=False,
             optional=True,
+            help="True if metadata for export should be added each snapshot",
             is_global=True,
-            help="Optional path to rclone config file (otherwise uses the default)",
-            ptype=StringType(),
+            ptype=BoolType(),
         )
-        self.config = self.param_defs.get("config", config)  # type: Optional[str]
+        self.export = self.param_defs.get("export", export)  # type: bool
+        self.param_defs.define(
+            "imported",
+            default_value=False,
+            optional=True,
+            help="If True, then this resource has lineage imported from another workspace",
+            is_global=True,
+            ptype=BoolType(),
+        )
+        self.imported = self.param_defs.get("imported", imported)  # type: bool
 
         self.ignore = ignore  # TODO: should this be a parameter?
 
@@ -336,10 +347,34 @@ class RcloneFactory(ResourceFactory):
                 os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
     def from_command_line(
-        self, role, name, workspace, remote_path, local_path, config, export, compute_hash
+        self, role, name, workspace, remote_path, local_path, config, compute_hash, export, imported
     ):
         rclone = self._add_prechecks(local_path, remote_path, config)
         self._copy_from_remote(local_path, remote_path, rclone)
+        if imported:
+            lineage_path = os.path.join(local_path, "lineage.json")
+            if not os.path.exists(lineage_path):
+                raise ConfigurationError(
+                    "--imported was specified, but missing exported lineage file %s" % lineage_path
+                )
+            if (
+                not isinstance(workspace, SnapshotWorkspaceMixin)
+                or not workspace.supports_lineage()
+            ):
+                raise ConfigurationError(
+                    "--imported was specified, but this workspace does not support lineage"
+                )
+            with open(lineage_path, "r") as f:
+                lineage_data = json.load(f)
+            if lineage_data["resource_name"] != name:
+                raise ConfigurationError(
+                    "Resource name in imported lineage '%s' does not match '%s'"
+                    % (lineage_data["resource_name"], name)
+                )
+            cast(SnapshotWorkspaceMixin, workspace).get_lineage_store().import_lineage_file(
+                name, lineage_data["lineages"]
+            )
+
         return RcloneResource(
             name,
             role,
@@ -348,8 +383,9 @@ class RcloneFactory(ResourceFactory):
             global_local_path=local_path,
             my_local_path=None,
             config=config,
-            export=export,
             compute_hash=compute_hash,
+            export=export,
+            imported=imported,
         )
 
     def from_json(
@@ -370,8 +406,9 @@ class RcloneFactory(ResourceFactory):
             if "my_local_path" in local_params
             else (local_params["local_path"] if "local_path" in local_params else None),
             config=params["config"],
-            export=params.get("export", False),
             compute_hash=params["compute_hash"],
+            export=params.get("export", False),
+            imported=params.get("imported", False),
         )
 
     def has_local_state(self) -> bool:
@@ -419,9 +456,12 @@ class RcloneFactory(ResourceFactory):
             global_local_path=global_local_path,
             my_local_path=my_local_path,
             config=config,
-            export=params.get("export", False),
             compute_hash=params["compute_hash"],
+            export=params.get("export", False),
+            imported=params.get("imported", False),
         )
 
-    def suggest_name(self, workspace, role, remote_path, local_path, config, export, compute_hash):
+    def suggest_name(
+        self, workspace, role, remote_path, local_path, config, compute_hash, export, imported
+    ):
         return os.path.basename(local_path)

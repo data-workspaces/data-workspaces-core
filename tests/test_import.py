@@ -36,12 +36,13 @@ EXPORTED_RESOURCE_DIR=join(TEMPDIR, 'exported-resource')
 RESOURCE_ORIGIN=join(TEMPDIR, 'resource_origin.git')
 
 
-class TestImport(SimpleCase):
-    """For these tests, we create a source CSV file and some output data.
-    We call the Lineage api directly to create some lineage, take a snapshot,
-    and verify that the lineage file got created. In the case of a results resesource,
-    a copy of the various results files should be left at the root of the resource
-    (doing a copy to the snapshot directory rather than a move).
+class TestImportGitRepo(SimpleCase):
+    """Create a workspace and build lineage for an exported resource.
+    Then, import that into a second workspace and run another step,
+    reading from the imported resource. Take a snapshot and verify that
+    it has the imported lineage.
+
+    TODO: test pull, which should update the current lineage
     """
 
     def tearDown(self):
@@ -126,6 +127,169 @@ class TestImport(SimpleCase):
         graph_output_file = join(TEMPDIR, 'graph_post_snapshot.html')
         make_lineage_graph(graph_output_file, WS_DIR, tag_or_hash='tag1', verbose=True)
 
+
+
+
+class TestImportLocalFiles(SimpleCase):
+    """Create a workspace and build lineage for an exported resource.
+    Then, import that into a second workspace and run another step,
+    reading from the imported resource. Take a snapshot and verify that
+    it has the imported lineage.
+    """
+
+    def tearDown(self):
+        if not KEEP_OUTPUTS:
+            super().tearDown()
+
+    def _assert_exists(self, relpath, base_path=WS_DIR):
+        full_path = join(base_path, relpath)
+        self.assertTrue(
+            exists(full_path),
+            "Expecting %s at %s, but did not find it" % (relpath, full_path),
+        )
+
+    def _setup_exported_resource(self):
+        self._setup_initial_repo(git_resources="code,source-data", hostname="test-host")
+        os.mkdir(EXPORTED_RESOURCE_DIR)
+        with open(join(EXPORTED_RESOURCE_DIR, 'readme.txt'), 'w') as f:
+            f.write("This is an exported local files resource\n")
+        self._run_dws(["add", "local-files", "--export", "--role", "intermediate-data", '--name', 'exported-resource',
+                       EXPORTED_RESOURCE_DIR])
+        with open(CSV_FILE, "w") as f:
+            f.write(CSV_DATA)
+        with open(CODE_FILE, "w") as f:
+            f.write("print('hello')\n")
+        builder = (
+            LineageBuilder()
+            .with_workspace_directory(WS_DIR)
+            .with_step_name("code.py")
+            .with_parameters({"a": 5})
+            .with_input_path(CSV_FILE)
+        )
+        with builder.eval() as lineage:
+            im_data = join(EXPORTED_RESOURCE_DIR, "im_data.csv")
+            lineage.add_output_path(im_data)
+            with open(im_data, "w") as f:
+                f.write(IM_DATA)
+        self._run_dws(["snapshot", "tag1"])
+        self._assert_exists("lineage.json", base_path=EXPORTED_RESOURCE_DIR)
+        shutil.rmtree(WS_DIR)
+        print("Exported resource now set up at %s"% EXPORTED_RESOURCE_DIR)
+
+    def test_import(self):
+        self._setup_exported_resource()
+        os.mkdir(WS_DIR)
+        self._setup_initial_repo(git_resources="code,results", hostname="test-host")
+        self._run_dws(['add', 'local-files', '--imported', EXPORTED_RESOURCE_DIR])
+        with open(CODE_FILE, "w") as f:
+            f.write("print('hello')\n")
+        builder = (
+            LineageBuilder()
+            .with_workspace_directory(WS_DIR)
+            .with_step_name("code.py")
+            .with_parameters({"a": 5})
+            .with_input_path(join(EXPORTED_RESOURCE_DIR, 'im_data.csv'))
+            .as_results_step(RESULTS_DIR)
+        )
+        with builder.eval() as lineage:
+            lineage.write_results({"accuracy": 0.95, "recall": 0.8})
+        tlist = make_lineage_table(WS_DIR, verbose=True)
+        expected_refs = frozenset(['results',
+                                   'exported-resource:/im_data.csv',
+                                   'source-data:/data.csv'])
+        actual_refs = frozenset([t[0] for t in tlist])
+        self.assertEqual(expected_refs, actual_refs)
+        graph_output_file = join(TEMPDIR, 'graph_pre_snapshot.html')
+        make_lineage_graph(graph_output_file, WS_DIR, verbose=True)
+
+        self._run_dws(["snapshot", "tag1"])
+        tlist = make_lineage_table(WS_DIR, tag_or_hash='tag1', verbose=True)
+        actual_refs = frozenset([t[0] for t in tlist])
+        self.assertEqual(expected_refs, actual_refs)
+        graph_output_file = join(TEMPDIR, 'graph_post_snapshot.html')
+        make_lineage_graph(graph_output_file, WS_DIR, tag_or_hash='tag1', verbose=True)
+
+class TestImportRclone(SimpleCase):
+    """Create a workspace and build lineage for an exported resource.
+    Then, import that into a second workspace and run another step,
+    reading from the imported resource. Take a snapshot and verify that
+    it has the imported lineage.
+    """
+
+    def tearDown(self):
+        if not KEEP_OUTPUTS:
+            super().tearDown()
+
+    def _assert_exists(self, relpath, base_path=WS_DIR):
+        full_path = join(base_path, relpath)
+        self.assertTrue(
+            exists(full_path),
+            "Expecting %s at %s, but did not find it" % (relpath, full_path),
+        )
+
+    def _setup_exported_resource(self):
+        self._setup_initial_repo(git_resources="code,source-data", hostname="test-host")
+        os.mkdir(EXPORTED_RESOURCE_DIR)
+        with open(join(EXPORTED_RESOURCE_DIR, 'readme.txt'), 'w') as f:
+            f.write("This is an exported local files resource\n")
+        self._run_dws(["add", "local-files", "--export", "--role", "intermediate-data", '--name', 'exported-resource',
+                       EXPORTED_RESOURCE_DIR])
+        with open(CSV_FILE, "w") as f:
+            f.write(CSV_DATA)
+        with open(CODE_FILE, "w") as f:
+            f.write("print('hello')\n")
+        builder = (
+            LineageBuilder()
+            .with_workspace_directory(WS_DIR)
+            .with_step_name("code.py")
+            .with_parameters({"a": 5})
+            .with_input_path(CSV_FILE)
+        )
+        with builder.eval() as lineage:
+            im_data = join(EXPORTED_RESOURCE_DIR, "im_data.csv")
+            lineage.add_output_path(im_data)
+            with open(im_data, "w") as f:
+                f.write(IM_DATA)
+        self._run_dws(["snapshot", "tag1"])
+        self._assert_exists("lineage.json", base_path=EXPORTED_RESOURCE_DIR)
+        shutil.rmtree(WS_DIR)
+        print("Exported resource now set up at %s"% EXPORTED_RESOURCE_DIR)
+
+    def test_import(self):
+        self._setup_exported_resource()
+        os.mkdir(WS_DIR)
+        self._setup_initial_repo(git_resources="code,results", hostname="test-host")
+        imported_dir=join(WS_DIR, 'exported-resource')
+        print("cmd would be: dws add rclone --imported 'localfs:%s' ./exported-resource"%EXPORTED_RESOURCE_DIR)
+        self._run_dws(['add', 'rclone', '--imported', 'localfs:'+EXPORTED_RESOURCE_DIR,
+                       './exported-resource'])
+        with open(CODE_FILE, "w") as f:
+            f.write("print('hello')\n")
+        builder = (
+            LineageBuilder()
+            .with_workspace_directory(WS_DIR)
+            .with_step_name("code.py")
+            .with_parameters({"a": 5})
+            .with_input_path(join(imported_dir, 'im_data.csv'))
+            .as_results_step(RESULTS_DIR)
+        )
+        with builder.eval() as lineage:
+            lineage.write_results({"accuracy": 0.95, "recall": 0.8})
+        tlist = make_lineage_table(WS_DIR, verbose=True)
+        expected_refs = frozenset(['results',
+                                   'exported-resource:/im_data.csv',
+                                   'source-data:/data.csv'])
+        actual_refs = frozenset([t[0] for t in tlist])
+        self.assertEqual(expected_refs, actual_refs)
+        graph_output_file = join(TEMPDIR, 'graph_pre_snapshot.html')
+        make_lineage_graph(graph_output_file, WS_DIR, verbose=True)
+
+        self._run_dws(["snapshot", "tag1"])
+        tlist = make_lineage_table(WS_DIR, tag_or_hash='tag1', verbose=True)
+        actual_refs = frozenset([t[0] for t in tlist])
+        self.assertEqual(expected_refs, actual_refs)
+        graph_output_file = join(TEMPDIR, 'graph_post_snapshot.html')
+        make_lineage_graph(graph_output_file, WS_DIR, tag_or_hash='tag1', verbose=True)
 
 
 
