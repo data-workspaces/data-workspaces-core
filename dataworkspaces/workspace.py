@@ -718,11 +718,17 @@ class Resource(metaclass=ABCMeta):
         resource. Otherwise should raise a ConfigurationError."""
         pass
 
-    def exported(self) -> bool:
+    def is_exported(self) -> bool:
         """Returns True if this resource has an export parameter and it
         is True.
         """
         return hasattr(self, "export") and getattr(self, "export") == True
+
+    def is_imported(self) -> bool:
+        """Returns True if this resource has an imported parameter and it
+        is True.
+        """
+        return hasattr(self, "imported") and getattr(self, "imported") == True
 
 
 class FileResourceMixin(metaclass=ABCMeta):
@@ -980,6 +986,10 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
                 if self.verbose:
                     print("Clearing lineage on resource %s" % r.name)
                 lstore.clear_entry(instance, ResourceRef(r.name, None))
+                if r.is_imported():
+                    cast(SnapshotResourceMixin, r).copy_imported_lineage(lstore)
+                    if self.verbose:
+                        print("Imported lineage for %s" % r.name)
 
     def _push_precheck(self, resource_list: List[LocalStateResourceMixin]) -> None:
         """Default calls pull_precheck() on each of the supplied resources.
@@ -1200,7 +1210,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         # For exported resources, we need to delete any stale lineage.json files before the snapshot
         for r in current_resources:
             if (
-                r.exported()
+                r.is_exported()
                 and isinstance(r, FileResourceMixin)
                 and r.does_subpath_exist("lineage.json")
             ):
@@ -1216,7 +1226,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
                     data = file_mixin.read_results_file("results.json")
                     if isinstance(data, dict) and "metrics" in data:
                         metrics = data["metrics"]
-                if not r.exported():
+                if not r.is_exported():
                     file_mixin.results_move_current_files(
                         rel_dest_root, exclude_files, exclude_dirs_re
                     )
@@ -1492,7 +1502,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         for r in current_resources:
             if not isinstance(r, FileResourceMixin):
                 continue
-            if not r.exported():
+            if not r.is_exported():
                 continue
             (lineage, warnings) = store.get_lineage_for_resource(instance, r.name)
             if len(lineage) > 0:
@@ -1553,3 +1563,29 @@ class SnapshotResourceMixin(metaclass=ABCMeta):
         files under relative_path
         """
         pass
+
+    def copy_imported_lineage(self, lineage_store: LineageStore) -> None:
+        """If imported lineage, copy the lineage.json file to the lineage store.
+        The pull_resources() method on the workspace will call it after pulling the resource.
+
+        If the resource does not store files locally, this default implementation
+        will need to be overridden.
+        """
+        assert isinstance(self, LocalStateResourceMixin)
+        local_path = cast(LocalStateResourceMixin, self).get_local_path_if_any()
+        assert local_path is not None
+        rname = cast(Resource, self).name
+        lineage_path = os.path.join(local_path, "lineage.json")
+        if not os.path.exists(lineage_path):
+            raise ConfigurationError(
+                "%s was an imported resource, but is missing exported lineage file at %s"
+                % (rname, lineage_path)
+            )
+        with open(lineage_path, "r") as f:
+            lineage_data = json.load(f)
+        if lineage_data["resource_name"] != rname:
+            raise ConfigurationError(
+                "Resource name in imported lineage '%s' does not match '%s'"
+                % (lineage_data["resource_name"], rname)
+            )
+        lineage_store.import_lineage_file(rname, lineage_data["lineages"])

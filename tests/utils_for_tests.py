@@ -99,12 +99,14 @@ class BaseCase(HelperMethods, unittest.TestCase):
         if os.path.exists(TEMPDIR):
             shutil.rmtree(TEMPDIR)
 
-    def _setup_initial_repo(self, create_resources=None, scratch_dir=None):
+    def _setup_initial_repo(self, create_resources=None, scratch_dir=None, hostname=None):
         init_cmd = ['init']
         if create_resources is not None:
            init_cmd.append('--create-resources='+create_resources)
         if scratch_dir is not None:
             init_cmd.append('--scratch-directory='+scratch_dir)
+        if hostname is not None:
+            init_cmd.append('--hostname='+hostname)
         self._run_dws(init_cmd, cwd=WS_DIR)
         self._run_git(['init', '--bare', 'workspace_origin.git'],
                       cwd=TEMPDIR)
