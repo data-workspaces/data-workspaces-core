@@ -113,7 +113,7 @@ import contextlib
 from collections import OrderedDict
 import datetime
 from typing import List, Union, Any, Type, Iterable, Dict, Optional, cast
-from os.path import curdir, join, isabs, abspath, expanduser, exists
+from os.path import curdir, join, isabs, abspath, expanduser, exists, basename
 from argparse import ArgumentParser, Namespace
 from copy import copy
 
@@ -522,7 +522,6 @@ class LineageBuilder:
         properties have been specified, and return a :class:`~Lineage` object
         with the requested configuration.
         """
-        assert self.step_name is not None, "Need to specify step name"
         assert self.parameters is not None, "Need to specify parameters"
         assert self.no_inputs or (
             self.inputs is not None
@@ -532,6 +531,18 @@ class LineageBuilder:
             self.workspace_dir = _find_containing_workspace()
         if self.workspace_dir is None:
             raise ConfigurationError("Could not find a workspace, starting at %s" % curdir)
+        if self.step_name is None and len(self.code) > 0:
+            # try to infer step name from code
+            if isinstance(self.code[0], ResourceRef) and self.code[0].subpath is not None:
+                self.step_name = (
+                    basename(self.code[0].subpath).replace(".py", "").replace(".ipynb", "")
+                )
+            elif isinstance(self.code[0], str):
+                self.step_name = basename(self.code[0]).replace(".py", "").replace(".ipynb", "")
+        assert self.step_name is not None, (
+            "Unable to infer the step name. Please specify step name directly via with_step_name() "
+            + "or indirectly through with_code_path()."
+        )
         # TODO: need to make this handle other backends as well.
         workspace = load_workspace("git:" + self.workspace_dir, False, False)
         if self.results_dir is not None:
