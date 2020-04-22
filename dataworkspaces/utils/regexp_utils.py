@@ -31,6 +31,7 @@ DT_RE = re.compile(r"^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)\.(\d+)$")
 
 
 def isots_to_dt(iso_ts):
+    """Parse an iso timestamp and return it as a datetime object"""
     mo = DT_RE.match(iso_ts)
     if mo is None:
         raise TypeError("String '%s' is not a valid iso timestamp" % iso_ts)

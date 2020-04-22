@@ -540,6 +540,12 @@ def git(ctx, role, name, branch, read_only, export, imported, path):
         )
     if imported:
         read_only = True
+    if path.startswith('git@') or path.startswith('https://'):
+        raise click.BadOptionUsage(message="It looks like you tried to specify a git URL (%s)."%path +
+                                   " Currently, git resources only accept a local path."+
+                                   " Try cloning your repository and then pasing the local path to that repository.",
+                                   option_name='path')
+
     path = abspath(expanduser(path))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command("git", role, name, workspace, path, branch, read_only, export, imported)
