@@ -245,7 +245,7 @@ class BinaryClassificationMetrics(Metrics):
         return self.accuracy
 
     def print_metrics(self, file=sys.stdout) -> None:
-        for k, v in self.to_dict():
+        for k, v in self.to_dict().items():
             print("%13s: %.02f" % (k, cast(Union[int, float], v)), file=file)
 
 
