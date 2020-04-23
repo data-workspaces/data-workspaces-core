@@ -84,6 +84,20 @@ def is_git_staging_dirty(cwd, subdir=None):
         raise ConfigurationError("Problem invoking %s status on %s" % (GIT_EXE_PATH, cwd))
 
 
+def echo_git_status_for_user(cwd):
+    """Run git status and echo to the user.
+    """
+    if GIT_EXE_PATH is None:
+        raise ConfigurationError("git executable not found")
+    cmd = [GIT_EXE_PATH, "status"]
+    # p = run(cmd, cwd=cwd, stdout=PIPE, encoding="utf-8")
+    p = run(cmd, cwd=cwd, encoding="utf-8")
+    # for line in p.stdout.split("\n"):
+    #     click.echo(line)
+    if p.returncode != 0:
+        raise ConfigurationError("Problem invoking %s status on %s" % (GIT_EXE_PATH, cwd))
+
+
 def is_pull_needed_from_remote(cwd: str, branch: str, verbose: bool) -> bool:
     """Do check whether we need a pull, we get the hash of the HEAD
     of the remote's master branch. Then, we see if we have this object locally.

@@ -42,6 +42,7 @@ from dataworkspaces.utils.git_utils import (
     git_remove_file,
     git_remove_subtree,
     ensure_entry_in_gitignore,
+    echo_git_status_for_user,
 )
 from dataworkspaces.utils.git_fat_utils import (
     validate_git_fat_in_path_if_needed,
@@ -367,16 +368,24 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         return Workspace(self.workspace_dir, batch=self.batch, verbose=self.verbose)
 
     def _push_precheck(self, resource_list: List[ws.LocalStateResourceMixin]) -> None:
-        if is_git_dirty(self.workspace_dir):
-            raise ConfigurationError(
-                "Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing."
-                % self.workspace_dir
-            )
         if is_pull_needed_from_remote(self.workspace_dir, "master", self.verbose):
             raise ConfigurationError(
                 "Data workspace at %s requires a pull from remote origin" % self.workspace_dir
             )
         validate_git_fat_in_path_if_needed(self.workspace_dir)
+        if is_git_dirty(self.workspace_dir):
+            if not self.batch:
+                click.echo(
+                    "Database workspace metadata repo at %s has uncommitted changes:"
+                    % self.workspace_dir
+                )
+                echo_git_status_for_user(self.workspace_dir)
+                click.confirm("Do you wish to continue anyway?", abort=True)
+            else:
+                raise ConfigurationError(
+                    "Data workspace metadata repo at %s has uncommitted changes. Please commit before pushing."
+                    % self.workspace_dir
+                )
         super()._push_precheck(resource_list)
 
     def push(self, resource_list: List[ws.LocalStateResourceMixin]) -> None:
@@ -665,6 +674,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             ensure_entry_in_gitignore(
                 workspace_dir, ".gitignore", scratch_dir_gitignore, commit=False, verbose=verbose
             )
+        # common things that should not be committed
+        ensure_entry_in_gitignore(
+            workspace_dir, ".gitignore", ".ipynb_checkpoints/", commit=False, verbose=verbose
+        )
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
 
         if not isdir(abs_scratch_dir):

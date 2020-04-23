@@ -951,7 +951,11 @@ class GitRepoResultsSubdirResource(GitResourceBase):
             raise ConfigurationError(
                 "Missing directory %s for resource %s" % (self.local_path, self.name)
             )
-        if is_git_dirty(self.workspace_dir):
+        # if the backend is a git repo, we skip the check here, as we check at the repo level
+        # and ask the user whether they want to proceed anyway.
+        if is_git_dirty(self.workspace_dir) and not isinstance(
+            self.workspace, git_backend.Workspace
+        ):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing."
                 % self.workspace_dir
@@ -1091,7 +1095,11 @@ class GitRepoSubdirResource(GitResourceBase):
             raise ConfigurationError(
                 "Missing directory %s for resource %s" % (self.local_path, self.name)
             )
-        if is_git_dirty(self.local_path):
+        # if the backend is a git repo, we skip the check here, as we check at the repo level
+        # and ask the user whether they want to proceed anyway.
+        if is_git_dirty(self.workspace_dir) and not isinstance(
+            self.workspace, git_backend.Workspace
+        ):
             raise ConfigurationError(
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing."
                 % self.local_path
