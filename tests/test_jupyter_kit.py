@@ -30,6 +30,15 @@ except Exception as e:
     ERROR = e
     JUPYTER=None
 
+try:
+    import pandas
+except ImportError:
+    pandas = None
+try:
+    import numpy
+except ImportError:
+    numpy = None
+
 @unittest.skipUnless(JUPYTER is not None, "SKIP: No Jupyter install found: %s"%ERROR)
 class TestJupyterKit(unittest.TestCase):
     def setUp(self):
@@ -69,6 +78,61 @@ class TestJupyterKit(unittest.TestCase):
         self._run_dws(['snapshot', '-m', "'snapshot of notebook run'", 'S1'],
                       verbose=False)
 
+@unittest.skipUnless(JUPYTER is not None, "SKIP: No Jupyter install found: %s"%ERROR)
+@unittest.skipUnless(pandas is not None, "SKIP: pandas is not installed")
+@unittest.skipUnless(numpy is not None, "SKIP: numpy is not installed")
+class TestHeatmapBinning(unittest.TestCase):
+    def test_no_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([numpy.nan, numpy.nan]))
+        assert_series_equal(pandas.Series([-1,-1]), bins)
+    def test_one_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.2, numpy.nan, 1.2]))
+        assert_series_equal(pandas.Series([3,-1,3]), bins)
+    def test_two_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2]))
+        assert_series_equal(pandas.Series([4,-1,2]), bins)
+    def test_three_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0]))
+        assert_series_equal(pandas.Series([4,-1,3, 2]), bins)
+    def test_four_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8]))
+        assert_series_equal(pandas.Series([4,-1,4, 2,2,2]), bins, check_dtype=False)
+    def test_five_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4]))
+        assert_series_equal(pandas.Series([4,-1,4, 3, 3, 2, 2]), bins, check_dtype=False)
+    def test_six_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
+        assert_series_equal(pandas.Series([5,-1,4, 2, 2, 1, 1, 5]), bins, check_dtype=False)
+    def test_seven_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([0.2, 1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
+        assert_series_equal(pandas.Series([1, 5,-1,4, 3, 3, 2, 1, 5]), bins, check_dtype=False)
+    def test_seven_unique(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        bins = _metric_col_to_colormap(pandas.Series([0.1, 0.2, 1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
+        assert_series_equal(pandas.Series([0, 0, 6,-1,5, 3, 3, 2, 1, 6]), bins, check_dtype=False)
+    def test_random(self):
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        import random
+        random.seed(1)
+        data = pandas.Series([random.gauss(5, 1) for i in range(100)])
+        bins = _metric_col_to_colormap(data)
 
 if __name__ == '__main__':
     unittest.main()

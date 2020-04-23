@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import re
 from os.path import join, basename, dirname, abspath, expanduser, curdir, exists
 from notebook.notebookapp import list_running_servers
-from typing import Optional, List, Any, Dict, Tuple, Callable
+from typing import Optional, List, Any, Dict, Tuple, Callable, Sequence
 assert Dict # keep pyflakes happy
 import shlex
 import argparse
@@ -255,6 +255,47 @@ class DwsMagicParseArgs(argparse.ArgumentParser):
 MINIMIZE_COLORMAP=['rgb(84,128,107)', 'rgb(138,168,153)', 'rgb(193,210,201)', 'rgb(242,242,242)', 'rgb(232,190,192)', 'rgb(212,136,140)', 'rgb(193,84,89)']
 MAXIMIZE_COLORMAP=['rgb(193,84,89)', 'rgb(212,136,140)', 'rgb(232,190,192)', 'rgb(242,242,242)', 'rgb(193,210,201)', 'rgb(138,168,153)', 'rgb(84,128,107)']
 
+def _fmt_scalar(s):
+    """Helper function to round metrics"""
+    if not isinstance(s, float) and (not hasattr(s, 'dtype') or s.dtype!='f'):
+        return s # non-floats left alone
+    elif s >=1.0:
+        return round(s, 1)
+    elif s>=0.01:
+        return round(s, 3)
+    else:
+        return s
+
+def _metric_col_to_colormap(col):
+    """Given a metric column, return a series representing
+    the heatmap indexes (0 through 6).
+    Returns a series with the same number of elements as the column.
+    """
+    import pandas as pd
+    import numpy as np
+    nunique = len(col.dropna().unique())
+    if nunique<2:
+        return col.apply(lambda v: -1 if pd.isna(v) else 3)
+    elif nunique==2:
+        minval=col.min()
+        return col.apply(lambda v: -1 if pd.isna(v)
+                         else (2 if v==minval else 4))
+    elif nunique==3:
+        medval = col.median()
+        return col.apply(lambda v:-1 if pd.isna(v)
+                         else (3 if v==medval else
+                               (2 if v<medval else 4)))
+    elif nunique<=5:
+        num_bins = 3
+        labels=[2,3,4] # type: Sequence[int]
+    elif nunique<=7:
+        num_bins=5
+        labels=[1,2,3,4,5]
+    else:
+        num_bins=7
+        labels=range(7)
+    return pd.qcut(col, num_bins, labels=labels, duplicates='drop').astype(np.float32).fillna(-1.0).astype(np.int32)
+
 @magics_class
 class DwsMagics(Magics):
     def __init__(self, shell):
@@ -464,12 +505,13 @@ class DwsMagics(Magics):
             heatmap_maximize_cols = [] # type: List[str]
             heatmap_minimize_cols = [] # type: List[str]
             color_templ="border: 1px solid darkgrey; background-color: %s; color: %s"
+            # TODO: split this out to a separate function
             def color_max_metric_col(col):
-                bins = pd.qcut(col, 7, labels=range(7), duplicates='drop').astype(np.float32).fillna(-1.0).astype(np.int32)
+                bins = _metric_col_to_colormap(col)
                 return bins.apply(lambda b: color_templ%(MAXIMIZE_COLORMAP[b], 'white' if b<2 or b>4 else  'black') if b!=-1
                                             else color_templ%('lightgrey', 'black'))
             def color_min_metric_col(col):
-                bins = pd.qcut(col, 7, labels=range(7), duplicates='drop').astype(np.float32).fillna(-1.0).astype(np.int32)
+                bins = _metric_col_to_colormap(col)
                 return bins.apply(lambda b: color_templ%(MINIMIZE_COLORMAP[b], 'white' if b<2 or b>4 else  'black') if b!=-1
                                             else color_templ%('lightgrey', 'black'))
         class BaselineElementStyle:
@@ -576,21 +618,58 @@ class DwsMagics(Magics):
         (results, rpath) = rtn
         import pandas as pd
         html_list = ['<h3>%s</h3>' % rpath]
-        def dict_to_df(d, name):
+
+        def truncate_dict(d, maxlen=50, roundme=False):
+            d2 = {}
+            for (k, v) in d.items():
+                if roundme:
+                    d2[k] = _fmt_scalar(v)
+                else:
+                    d2[k] = v
+            s = repr(d2)
+            if len(s)>maxlen:
+                return s[0:(maxlen-3)]+'...'
+            else:
+                return s
+        def subdict_to_df(d, parent_name, name, roundme=False):
             keys=[]
             values = []
             for (k, v) in d.items():
                 if not isinstance(v, dict):
                     keys.append(k)
-                    values.append(v)
+                    if roundme:
+                        values.append(_fmt_scalar(v))
+                    else:
+                        values.append(v)
+                else:
+                    keys.append(k)
+                    values.append(truncate_dict(v, roundme=roundme))
+            df = pd.DataFrame({'Property':keys, 'Value':values}).set_index('Property')
+            html_list.append("<h5>%s: %s</h5>"% (parent_name, name))
+            html_list.append(df.to_html())
+        def dict_to_df(d, name, roundme=False):
+            keys=[]
+            values = []
+            subdicts = []
+            for (k, v) in d.items():
+                if not isinstance(v, dict):
+                    keys.append(k)
+                    if roundme:
+                        values.append(_fmt_scalar(v))
+                    else:
+                        values.append(v)
+                elif k not in ('parameters', 'metrics'):
+                    subdicts.append((k, v))
             df = pd.DataFrame({'Property':keys, 'Value':values}).set_index('Property')
             html_list.append("<h4>%s</h4>"% name)
             html_list.append(df.to_html())
+            for (k, v) in subdicts:
+                subdict_to_df(v, name, k, roundme=roundme)
         dict_to_df(results, 'General Properties')
         if 'parameters' in results:
             dict_to_df(results['parameters'], 'Parameters')
         if 'metrics' in results:
-            dict_to_df(results['metrics'], 'Metrics')
+            dict_to_df(results['metrics'], 'Metrics', roundme=True)
         return HTML('\n'.join(html_list))
 
 
