@@ -678,6 +678,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         ensure_entry_in_gitignore(
             workspace_dir, ".gitignore", ".ipynb_checkpoints/", commit=False, verbose=verbose
         )
+        ensure_entry_in_gitignore(
+            # Jupyter notebook autosave?
+            workspace_dir, ".gitignore", ".~*", commit=False, verbose=verbose
+        )
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
 
         if not isdir(abs_scratch_dir):
