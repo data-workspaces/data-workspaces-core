@@ -57,16 +57,52 @@ about it:
   git clone https://github.com/jfischer/sklearn-digits-dataset.git
   dws add git --role=source-data --read-only ./sklearn-digits-dataset
 
-Git-fat integration: Support for Large Files
---------------------------------------------
+Support for Large Files: Git-lfs and Git-fat integration
+--------------------------------------------------------
 It can be nice to manage your golden source data in a Git repository.
 Unfortunately, due to its architecture and focus as a source code tracking
 system, Git can have significant performance issues with large files.
 Furthermore, hosting services like GitHub place limits on the size of individual
 files and on commit sizes. To get around this, various extensions to Git
-have sprung up. Data Workspaces currently integrates with one of them,
+have sprung up. Data Workspaces currently integrates with two of them,
+`git-lfs <https://git-lfs.github.com>`_ and
 `git-fat <https://github.com/jedbrown/git-fat>`_.
 
+Git-lfs
+~~~~~~~
+Git-lfs (large file storage) is a utility which interacts with a
+git hosting service using a special protocol. This protocol is supported
+by most popular Git hosting services/servers, including GitHub and
+`GitLab <https://docs.gitlab.com/ee/topics/git/lfs/index.html>`_.
+You need to manually install the ``git-lfs`` executable (see 
+https://git-lfs.github.com for details).
+
+Data Workspaces automatically determines whether a particular git repository
+is using ``git-lfs`` by looking for any references to ``git-lfs`` in a
+``.gitattributes`` within the repository. This is done for both the
+workspace's metadata repository and any git resources. DWS also will ensure
+that the user is correctly configured for ``git-lfs``,
+by running ``git-lfs install`` if the user does not have an associated entry for
+in their ``.gitconfig`` file.
+
+We support the following integration points with ``git-lfs``:
+
+1. The git repo for the workspace itself can be git-lfs enabled when it is
+   created. This is done through the ``--git-lfs-attributes`` command line
+   option on ``dws init``.
+   See the :ref:`Command Reference <commands>` entry for details (or the
+   example below).
+2. Any ``dws push`` or ``dws pull`` of a git-lfs-enabled workspace will
+   automatically call the associated git-lfs command for the workspace's main
+   repo.
+3. If you add a git repository as a resource to the workspace, and it has
+   references to ``git-lfs`` in a ``.gitattributes`` file, then any
+   ``dws push`` or ``dws pull`` commands will
+   automatically call the associated ``git-lfs`` commands.
+
+
+Git-fat
+~~~~~~~
 Git-fat allows you to
 store your large files on a host you control that is accessible via
 ``ssh`` (or other protocols supported through ``rsync``). The large
