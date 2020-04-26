@@ -266,6 +266,15 @@ def _fmt_scalar(s):
     else:
         return s
 
+_BINS_TO_LABELS={
+  1: [3],
+  2: [2,4],
+  3: [2,3,4],
+  4: [1,2,4,5],
+  5: [1,2,3,4,5],
+  6: [0,1,2,4,5,6],
+  7: [0,1,2,3,4,5,6]
+} # type: Dict[int,Sequence[int]]
 def _metric_col_to_colormap(col):
     """Given a metric column, return a series representing
     the heatmap indexes (0 through 6).
@@ -274,27 +283,26 @@ def _metric_col_to_colormap(col):
     import pandas as pd
     import numpy as np
     nunique = len(col.dropna().unique())
-    if nunique<2:
+    num_bins = min(nunique, 7)
+    if num_bins<2:
         return col.apply(lambda v: -1 if pd.isna(v) else 3)
-    elif nunique==2:
+    elif num_bins==2:
         minval=col.min()
         return col.apply(lambda v: -1 if pd.isna(v)
                          else (2 if v==minval else 4))
-    elif nunique==3:
-        medval = col.median()
-        return col.apply(lambda v:-1 if pd.isna(v)
-                         else (3 if v==medval else
-                               (2 if v<medval else 4)))
-    elif nunique<=5:
-        num_bins = 3
-        labels=[2,3,4] # type: Sequence[int]
-    elif nunique<=7:
-        num_bins=5
-        labels=[1,2,3,4,5]
-    else:
-        num_bins=7
-        labels=range(7)
-    return pd.qcut(col, num_bins, labels=labels, duplicates='drop').astype(np.float32).fillna(-1.0).astype(np.int32)
+    # qcut() may collapse bins, so we need to figure out how many bins it will
+    # actually give us.
+    num_actual_bins = len(pd.qcut(col, num_bins, duplicates='drop').dtype.categories)
+    labels=_BINS_TO_LABELS[num_actual_bins]
+    try:
+        return pd.qcut(col, num_bins, labels=labels, duplicates='drop').astype(np.float32).fillna(-1.0).astype(np.int32)
+    except Exception as e:
+        print(e, file=sys.stderr)
+        print("problem binning columns, unique=%s, num_actual_bins=%s, labels=%s"%
+              (nunique, num_actual_bins, labels), file=sys.stderr)
+        print("col: %s" % repr(col), file=sys.stderr)
+        raise
+
 
 @magics_class
 class DwsMagics(Magics):

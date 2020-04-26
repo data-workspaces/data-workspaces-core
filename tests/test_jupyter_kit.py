@@ -101,28 +101,28 @@ class TestHeatmapBinning(unittest.TestCase):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0]))
-        assert_series_equal(pandas.Series([4,-1,3, 2]), bins)
+        assert_series_equal(pandas.Series([4,-1,3, 2]), bins, check_dtype=False)
     def test_four_unique(self):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8]))
-        assert_series_equal(pandas.Series([4,-1,4, 2,2,2]), bins, check_dtype=False)
+        assert_series_equal(pandas.Series([4,-1,3, 2,2,2]), bins, check_dtype=False)
     def test_five_unique(self):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4]))
-        assert_series_equal(pandas.Series([4,-1,4, 3, 3, 2, 2]), bins, check_dtype=False)
+        assert_series_equal(pandas.Series([5,-1,4, 2, 2, 1, 1]), bins, check_dtype=False)
     def test_six_unique(self):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
-        assert_series_equal(pandas.Series([5,-1,4, 2, 2, 1, 1, 5]), bins, check_dtype=False)
+        assert_series_equal(pandas.Series([4,-1,3, 2, 2, 1, 1, 5]), bins, check_dtype=False)
     def test_seven_unique(self):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([0.2, 1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
-        assert_series_equal(pandas.Series([1, 5,-1,4, 3, 3, 2, 1, 5]), bins, check_dtype=False)
-    def test_seven_unique(self):
+        assert_series_equal(pandas.Series([0, 5,-1,5, 2, 2, 1, 0, 6]), bins, check_dtype=False)
+    def test_eight_unique(self):
         from dataworkspaces.kits.jupyter import _metric_col_to_colormap
         from pandas.testing import assert_series_equal
         bins = _metric_col_to_colormap(pandas.Series([0.1, 0.2, 1.4, numpy.nan, 1.2, 1.0, 1.0, 0.8, 0.4, 1.5]))
@@ -133,6 +133,15 @@ class TestHeatmapBinning(unittest.TestCase):
         random.seed(1)
         data = pandas.Series([random.gauss(5, 1) for i in range(100)])
         bins = _metric_col_to_colormap(data)
+    def test_combined_bins(self):
+        """"Test case from real bug where qcut() returns fewer bins than we asked"""
+        # there are 5 unique values, but qcut() will put it into 4 bins.
+        from dataworkspaces.kits.jupyter import _metric_col_to_colormap
+        from pandas.testing import assert_series_equal
+        data = pandas.Series([numpy.nan, 0.729885, 0.655172, 0.729885, numpy.nan, 0.729885, 0.747126, 0.729885, 0.729885, 0.701149, 0.729885, 0.758621])
+        bins = _metric_col_to_colormap(data)
+        expected=pandas.Series([-1,2,1,2,-1,2,5,2,2,1,2,5])
+        assert_series_equal(expected, bins, check_dtype=False)
 
 if __name__ == '__main__':
     unittest.main()
