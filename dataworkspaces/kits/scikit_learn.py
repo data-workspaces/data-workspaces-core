@@ -1,12 +1,14 @@
 """
 This module (``dataworkspaces.kits.scikit_learn``)
 provides integration with the `scikit-learn <https://scikit-learn.org>`_
-framework. The main function provided here is
-:func:`~train_and_predict_with_cv`, which
-runs a common sklearn classification workflow. This module
-also provides :class:`~Metrics` and its subclasses, which
+framework. The main class provided here is :class:`~LineagePredictor`,
+which wraps any class following sklearn's predictor protocol. It captures
+inputs, model parameters and results. This module also provides
+:class:`~Metrics` and its subclasses, which
 support the computation of common metrics and the writing of them
-to a results file.
+to a results file. Finally, there is
+:func:`~train_and_predict_with_cv`, which
+runs a common sklearn classification workflow, including grid search.
 """
 
 from typing import Optional, Union, Dict, List, Any, cast
@@ -534,8 +536,8 @@ def train_and_predict_with_cv(
     random_state: Optional[int] = None,
     run_description: Optional[str] = None,
 ) -> None:
-    """NOTE: This function is DEPRICATED and will be removed from a future
-    version.
+    """NOTE: This function is under consideration for DEPRECATION and
+    may be removed from a future version.
 
     This function implements a common workflow for sklearn classifiers:
 

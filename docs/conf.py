@@ -20,13 +20,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 # -- Project information -----------------------------------------------------
 
 project = 'Data Workspaces'
-copyright = '2019, Max Planck Institute for Software Systems and Data-ken Research'
-author = 'Max Planck Institute for Software Systems and Data-ken Research'
+copyright = '2020 Max Planck Institute for Software Systems and Benedat LLC'
+author = 'Max Planck Institute for Software Systems and Benedat LLC'
 
 # The short X.Y version
-version = '1.2'
+version = '1.3'
 # The full version, including alpha/beta/rc tags
-release = '1.2.4'
+release = '1.3.2'
 
 
 # -- General configuration ---------------------------------------------------

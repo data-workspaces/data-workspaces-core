@@ -433,7 +433,10 @@ class DwsMagics(Magics):
         parser.add_argument('--tail', default=False, action='store_true',
                             help="Just show the last 10 entries in reverse order")
         parser.add_argument('--baseline', default=None, type=str,
-                            help="Snapshot tag or hash to use as a basis for metrics comparison")
+                            help="Snapshot tag or hash to use as a basis for metrics comparison. "+
+                                 "Will color the fonts of values green or red, "+
+                                 "depending on whether they are better (worse) than "+
+                                 "the baseline.")
         parser.add_argument('--heatmap', default=False, action='store_true',
                             help="Show a heatmap for metrics columns")
         parser.add_argument('--maximize-metrics', default=None, type=str,

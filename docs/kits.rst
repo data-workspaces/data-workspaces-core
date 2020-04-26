@@ -68,7 +68,9 @@ We now describe the command options for the individual magics.
 
 **%dws_history**
 
-  usage: dws_history [-h] [--max-count MAX_COUNT] [--tail]
+|  usage:
+|  dws_history [-h] [--max-count MAX_COUNT] [--tail] [--baseline TAG_OR_HASH]
+|         [--heatmap] [maximize-metrics METRICS] [--minimize-metrics METRICS]
   
   Print a history of snapshots in this workspace
   
@@ -77,6 +79,14 @@ We now describe the command options for the individual magics.
     --max-count MAX_COUNT
                           Maximum number of snapshots to show
     --tail                Just show the last 10 entries in reverse order
+    --baseline TAG_OR_HASH
+                          Snapshot tag or hash to use as a basis for metrics
+                          comparison.
+    --heatmap             Show a heatmap for metrics columns
+    --maximize-metrics METRICS
+                          Metrics where larger values are better (e.g. accuracy)
+    --minimize-metrics METRICS
+                          Metrics where smaller values are better (e.g. loss)
 
 **%dws_snapshot**
 
