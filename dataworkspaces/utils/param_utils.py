@@ -3,7 +3,7 @@
 Definition of configuration parameters
 """
 import socket
-from typing import Dict, Callable, Any, Optional, Tuple, cast
+from typing import Dict, Callable, Any, Optional, Tuple, List, cast
 
 assert Dict
 assert Callable
@@ -135,6 +135,36 @@ class HostnameType(ParamType):
 
     def __str__(self):
         return "hostname"
+
+
+class EnumType(ParamType):
+    """String parameter that has one of a fixed set of values."""
+
+    def __init__(self, *values):
+        self.values = [v.lower() for v in values]  # type: List[str]
+
+    def parse(self, str_value: str) -> Any:
+        """Convert the string representation into the
+        actual value. In this case, we just ensure that it is
+        normalized to lowercase.
+        """
+        return str_value.lower()
+
+    def validate(self, value: Any) -> None:
+        if not isinstance(value, str):
+            raise ParamValidationError(
+                "Enum value '%s' should be a string, not %s" % (repr(value), type(value))
+            )
+        if value.lower() not in self.values:
+            raise ParamValidationError(
+                "Enum value '%s' invalid. Must be one of %s" % (value, ", ".join(self.values))
+            )
+
+    def __repr__(self):
+        return "EnumTaram(%s)" % ", ".join(self.values)
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class ParamDef:

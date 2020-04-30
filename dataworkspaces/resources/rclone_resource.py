@@ -34,6 +34,7 @@ from dataworkspaces.utils.param_utils import (
     ParamValidationError,
     StringType,
     BoolType,
+    EnumType,
 )
 
 RCLONE_RESOURCE_TYPE = "rclone"
@@ -86,6 +87,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         compute_hash: bool = False,
         export: bool = False,
         imported: bool = False,
+        push_mode: str = "read-only",
         ignore: List[str] = [],
     ):
         super().__init__(RCLONE_RESOURCE_TYPE, name, role, workspace)
@@ -162,6 +164,17 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             ptype=BoolType(),
         )
         self.imported = self.param_defs.get("imported", imported)  # type: bool
+        self.param_defs.define(
+            "push_mode",
+            default_value="read-only",
+            optional=True,
+            help="How to handle pushes to the origin. Defaults to read-only, which skips pushing this resource. "
+            + "copy uses rclone's copy command, which copies files without deleting any missing files at the origin. "
+            "sync uses rclone's sync command, which will delete any files in origin if not present locally (use with care).",
+            is_global=True,
+            ptype=EnumType("read-only", "sync", "copy"),
+        )
+        self.push_mode = self.param_defs.get("push_mode", push_mode)  # type: str
 
         self.ignore = ignore  # TODO: should this be a parameter?
 
@@ -347,7 +360,17 @@ class RcloneFactory(ResourceFactory):
                 os.chmod(abspath, mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
 
     def from_command_line(
-        self, role, name, workspace, remote_path, local_path, config, compute_hash, export, imported
+        self,
+        role,
+        name,
+        workspace,
+        remote_path,
+        local_path,
+        config,
+        compute_hash,
+        export,
+        imported,
+        push_mode,
     ):
         rclone = self._add_prechecks(local_path, remote_path, config)
         self._copy_from_remote(local_path, remote_path, rclone)
@@ -386,6 +409,7 @@ class RcloneFactory(ResourceFactory):
             compute_hash=compute_hash,
             export=export,
             imported=imported,
+            push_mode=push_mode,
         )
 
     def from_json(
@@ -409,6 +433,7 @@ class RcloneFactory(ResourceFactory):
             compute_hash=params["compute_hash"],
             export=params.get("export", False),
             imported=params.get("imported", False),
+            push_mode=params.get("push_mode", "read-only"),
         )
 
     def has_local_state(self) -> bool:
@@ -459,9 +484,19 @@ class RcloneFactory(ResourceFactory):
             compute_hash=params["compute_hash"],
             export=params.get("export", False),
             imported=params.get("imported", False),
+            push_mode=params.get("push_mode", "read-only"),
         )
 
     def suggest_name(
-        self, workspace, role, remote_path, local_path, config, compute_hash, export, imported
+        self,
+        workspace,
+        role,
+        remote_path,
+        local_path,
+        config,
+        compute_hash,
+        export,
+        imported,
+        push_mode,
     ):
         return os.path.basename(local_path)

@@ -477,7 +477,17 @@ def rclone(
     dest = abspath(expanduser(dest))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command(
-        "rclone", role, name, workspace, source, dest, config, compute_hash, export, imported
+        "rclone",
+        role,
+        name,
+        workspace,
+        source,
+        dest,
+        config,
+        compute_hash,
+        export,
+        imported,
+        "read-only",
     )
 
 
