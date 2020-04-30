@@ -88,6 +88,24 @@ We now describe the command options for the individual magics.
     --minimize-metrics METRICS
                           Metrics where smaller values are better (e.g. loss)
 
+For easy visualization of results, the ``%dws_history`` command
+supports two styles of color coding. The
+``--heatmap`` option will color code the background of metrics cells from dark red
+(worst results) to dark green (best results). For common metrics, like accuracy and loss,
+DWS knows the directionality of the metric (higher is better vs. lower is better). For less
+common or custom metrics, you can use the ``--maximize-metrics`` and ``--minimize-metrics``
+options to specify this. Here is an example heatmap:
+
+.. image:: _static/snapshot-history-heatmap.png
+
+The second style of coloring takes a baseline snapshot. Any metric values better than the
+baseline have their text colored green, any metric values close to the baseline are bold
+black text, and any metric values worse than the baseline are colored red. The
+``--baseline=SNAPSHOT`` option enables this display mode. Here is an example:
+
+.. image:: _static/snapshot-history-baseline.png
+
+
 **%dws_snapshot**
 
   usage: dws_snapshot [-h] [-m MESSAGE] [-t TAG]
