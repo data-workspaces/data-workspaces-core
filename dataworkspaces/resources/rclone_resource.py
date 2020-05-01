@@ -170,7 +170,7 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             optional=True,
             help="How to handle pushes to the origin. Defaults to read-only, which skips pushing this resource. "
             + "copy uses rclone's copy command, which copies files without deleting any missing files at the origin. "
-            "sync uses rclone's sync command, which will delete any files in origin if not present locally (use with care).",
+            "sync uses rclone's sync command, which will delete any files at the origin if not present locally (use with care).",
             is_global=True,
             ptype=EnumType("read-only", "sync", "copy"),
         )
@@ -264,21 +264,18 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         return {}  # TODO: local filepath can override global path
 
     def pull_precheck(self) -> None:
-        """Nothing to do, since we donot support sync.
-        TODO: Support pulling from remote
-        """
-        pass
+        self.rclone.sync(self.remote_origin, self.local_path, flags=['--dry-run'])
 
     def pull(self) -> None:
-        """Nothing to do, since we donot support sync.
-        TODO: Support pulling from remote
-        """
-        pass
+        """We always use sync as we """
+        self.rclone.sync(self.remote_origin, self.local_path)
 
     def push_precheck(self) -> None:
         """Nothing to do, since we donot support sync.
         """
-        pass
+        if self.push_mode=='copy':
+            self.rclone.copy(self.local_path, self.remote_origin, flags=['--dry-run'])
+        elif self.push_mode=='sync':
 
     def push(self) -> None:
         """Nothing to do, since we donot support sync.
@@ -345,13 +342,15 @@ class RcloneFactory(ResourceFactory):
             raise ConfigurationError("Remote '" + remote_name + "' not found by rclone")
         return rclone
 
-    def _copy_from_remote(self, local_path, remote_origin, rclone):
+    def _copy_from_remote(self, local_path, remote_origin, rclone, read_only=True):
         if not (os.path.exists(local_path)):
             os.makedirs(local_path)
         ret = rclone.copy(remote_origin, local_path)
         if ret["code"] != 0:
             raise ConfigurationError("rclone copy raised error %d: %s" % (ret["code"], ret["err"]))
         # mark the files as readonly
+        if not read_only:
+            return
         print("Marking files as readonly")
         for (dirpath, dirnames, filenames) in os.walk(local_path):
             for f_name in filenames:
@@ -371,9 +370,12 @@ class RcloneFactory(ResourceFactory):
         export,
         imported,
         push_mode,
+        skip_initial_copy,
     ):
         rclone = self._add_prechecks(local_path, remote_path, config)
-        self._copy_from_remote(local_path, remote_path, rclone)
+        if not skip_initial_copy:
+            self._copy_from_remote(local_path, remote_path, rclone,
+                                   read_only=push_mode=='read-only')
         if imported:
             lineage_path = os.path.join(local_path, "lineage.json")
             if not os.path.exists(lineage_path):
@@ -498,5 +500,6 @@ class RcloneFactory(ResourceFactory):
         export,
         imported,
         push_mode,
+        skip_initial_copy,
     ):
         return os.path.basename(local_path)

@@ -428,6 +428,20 @@ add.add_command(local_files)
     help="This resource was exported from another workspace. Import the lineage data. "
     + "An imported resource implies --read-only and --role=source-data.",
 )
+@click.option(
+    "--push-mode",
+    type=click.Choice(('read-only', 'sync', 'copy'), case_sensitive=False),
+    default='read-only',
+    help="How to handle pushes to the origin. Defaults to read-only, which skips pushing this resource. "
+    + "copy uses rclone's copy command, which copies files without deleting any missing files at the remote. "
+    + "sync uses rclone's sync command, which will delete any files at the remote if not present locally (use with care)."
+)
+@click.option(
+    "--skip-initial-copy",
+    is_flag=True,
+    default=False,
+    help="Skip the initial copy from the remote. Use if you will populate locally and then push to remote."
+)
 @click.argument("source", type=str)
 @click.argument(
     "dest", type=str
@@ -441,6 +455,8 @@ def rclone(
     compute_hash: bool,
     export: bool,
     imported: bool,
+    push_mode: str,
+    skip_initial_copy: bool,
     source: str,
     dest: str,
 ):
@@ -487,7 +503,8 @@ def rclone(
         compute_hash,
         export,
         imported,
-        "read-only",
+        push_mode,
+        skip_initial_copy
     )
 
 
