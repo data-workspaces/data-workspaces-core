@@ -5,7 +5,7 @@ DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 help:
 	@echo targets are: test clean mypy pyflakes check help install-rclone-deb format-with-black
 
-UNIT_TESTS=test_git_utils test_file_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_hashtree test_lineage_utils test_git_fat_integration test_git_lfs test_lineage test_jupyter_kit test_sklearn_kit test_api test_wrapper_utils test_tensorflow test_scratch_dir test_export test_import
+UNIT_TESTS=test_git_utils test_file_utils test_move_results test_snapshots test_push_pull test_local_files_resource test_hashtree test_lineage_utils test_git_fat_integration test_git_lfs test_lineage test_jupyter_kit test_sklearn_kit test_api test_wrapper_utils test_tensorflow test_scratch_dir test_export test_import test_rclone
 
 MYPY_KITS=scikit_learn.py jupyter.py tensorflow.py wrapper_utils.py
 

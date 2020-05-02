@@ -81,7 +81,7 @@ class TestRclone(BaseCase):
         self._setup_initial_repo()
         os.mkdir(MASTER_DIR)
         self._init_files()
-        self._run_dws(['add', 'rclone','--role', 'source-data', '--pull-mode=copy', '--push-mode=read-only', 'localfs:'+MASTER_DIR,
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=copy', '--master=remote', 'localfs:'+MASTER_DIR,
                        RESOURCE_DIR])
         self._assert_initial_state(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag1'])
@@ -97,7 +97,7 @@ class TestRclone(BaseCase):
         self._setup_initial_repo()
         os.mkdir(MASTER_DIR)
         self._init_files()
-        self._run_dws(['add', 'rclone','--role', 'source-data', '--pull-mode=sync', '--push-mode=read-only', 'localfs:'+MASTER_DIR,
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=sync', '--master=remote', 'localfs:'+MASTER_DIR,
                        RESOURCE_DIR])
         self._assert_initial_state(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag1'])
@@ -113,7 +113,7 @@ class TestRclone(BaseCase):
         os.mkdir(MASTER_DIR)
         os.mkdir(RESOURCE_DIR)
         self._init_files(RESOURCE_DIR)
-        self._run_dws(['add', 'rclone','--role', 'source-data', '--pull-mode=read-only', '--push-mode=copy', 'localfs:'+MASTER_DIR,
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=copy', '--master=local', 'localfs:'+MASTER_DIR,
                        RESOURCE_DIR])
         # before we push up
         self._assert_initial_state(RESOURCE_DIR)
@@ -124,8 +124,62 @@ class TestRclone(BaseCase):
         self._update_files(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag2'])
         self._run_dws(['push'])
-        self._assert_file_state_copy(MASTER_DIR)
+        self._assert_final_state_copy(MASTER_DIR)
 
+    def test_copy_local_is_master(self):
+        """Will push changes up to master in copy mode."""
+        self._setup_initial_repo()
+        os.mkdir(MASTER_DIR)
+        os.mkdir(RESOURCE_DIR)
+        self._init_files(RESOURCE_DIR)
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=copy', '--master=local', 'localfs:'+MASTER_DIR,
+                       RESOURCE_DIR])
+        # before we push up
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag1'])
+        self._run_dws(['push'])
+        self._assert_initial_state(MASTER_DIR)
+
+        self._update_files(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag2'])
+        self._run_dws(['push'])
+        self._assert_final_state_copy(MASTER_DIR)
+
+    def test_sync_local_is_master(self):
+        """Will push changes up to master in sync mode."""
+        self._setup_initial_repo()
+        os.mkdir(MASTER_DIR)
+        os.mkdir(RESOURCE_DIR)
+        self._init_files(RESOURCE_DIR)
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=sync', '--master=local', 'localfs:'+MASTER_DIR,
+                       RESOURCE_DIR])
+        # before we push up
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag1'])
+        self._run_dws(['push'])
+        self._assert_initial_state(MASTER_DIR)
+
+        self._update_files(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag2'])
+        self._run_dws(['push'])
+        self._assert_final_state_sync(MASTER_DIR)
+
+    def test_no_master_initial_copy(self):
+        """Master set to none, there is no initial directory, so we
+        copy down the files from master.
+        """
+        self._setup_initial_repo()
+        os.mkdir(MASTER_DIR)
+        self._init_files()
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=copy', '--master=none', 'localfs:'+MASTER_DIR,
+                       RESOURCE_DIR])
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag1'])
+
+        self._update_files()
+        self._run_dws(['pull'])
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag2'])
 
 
 if __name__ == "__main__":

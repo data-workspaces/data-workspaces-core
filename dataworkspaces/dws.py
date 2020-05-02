@@ -429,23 +429,23 @@ add.add_command(local_files)
     + "An imported resource implies --read-only and --role=source-data.",
 )
 @click.option(
-    "--pull-mode",
-    type=click.Choice(('read-only', 'sync', 'copy'), case_sensitive=False),
-    default='read-only',
-    help="How to handle pulls from the remote. Defaults to read-only, which does nothing on a pull "
-         + "(useful when the local copy is the system of record). "
-         +" The sync option makes the local copy of this resource look like the remote on a pull. "
-            + "The copy option will copy down files without removing any local files not at the remote. "
-            + "If both pull_mode and push_mode are read-only, and the local directory does not already exist, does an initial "
-            + "pull from the remote to populate the local copy.",
+    "--master",
+    type=click.Choice(('none', 'remote', 'local'), case_sensitive=False),
+    default='none',
+    help="Determines which system is the master. If 'remote', then pulls will be done, but not pushes. "
+         + "If 'local', then pushes will be done, but not pulls. If 'none' (the default), no action will be taken "
+         + "for pushes and pulls (you need to synchronize manually using rclone). When first adding the resource "
+         + " or cloning to a new machine, if the local directory does not exist, and 'remote' or 'none' were specified, "
+         + " the contents of the remote will copied down to the local directory."
 )
 @click.option(
-    "--push-mode",
-    type=click.Choice(('read-only', 'sync', 'copy'), case_sensitive=False),
-    default='read-only',
-    help="How to handle pushes to the remote. Defaults to read-only, which skips pushing this resource. "
-         + "copy uses rclone's copy command, which copies files without deleting any missing files at the remote. "
-         +"sync uses rclone's sync command, which will delete any files at the remote if not present locally (use with care)."
+    "--sync-mode",
+    type=click.Choice(('copy', 'sync'), case_sensitive=False),
+    default='copy',
+    help="When copying between local and master, which rclone command to use. If you specify 'copy', files are "
+          +"added or overwritten without deleting any files present at the target. If you specify 'sync', files at "
+          +"the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
+          +"this option has no effect.",
 )
 @click.argument("source", type=str)
 @click.argument(
@@ -460,8 +460,8 @@ def rclone(
     compute_hash: bool,
     export: bool,
     imported: bool,
-    pull_mode: str,
-    push_mode: str,
+    master: str,
+    sync_mode: str,
     source: str,
     dest: str,
 ):
@@ -508,8 +508,8 @@ def rclone(
         compute_hash,
         export,
         imported,
-        pull_mode,
-        push_mode,
+        master,
+        sync_mode,
     )
 
 
