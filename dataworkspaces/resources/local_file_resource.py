@@ -45,19 +45,23 @@ def _relative_rsrc_dir_for_git_workspace(role, name):
 class LocalFileResource(
     Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin
 ):
+    """Resource class for local files. Can also server as the base class for other resource
+    types (e.g. rclone)."""
+
     def __init__(
         self,
+        resource_type: str,
         name: str,
         role: str,
         workspace: Workspace,
         global_local_path: str,
         my_local_path: Optional[str],
-        compute_hash: bool,
-        export: bool,
-        imported: bool,
-        ignore: List[str] = [],
+        compute_hash: Optional[bool] = None,
+        export: Optional[bool] = None,
+        imported: Optional[bool] = None,
+        ignore: Optional[List[str]] = None,
     ):
-        super().__init__(LOCAL_FILE, name, role, workspace)
+        super().__init__(resource_type, name, role, workspace)
         self.param_defs.define(
             "global_local_path",
             default_value=None,
@@ -88,7 +92,7 @@ class LocalFileResource(
         self.param_defs.define(
             "compute_hash",
             default_value=False,
-            optional=True,
+            optional=False,
             is_global=True,
             help="If True, then compute the full hash of all files rather than using sizes.",
             ptype=BoolType(),
@@ -97,7 +101,7 @@ class LocalFileResource(
         self.param_defs.define(
             "export",
             default_value=False,
-            optional=True,
+            optional=False,
             help="True if metadata for export should be added each snapshot",
             is_global=True,
             ptype=BoolType(),
@@ -106,13 +110,13 @@ class LocalFileResource(
         self.param_defs.define(
             "imported",
             default_value=False,
-            optional=True,
+            optional=False,
             help="If True, then this resource has lineage imported from another workspace",
             is_global=True,
             ptype=BoolType(),
         )
         self.imported = self.param_defs.get("imported", imported)  # type: bool
-        self.ignore = ignore  # TODO: should this be a parameter?
+        self.ignore = ignore if (ignore is not None) else []  # TODO: should this be a parameter?
         if isinstance(workspace, git_backend.Workspace):
             # if the workspace is a git repo, then we can store our
             # hash files there.
@@ -304,41 +308,48 @@ class LocalFileResource(
         return "Local directory %s in role '%s'" % (self.local_path, self.role)
 
 
+def setup_path_for_hashes(role: str, name: str, workspace: Workspace, local_path: str):
+    """When creating the resource, make sure we have a path for the hashes.
+    Subclasses of LocalFilesResource will need to call this in their factory
+    functions."""
+    workspace_path = workspace.get_workspace_local_path_if_any()
+    if isinstance(workspace, git_backend.Workspace):
+        assert workspace_path is not None
+        hash_path = join(workspace_path, _relative_rsrc_dir_for_git_workspace(role, name))
+        try:
+            os.makedirs(hash_path)
+            with open(os.path.join(hash_path, "dummy.txt"), "w") as f:
+                f.write("Placeholder to ensure directory is added to git\n")
+            call_subprocess(
+                [
+                    GIT_EXE_PATH,
+                    "add",
+                    join(_relative_rsrc_dir_for_git_workspace(role, name), "dummy.txt"),
+                ],
+                cwd=workspace_path,
+            )
+            call_subprocess(
+                [GIT_EXE_PATH, "commit", "-m", "Adding resource %s" % name], cwd=workspace_path
+            )
+        except OSError as exc:
+            if exc.errno == EEXIST and os.path.isdir(hash_path):
+                pass
+            else:
+                raise
+    else:
+        non_git_hashes = join(local_path, ".hashes")
+        if not exists(non_git_hashes):
+            os.mkdir(non_git_hashes)
+
+
 class LocalFileFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace, local_path, compute_hash, export, imported):
         """Instantiate a resource object from the add command's arguments"""
-        workspace_path = workspace.get_workspace_local_path_if_any()
         if not os.path.isdir(local_path):
             raise ConfigurationError(local_path + " does not exist")
         if not os.access(local_path, os.R_OK):
             raise ConfigurationError(local_path + " does not have read permission")
-        if isinstance(workspace, git_backend.Workspace):
-            assert workspace_path is not None
-            hash_path = join(workspace_path, _relative_rsrc_dir_for_git_workspace(role, name))
-            try:
-                os.makedirs(hash_path)
-                with open(os.path.join(hash_path, "dummy.txt"), "w") as f:
-                    f.write("Placeholder to ensure directory is added to git\n")
-                call_subprocess(
-                    [
-                        GIT_EXE_PATH,
-                        "add",
-                        join(_relative_rsrc_dir_for_git_workspace(role, name), "dummy.txt"),
-                    ],
-                    cwd=workspace_path,
-                )
-                call_subprocess(
-                    [GIT_EXE_PATH, "commit", "-m", "Adding resource %s" % name], cwd=workspace_path
-                )
-            except OSError as exc:
-                if exc.errno == EEXIST and os.path.isdir(hash_path):
-                    pass
-                else:
-                    raise
-        else:
-            non_git_hashes = join(local_path, ".hashes")
-            if not exists(non_git_hashes):
-                os.mkdir(non_git_hashes)
+        setup_path_for_hashes(role, name, workspace, local_path)
         if imported:
             lineage_path = join(local_path, "lineage.json")
             if not exists(lineage_path):
@@ -364,6 +375,7 @@ class LocalFileFactory(ResourceFactory):
             )
 
         return LocalFileResource(
+            LOCAL_FILE,
             name,
             role,
             workspace,
@@ -379,6 +391,7 @@ class LocalFileFactory(ResourceFactory):
     ) -> LocalFileResource:
         """Instantiate a resource object from saved params and local params"""
         return LocalFileResource(
+            LOCAL_FILE,
             params["name"],
             params["role"],
             workspace,
@@ -390,8 +403,8 @@ class LocalFileFactory(ResourceFactory):
             if "my_local_path" in local_params
             else (local_params["local_path"] if "local_path" in local_params else None),
             compute_hash=params["compute_hash"],
-            export=params.get("export", False),
-            imported=params.get("imported", False),
+            export=params.get("export", None),
+            imported=params.get("imported", None),
         )
 
     def has_local_state(self) -> bool:

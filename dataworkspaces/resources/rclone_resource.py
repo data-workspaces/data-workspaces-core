@@ -4,38 +4,31 @@ Resource for files copied in by rclone
 """
 import os
 import os.path
-#import stat
-from typing import Tuple, List, Set, Pattern, Optional, Union, Any, cast
+
+# import stat
+from typing import List, Optional, Any, cast
 import json
-import shutil
 import click
 
 from dataworkspaces.errors import ConfigurationError
 from dataworkspaces.workspace import (
     Workspace,
-    Resource,
     LocalStateResourceMixin,
-    FileResourceMixin,
-    SnapshotResourceMixin,
     SnapshotWorkspaceMixin,
     JSONDict,
-    JSONList,
     ResourceFactory,
 )
-from dataworkspaces.utils.snapshot_utils import (
-    move_current_files_local_fs,
-    copy_current_files_local_fs,
-)
-from dataworkspaces.utils.file_utils import does_subpath_exist, LocalPathType
+from dataworkspaces.utils.file_utils import LocalPathType
 from dataworkspaces.third_party.rclone import RClone
 from dataworkspaces.utils.param_utils import (
     ParamType,
     ParamParseError,
     ParamValidationError,
     StringType,
-    BoolType,
     EnumType,
 )
+
+from dataworkspaces.resources.local_file_resource import LocalFileResource, setup_path_for_hashes
 
 RCLONE_RESOURCE_TYPE = "rclone"
 
@@ -74,7 +67,9 @@ class RemoteOriginType(ParamType):
         return "remote_origin"
 
 
-class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin):
+class RcloneResource(LocalFileResource):
+    """Local files synchronized to a remote via rclone."""
+
     def __init__(
         self,
         name: str,
@@ -91,7 +86,18 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         sync_mode: Optional[str] = None,
         ignore: List[str] = [],
     ):
-        super().__init__(RCLONE_RESOURCE_TYPE, name, role, workspace)
+        super().__init__(
+            RCLONE_RESOURCE_TYPE,
+            name,
+            role,
+            workspace,
+            global_local_path,
+            my_local_path,
+            compute_hash,
+            export,
+            imported,
+            ignore,
+        )
         self.param_defs.define(
             "remote_origin",
             default_value=None,
@@ -103,33 +109,6 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
         self.remote_origin = self.param_defs.get("remote_origin", remote_origin)  # type: str
         (self.remote_name, remote_path) = self.remote_origin.split(":")
         self.param_defs.define(
-            "global_local_path",
-            default_value=None,
-            optional=False,
-            is_global=True,
-            help="Location of files on local filesystem, as defined when the resource is created. "
-            + "May be overridden locally via my_local_path.",
-            ptype=StringType(),
-        )
-        self.global_local_path = self.param_defs.get(
-            "global_local_path", global_local_path
-        )  # type: str
-        self.param_defs.define(
-            "my_local_path",
-            default_value=None,
-            optional=True,
-            is_global=False,
-            help="Override of global_local_path, just for this instance of the workspace.",
-            ptype=StringType(),
-        )
-        self.my_local_path = self.param_defs.get(
-            "my_local_path", my_local_path
-        )  # type: Optional[str]
-        # the actual local path we'll use
-        self.local_path = os.path.abspath(
-            self.my_local_path if self.my_local_path is not None else self.global_local_path
-        )
-        self.param_defs.define(
             "config",
             default_value=None,
             optional=True,
@@ -138,33 +117,6 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             ptype=StringType(),
         )
         self.config = self.param_defs.get("config", config)  # type: Optional[str]
-        self.param_defs.define(
-            "compute_hash",
-            default_value=False,
-            optional=False, # None is not allowed
-            is_global=True,
-            help="If True, then compute the full hash of all files rather than using sizes.",
-            ptype=BoolType(),
-        )
-        self.compute_hash = self.param_defs.get("compute_hash", compute_hash)  # type: bool
-        self.param_defs.define(
-            "export",
-            default_value=False,
-            optional=False,
-            help="True if metadata for export should be added each snapshot",
-            is_global=True,
-            ptype=BoolType(),
-        )
-        self.export = self.param_defs.get("export", export)  # type: bool
-        self.param_defs.define(
-            "imported",
-            default_value=False,
-            optional=False,
-            help="If True, then this resource has lineage imported from another workspace",
-            is_global=True,
-            ptype=BoolType(),
-        )
-        self.imported = self.param_defs.get("imported", imported)  # type: bool
         self.param_defs.define(
             "master",
             default_value="none",
@@ -183,187 +135,90 @@ class RcloneResource(Resource, LocalStateResourceMixin, FileResourceMixin, Snaps
             default_value="copy",
             optional=False,
             help="When copying between local and master, which rclone command to use. If you specify 'copy', files are "
-                 +"added or overwritten without deleting any files present at the target. If you specify 'sync', files at "
-                 +"the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
-                 +"this setting has no effect.",
+            + "added or overwritten without deleting any files present at the target. If you specify 'sync', files at "
+            + "the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
+            + "this setting has no effect.",
             is_global=True,
             ptype=EnumType("sync", "copy"),
         )
         self.sync_mode = self.param_defs.get("sync_mode", sync_mode)  # type: str
-
-        self.ignore = ignore  # TODO: should this be a parameter?
 
         if config:
             self.rclone = RClone(cfgfile=self.config)
         else:
             self.rclone = RClone()
 
-    def get_local_path_if_any(self):
-        return self.local_path
-
-    def results_move_current_files(
-        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
-    ) -> None:
-        move_current_files_local_fs(
-            self.name,
-            self.local_path,
-            rel_dest_root,
-            exclude_files,
-            exclude_dirs_re,
-            verbose=self.workspace.verbose,
-        )
-
-    def results_copy_current_files(
-        self, rel_dest_root: str, exclude_files: Set[str], exclude_dirs_re: Pattern
-    ) -> None:
-        copy_current_files_local_fs(
-            self.name,
-            self.local_path,
-            rel_dest_root,
-            exclude_files,
-            exclude_dirs_re,
-            verbose=self.workspace.verbose,
-        )
-
-    def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
-        """save JSON results data to the specified path in the resource.
-        """
-        # assert self.role == ResourceRoles.RESULTS
-        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
-        parent_dir = os.path.dirname(abs_dest_path)
-        if not os.path.isdir(parent_dir):
-            os.makedirs(parent_dir)
-        with open(abs_dest_path, "w") as f:
-            json.dump(data, f, indent=2)
-
-    def does_subpath_exist(
-        self, subpath: str, must_be_file: bool = False, must_be_directory: bool = False
-    ) -> bool:
-        return does_subpath_exist(self.local_path, subpath, must_be_file, must_be_directory)
-
-    def delete_file(self, rel_path: str) -> None:
-        os.remove(os.path.join(self.local_path, rel_path))
-
-    def read_results_file(self, subpath: str) -> JSONDict:
-        """Read and parse json results data from the specified path
-        in the resource. If the path does not exist or is not a file
-        throw a ConfigurationError.
-        """
-        path = os.path.join(self.local_path, subpath)
-        if not os.path.isfile(path):
-            raise ConfigurationError(
-                "subpath %s does not exist or is not a file in resource %s" % (subpath, self.name)
-            )
-        with open(path, "r") as f:
-            try:
-                return json.load(f)
-            except Exception as e:
-                raise ConfigurationError(
-                    "Parse error when reading %s in resource %s" % (subpath, self.name)
-                ) from e
-
-    def upload_file(self, src_local_path: str, rel_dest_path: str) -> None:
-        """Copy a local file to the specified path in the
-        resource. This may be a local copy or an upload, depending
-        on the resource implmentation
-        """
-        abs_dest_path = os.path.join(self.local_path, rel_dest_path)
-        parent_dir = os.path.dirname(abs_dest_path)
-        if not os.path.exists(src_local_path):
-            raise ConfigurationError("Source file %s does not exist." % src_local_path)
-        if not os.path.isdir(parent_dir):
-            os.makedirs(parent_dir)
-        shutil.copyfile(src_local_path, rel_dest_path)
-
-    def get_local_params(self) -> JSONDict:
-        return {}  # TODO: local filepath can override global path
-
     def pull_precheck(self) -> None:
-        if self.master=='remote':
-            if self.sync_mode=='sync':
-                ret = self.rclone.sync(self.remote_origin, self.local_path, flags=['--dry-run', '--quiet'])
+        if self.master == "remote":
+            if self.sync_mode == "sync":
+                ret = self.rclone.sync(
+                    self.remote_origin, self.local_path, flags=["--dry-run", "--quiet"]
+                )
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone sync precheck raised error %d: %s" % (ret["code"], ret["error"]))
-            else: # copy mode
-                ret = self.rclone.copy(self.remote_origin, self.local_path, flags=['--dry-run', '--quiet'])
+                    raise ConfigurationError(
+                        "rclone sync precheck raised error %d: %s" % (ret["code"], ret["error"])
+                    )
+            else:  # copy mode
+                ret = self.rclone.copy(
+                    self.remote_origin, self.local_path, flags=["--dry-run", "--quiet"]
+                )
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone copy precheck raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone copy precheck raised error %d: %s" % (ret["code"], ret["error"])
+                    )
 
     def pull(self) -> None:
-        if self.master=='remote':
-            if self.sync_mode=='sync':
+        if self.master == "remote":
+            if self.sync_mode == "sync":
                 ret = self.rclone.sync(self.remote_origin, self.local_path)
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone sync raised error %d: %s" % (ret["code"], ret["error"]))
-            elif self.sync_mode=='copy':
+                    raise ConfigurationError(
+                        "rclone sync raised error %d: %s" % (ret["code"], ret["error"])
+                    )
+            elif self.sync_mode == "copy":
                 ret = self.rclone.copy(self.remote_origin, self.local_path)
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone copy raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone copy raised error %d: %s" % (ret["code"], ret["error"])
+                    )
         else:
-            click.echo("Skipping pull of resource %s, master is %s"% (self.name, self.master))
+            click.echo("Skipping pull of resource %s, master is %s" % (self.name, self.master))
 
     def push_precheck(self) -> None:
-        if self.master=='local':
-            if self.sync_mode=='copy':
-                ret = self.rclone.copy(self.local_path, self.remote_origin, flags=['--dry-run', '--quiet'])
+        if self.master == "local":
+            if self.sync_mode == "copy":
+                ret = self.rclone.copy(
+                    self.local_path, self.remote_origin, flags=["--dry-run", "--quiet"]
+                )
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone copy precheck raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone copy precheck raised error %d: %s" % (ret["code"], ret["error"])
+                    )
             else:
-                ret = self.rclone.sync(self.local_path, self.remote_origin, flags=['--dry-run', '--quiet'])
+                ret = self.rclone.sync(
+                    self.local_path, self.remote_origin, flags=["--dry-run", "--quiet"]
+                )
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone sync precheck raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone sync precheck raised error %d: %s" % (ret["code"], ret["error"])
+                    )
 
     def push(self) -> None:
-        if self.master=='local':
-            if self.sync_mode=='copy':
+        if self.master == "local":
+            if self.sync_mode == "copy":
                 ret = self.rclone.copy(self.local_path, self.remote_origin)
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone copy raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone copy raised error %d: %s" % (ret["code"], ret["error"])
+                    )
             else:
                 ret = self.rclone.sync(self.local_path, self.remote_origin)
                 if ret["code"] != 0:
-                    raise ConfigurationError("rclone sync raised error %d: %s" % (ret["code"], ret["error"]))
+                    raise ConfigurationError(
+                        "rclone sync raised error %d: %s" % (ret["code"], ret["error"])
+                    )
         else:
             click.echo("Skiping push of resource %s, master is %s" % (self.name, self.master))
-
-    def snapshot_precheck(self) -> None:
-        pass
-
-    def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
-        return (None, None) # XXX Temporary until we implement new version
-        if self.workspace.verbose:
-            print("In snapshot: %s %s" % (self.remote_origin, self.local_path))
-        if self.compute_hash:
-            (ret, out) = self.rclone.check(self.remote_origin, self.local_path, flags=["--one-way"])
-        else:
-            (ret, out) = self.rclone.check(
-                self.remote_origin, self.local_path, flags=["--one-way", "--size-only"]
-            )
-        print("Snapshot returns ", ret, out)
-        return (ret, None)  # None for the restore hash since we cannot restore
-
-    def restore_precheck(self, hashval):
-        pass
-        # rc = hashtree.check_hashes(hashval, self.rsrcdir, self.local_path, ignore=self.ignore)
-        # if not rc:
-        #     raise ConfigurationError("Local file structure not compatible with saved hash")
-
-    def restore(self, hashval):
-        pass  # rclone-d files: do nothing to restore
-
-    def delete_snapshot(
-        self, workspace_snapshot_hash: str, resource_restore_hash: str, relative_path: str
-    ) -> None:
-        snapshot_dir_path = os.path.join(self.local_path, relative_path)
-        if os.path.isdir(snapshot_dir_path):
-            if self.workspace.verbose:
-                print(
-                    "Deleting snapshot directory %s from resource %s" % (relative_path, self.name)
-                )
-            shutil.rmtree(snapshot_dir_path)
-
-    def validate_subpath_exists(self, subpath: str) -> None:
-        super().validate_subpath_exists(subpath)
 
     def __str__(self):
         return "Rclone-d repo %s, locally copied in %s in role '%s'" % (
@@ -387,30 +242,36 @@ class RcloneFactory(ResourceFactory):
             raise ConfigurationError("Remote '" + remote_name + "' not found by rclone")
         return rclone
 
-    def _copy_from_remote(self, name, local_path, remote_origin, rclone, master='none', sync_mode='copy'):
-        if master=='remote':
-            click.echo("%s: performing initial %s from remote"% (name, sync_mode))
+    def _copy_from_remote(
+        self, name, local_path, remote_origin, rclone, master="none", sync_mode="copy"
+    ):
+        if master == "remote":
+            click.echo("%s: performing initial %s from remote" % (name, sync_mode))
             if not os.path.exists(local_path):
                 os.makedirs(local_path)
-        elif master=='none' and (not os.path.exists(local_path)):
-            click.echo("%s: performing initial copy from remote"% name)
-            sync_mode = 'copy'
+        elif master == "none" and (not os.path.exists(local_path)):
+            click.echo("%s: performing initial copy from remote" % name)
+            sync_mode = "copy"
             os.makedirs(local_path)
-        elif master=='local' and not (os.path.exists(local_path)):
-            click.echo("Creating empty directory at %s for resource %s"% (local_path, name))
+        elif master == "local" and not (os.path.exists(local_path)):
+            click.echo("Creating empty directory at %s for resource %s" % (local_path, name))
             os.makedirs(local_path)
             return
         else:
-            click.echo("Skipping initial copy of resource %s to %s: path already exists and remote is local" %
-                       (name, local_path))
+            click.echo(
+                "Skipping initial copy of resource %s to %s: path already exists and remote is local"
+                % (name, local_path)
+            )
             return
 
-        if sync_mode=='copy':
+        if sync_mode == "copy":
             ret = rclone.copy(remote_origin, local_path)
         else:
             ret = rclone.sync(remote_origin, local_path)
         if ret["code"] != 0:
-            raise ConfigurationError("rclone %s raised error %d: %s" % (sync_mode, ret["code"], ret["error"]))
+            raise ConfigurationError(
+                "rclone %s raised error %d: %s" % (sync_mode, ret["code"], ret["error"])
+            )
         # For now, leave the local copy alone
         # if master=='none':
         #     print("Marking files as readonly")
@@ -436,6 +297,7 @@ class RcloneFactory(ResourceFactory):
     ):
         rclone = self._add_prechecks(local_path, remote_path, config)
         self._copy_from_remote(name, local_path, remote_path, rclone, master, sync_mode)
+        setup_path_for_hashes(role, name, workspace, local_path)
         if imported:
             lineage_path = os.path.join(local_path, "lineage.json")
             if not os.path.exists(lineage_path):

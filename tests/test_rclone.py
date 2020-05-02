@@ -9,7 +9,7 @@ import shutil
 
 from utils_for_tests import BaseCase, WS_DIR, TEMPDIR
 from dataworkspaces.lineage import LineageBuilder
-from dataworkspaces.api import make_lineage_table, make_lineage_graph
+from dataworkspaces.api import get_snapshot_history
 
 # If set to True, by --keep-outputs option, leave the output data
 KEEP_OUTPUTS = False
@@ -90,6 +90,19 @@ class TestRclone(BaseCase):
         self._run_dws(['pull'])
         self._assert_final_state_copy(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag2'])
+
+        # get the snapshot history and check the hashes.
+        # these were manually verified. The key thing to
+        # check is that the local hash is being computed and included
+        # in the overall snapshot.
+        history = get_snapshot_history(WS_DIR)
+        self.assertEqual(len(history), 2)
+        snap1 = history[0]
+        self.assertEqual(['tag1'], snap1.tags)
+        self.assertEqual('85abb55d8da6a137da75cc05056377572426cebf', snap1.hashval)
+        snap2 = history[1]
+        self.assertEqual(['tag2'], snap2.tags)
+        self.assertEqual('59990f102b71c7a3755163c0fc2ed8db05cfa532', snap2.hashval)
 
     def test_sync_remote_is_master(self):
         """Will pull changes down from master in sync mode.

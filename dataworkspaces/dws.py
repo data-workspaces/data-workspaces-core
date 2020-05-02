@@ -430,22 +430,22 @@ add.add_command(local_files)
 )
 @click.option(
     "--master",
-    type=click.Choice(('none', 'remote', 'local'), case_sensitive=False),
-    default='none',
+    type=click.Choice(("none", "remote", "local"), case_sensitive=False),
+    default="none",
     help="Determines which system is the master. If 'remote', then pulls will be done, but not pushes. "
-         + "If 'local', then pushes will be done, but not pulls. If 'none' (the default), no action will be taken "
-         + "for pushes and pulls (you need to synchronize manually using rclone). When first adding the resource "
-         + " or cloning to a new machine, if the local directory does not exist, and 'remote' or 'none' were specified, "
-         + " the contents of the remote will copied down to the local directory."
+    + "If 'local', then pushes will be done, but not pulls. If 'none' (the default), no action will be taken "
+    + "for pushes and pulls (you need to synchronize manually using rclone). When first adding the resource "
+    + " or cloning to a new machine, if the local directory does not exist, and 'remote' or 'none' were specified, "
+    + " the contents of the remote will copied down to the local directory.",
 )
 @click.option(
     "--sync-mode",
-    type=click.Choice(('copy', 'sync'), case_sensitive=False),
-    default='copy',
+    type=click.Choice(("copy", "sync"), case_sensitive=False),
+    default="copy",
     help="When copying between local and master, which rclone command to use. If you specify 'copy', files are "
-          +"added or overwritten without deleting any files present at the target. If you specify 'sync', files at "
-          +"the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
-          +"this option has no effect.",
+    + "added or overwritten without deleting any files present at the target. If you specify 'sync', files at "
+    + "the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
+    + "this option has no effect.",
 )
 @click.argument("source", type=str)
 @click.argument(

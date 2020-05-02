@@ -54,5 +54,6 @@ format-with-black:
 
 clean:
 	rm -rf ./test ./remotes ./clones rclone*.deb
+	rm -rf ./utils_for_tests_data
 
 .PHONY: test help clean mypy pyflakes check install-rclone-deb format-with-black
