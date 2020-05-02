@@ -429,18 +429,23 @@ add.add_command(local_files)
     + "An imported resource implies --read-only and --role=source-data.",
 )
 @click.option(
+    "--pull-mode",
+    type=click.Choice(('read-only', 'sync', 'copy'), case_sensitive=False),
+    default='read-only',
+    help="How to handle pulls from the remote. Defaults to read-only, which does nothing on a pull "
+         + "(useful when the local copy is the system of record). "
+         +" The sync option makes the local copy of this resource look like the remote on a pull. "
+            + "The copy option will copy down files without removing any local files not at the remote. "
+            + "If both pull_mode and push_mode are read-only, and the local directory does not already exist, does an initial "
+            + "pull from the remote to populate the local copy.",
+)
+@click.option(
     "--push-mode",
     type=click.Choice(('read-only', 'sync', 'copy'), case_sensitive=False),
     default='read-only',
-    help="How to handle pushes to the origin. Defaults to read-only, which skips pushing this resource. "
-    + "copy uses rclone's copy command, which copies files without deleting any missing files at the remote. "
-    + "sync uses rclone's sync command, which will delete any files at the remote if not present locally (use with care)."
-)
-@click.option(
-    "--skip-initial-copy",
-    is_flag=True,
-    default=False,
-    help="Skip the initial copy from the remote. Use if you will populate locally and then push to remote."
+    help="How to handle pushes to the remote. Defaults to read-only, which skips pushing this resource. "
+         + "copy uses rclone's copy command, which copies files without deleting any missing files at the remote. "
+         +"sync uses rclone's sync command, which will delete any files at the remote if not present locally (use with care)."
 )
 @click.argument("source", type=str)
 @click.argument(
@@ -455,8 +460,8 @@ def rclone(
     compute_hash: bool,
     export: bool,
     imported: bool,
+    pull_mode: str,
     push_mode: str,
-    skip_initial_copy: bool,
     source: str,
     dest: str,
 ):
@@ -503,8 +508,8 @@ def rclone(
         compute_hash,
         export,
         imported,
+        pull_mode,
         push_mode,
-        skip_initial_copy
     )
 
 
