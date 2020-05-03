@@ -19,7 +19,7 @@ Some other submodules (mostly for extending dataworkspaces):
               capabilities.
 """
 
-__version__ = "1.3.2"
+__version__ = "1.4.0alpha"
 
 from . import api
 from . import backends
