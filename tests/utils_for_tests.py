@@ -8,6 +8,7 @@ import json
 from os.path import join, abspath, expanduser, exists
 import os
 import unittest
+import sys
 
 TEMPDIR=abspath(expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR,'workspace')

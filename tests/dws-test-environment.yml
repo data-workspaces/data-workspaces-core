@@ -16,3 +16,6 @@ dependencies:
     - mypy
     - pyflakes
     - black
+    - click
+    - requests
+    - dws-repo2docker
