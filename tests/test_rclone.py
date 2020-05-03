@@ -10,6 +10,7 @@ import shutil
 from utils_for_tests import BaseCase, WS_DIR, TEMPDIR
 from dataworkspaces.lineage import LineageBuilder
 from dataworkspaces.api import get_snapshot_history
+from dataworkspaces.utils.subprocess_utils import find_exe
 
 # If set to True, by --keep-outputs option, leave the output data
 KEEP_OUTPUTS = False
@@ -17,11 +18,30 @@ KEEP_OUTPUTS = False
 MASTER_DIR=join(TEMPDIR, 'rclone-master')
 RESOURCE_DIR=join(WS_DIR, 'rclone-resource')
 
+REAL_REMOTE='dws-test:/dws-test.benedat'
+
+def rclone_found():
+    try:
+        find_exe('rclone', "need to install rclone")
+        return True
+    except:
+        return False
+
+def remote_exists(remote_name):
+    from dataworkspaces.third_party.rclone import RClone
+    rc = RClone()
+    return remote_name in rc.listremotes()
+
+@unittest.skipUnless(rclone_found(), "SKIP: rclone executable not found")
 class TestRclone(BaseCase):
     def tearDown(self):
         if not KEEP_OUTPUTS:
             super().tearDown()
-    
+
+    def _get_rclone(self):
+        from dataworkspaces.third_party.rclone import RClone
+        return RClone()
+
     def _assert_file(self, base_path, rel_path, filesize):
         path = join(base_path, rel_path)
         self.assertTrue(exists(path), "Local file %s is missing"%path)
@@ -99,10 +119,10 @@ class TestRclone(BaseCase):
         self.assertEqual(len(history), 2)
         snap1 = history[0]
         self.assertEqual(['tag1'], snap1.tags)
-        self.assertEqual('85abb55d8da6a137da75cc05056377572426cebf', snap1.hashval)
+        self.assertEqual('9162a3c2825841ee9426c28089da4901986bb226', snap1.hashval)
         snap2 = history[1]
         self.assertEqual(['tag2'], snap2.tags)
-        self.assertEqual('59990f102b71c7a3755163c0fc2ed8db05cfa532', snap2.hashval)
+        self.assertEqual('e8ea515f179a08479caafb7c7da05ce18525cbd0', snap2.hashval)
 
     def test_sync_remote_is_master(self):
         """Will pull changes down from master in sync mode.
@@ -192,6 +212,31 @@ class TestRclone(BaseCase):
         self._update_files()
         self._run_dws(['pull'])
         self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag2'])
+
+    @unittest.skipUnless(remote_exists('dws-test'), "SKIP: rclone config file does not contain dws-test remote")
+    def test_real_remote(self):
+        """Test with a real remote that is configured in the rclone config file as dws-test.
+        We use the sync with remote master scenario."""
+        self._setup_initial_repo()
+        # the master is not tied to our workspace, we sync it to the real master using rclone directly
+        os.mkdir(MASTER_DIR)
+        self._init_files(MASTER_DIR)
+        rclone = self._get_rclone()
+        print("Running initial sync...")
+        ret = rclone.sync(MASTER_DIR, REAL_REMOTE, flags=['--verbose'])
+        self.assertEqual(ret['code'], 0, "Return from rclone sync bad: %s"% repr(ret))
+        print("Sync was successful")
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=sync', '--master=remote', REAL_REMOTE,
+                       RESOURCE_DIR])
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag1'])
+
+        self._update_files(MASTER_DIR)
+        ret = rclone.sync(MASTER_DIR, REAL_REMOTE)
+        self.assertEqual(ret['code'], 0, "Return from rclone sync bad: %s"% repr(ret))
+        self._run_dws(['pull'])
+        self._assert_final_state_sync(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag2'])
 
 

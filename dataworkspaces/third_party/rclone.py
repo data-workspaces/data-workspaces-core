@@ -51,7 +51,7 @@ class RClone:
         else:
             # find the default config file used by the rclone installation
             ret = self._execute(['rclone', 'config', 'file'])
-            print(ret)
+            self.log.debug(ret)
             if ret['code'] == 0:
                 # rclone config file output looks like:
                 #
@@ -60,6 +60,7 @@ class RClone:
                 # so we skip until the '\n'
                 self.cfgfile = ret['out'].splitlines()[1].decode('utf_8')
             else:
+                print(ret)
                 raise ConfigurationError("RClone requires either a configuration file or a configuration string")
 
         assert(self.cfgstring or self.cfgfile), 'Either a config string is given or a filename is given'
@@ -167,7 +168,7 @@ class RClone:
         ret = self.run_cmd(command="listremotes", extra_args=flags)
         if ret['code'] == 0:
             list_remotes = map((lambda s: s[0:-1].decode('utf_8')), ret['out'].split(b'\n'))
-            print(list_remotes)
+            #print(list_remotes)
             return list(list_remotes)[0:-1]
         else:
             raise RCloneException('listremotes returns %d %s' % (ret['code'], ret['error']))

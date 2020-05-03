@@ -447,9 +447,9 @@ add.add_command(local_files)
     + "the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
     + "this option has no effect.",
 )
-@click.argument("source", type=str)
+@click.argument("remote", type=str)
 @click.argument(
-    "dest", type=str
+    "local_path", type=str
 )  # Currently, dest is required. Later: make dest optional and use the same path as remote?
 @click.pass_context
 def rclone(
@@ -462,10 +462,14 @@ def rclone(
     imported: bool,
     master: str,
     sync_mode: str,
-    source: str,
-    dest: str,
+    remote: str,
+    local_path: str,
 ):
-    """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``"""
+    """Add an rclone-d repository as a resource to the workspace. Subcommand of ``add``.
+    This is designed for uni-directional synchronization between a remote and a local_path.
+    The remote has the form remote_name:remote_path, where remote_name is an entry in your
+    rclone config file.
+    """
     ns = ctx.obj
     if role is None:
         if imported:
@@ -478,7 +482,7 @@ def rclone(
                 type=ROLE_PARAM,
             )
     rclone_re = r".*:.*"
-    if re.match(rclone_re, source) == None:
+    if re.match(rclone_re, remote) == None:
         raise click.BadOptionUsage(
             message="Source in rclone should be specified as remotename:filepath",
             option_name="source",
@@ -495,15 +499,15 @@ def rclone(
         raise click.BadOptionUsage(
             message="--imported only for source-data roles", option_name="imported"
         )
-    dest = abspath(expanduser(dest))
+    local_path = abspath(expanduser(local_path))
     workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
     add_command(
         "rclone",
         role,
         name,
         workspace,
-        source,
-        dest,
+        remote,
+        local_path,
         config,
         compute_hash,
         export,

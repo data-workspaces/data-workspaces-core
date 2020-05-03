@@ -22,7 +22,6 @@ from dataworkspaces.utils.file_utils import LocalPathType
 from dataworkspaces.third_party.rclone import RClone
 from dataworkspaces.utils.param_utils import (
     ParamType,
-    ParamParseError,
     ParamValidationError,
     StringType,
     EnumType,
@@ -41,20 +40,8 @@ See
 
 class RemoteOriginType(ParamType):
     """Custom param type for maintaining the remote origin in the form
-    remote:abspath.
+    remote_name:path. Path does not need to be absolute
     """
-
-    def parse(self, str_value: str) -> str:
-        if ":" not in str_value:
-            raise ParamParseError(
-                "Remote origin '%s' is missing a ':', should be of the form remote:path" % str_value
-            )
-        (remote_name, rpath) = str_value.split(":")
-        if os.path.isabs(rpath):
-            return str_value
-        else:
-            return remote_name + ":" + os.path.abspath(rpath)
-
     def validate(self, value: Any) -> None:
         if not isinstance(value, str):
             raise ParamValidationError("Remote origin '%s' is not a string" % repr(value))
@@ -107,7 +94,7 @@ class RcloneResource(LocalFileResource):
             ptype=RemoteOriginType(),
         )
         self.remote_origin = self.param_defs.get("remote_origin", remote_origin)  # type: str
-        (self.remote_name, remote_path) = self.remote_origin.split(":")
+        (self.remote_name, _) = self.remote_origin.split(":")
         self.param_defs.define(
             "config",
             default_value=None,
@@ -229,7 +216,7 @@ class RcloneResource(LocalFileResource):
 
 
 class RcloneFactory(ResourceFactory):
-    def _add_prechecks(self, local_path, remote_path, config) -> RClone:
+    def _add_prechecks(self, local_path, remote_origin, config) -> RClone:
         if os.path.exists(local_path) and not (os.access(local_path, os.W_OK)):
             raise ConfigurationError(local_path + " does not have write permission")
         if config:
@@ -237,7 +224,7 @@ class RcloneFactory(ResourceFactory):
         else:
             rclone = RClone()
         known_remotes = rclone.listremotes()
-        (remote_name, _) = remote_path.split(":")
+        (remote_name, _) = remote_origin.split(":")
         if remote_name not in known_remotes:
             raise ConfigurationError("Remote '" + remote_name + "' not found by rclone")
         return rclone
@@ -286,7 +273,7 @@ class RcloneFactory(ResourceFactory):
         role,
         name,
         workspace,
-        remote_path,
+        remote_origin,
         local_path,
         config,
         compute_hash,
@@ -295,8 +282,8 @@ class RcloneFactory(ResourceFactory):
         master,
         sync_mode,
     ):
-        rclone = self._add_prechecks(local_path, remote_path, config)
-        self._copy_from_remote(name, local_path, remote_path, rclone, master, sync_mode)
+        rclone = self._add_prechecks(local_path, remote_origin, config)
+        self._copy_from_remote(name, local_path, remote_origin, rclone, master, sync_mode)
         setup_path_for_hashes(role, name, workspace, local_path)
         if imported:
             lineage_path = os.path.join(local_path, "lineage.json")
@@ -326,7 +313,7 @@ class RcloneFactory(ResourceFactory):
             name,
             role,
             workspace,
-            remote_path,
+            remote_origin,
             global_local_path=local_path,
             my_local_path=None,
             config=config,
@@ -421,7 +408,7 @@ class RcloneFactory(ResourceFactory):
         self,
         workspace,
         role,
-        remote_path,
+        remote_origin,
         local_path,
         config,
         compute_hash,
