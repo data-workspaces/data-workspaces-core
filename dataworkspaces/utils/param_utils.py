@@ -13,7 +13,7 @@ import json
 
 from dataworkspaces.utils.snapshot_utils import validate_template
 from dataworkspaces.utils.file_utils import LocalPathType, get_subpath_from_absolute
-from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.errors import ConfigurationError, InternalError
 from dataworkspaces.utils.regexp_utils import HOSTNAME_RE
 
 
@@ -168,7 +168,15 @@ class EnumType(ParamType):
 
 
 class ParamDef:
-    def __init__(self, name: str, default_value: Any, optional: bool, help: str, ptype: ParamType):
+    def __init__(
+        self,
+        name: str,
+        default_value: Any,
+        optional: bool,
+        help: str,
+        ptype: ParamType,
+        allow_missing: bool = False,
+    ):
         """Define a parameter - used for both workspace config params
         and resource params.
 
@@ -177,6 +185,10 @@ class ParamDef:
         then the parameter must be explicitly specified. Also, set optional to
         False if you never want to allow a value of None (user cannot override
         default value to None).
+
+        Set allow_missing to True if this parameter cannot be None but may be missing
+        in a workspace created using an older version of DWS. Will just apply the
+        default value and print a warning.
         """
         self.name = name
         self.default_value = default_value
@@ -186,6 +198,9 @@ class ParamDef:
         if default_value is not None:
             # we validate our default value if it is specified
             ptype.validate(default_value)
+        self.allow_missing = allow_missing
+        if allow_missing and (default_value is None):
+            raise InternalError("Parameter %s: Allow missing requires a default value" % name)
 
     def parse(self, raw_value: Any) -> Any:
         """If the value is a string, parse it and return the parsed value. Otherwise,
@@ -210,6 +225,12 @@ class ParamDef:
             return  # if None and None is allowed, we can just skip validation
         elif value is None and self.default_value is None and not self.optional:
             raise ParamValidationError("Required parameter '%s' is None" % self.name)
+        elif value is None and not self.optional and self.allow_missing:
+            click.echo(
+                "WARNING: Parameter %s not set. Using default value of '%s'"
+                % (self.name, repr(self.default_value)),
+                err=True,
+            )
         else:
             try:
                 self.ptype.validate(value)
@@ -222,6 +243,16 @@ class ParamDef:
         """Convert the parameter value to a JSON-serializable value, via the type's function.
         """
         return self.ptype.to_json(value)
+
+    def __repr__(self):
+        return "ParamDef(%s, %s, %s, %s, %s, %s)" % (
+            self.name,
+            repr(self.default_value),
+            self.optional,
+            repr(self.help),
+            repr(self.ptype),
+            self.allow_missing,
+        )
 
 
 PARAM_DEFS = {}  # type: Dict[str, ParamDef]
@@ -480,10 +511,11 @@ class ResourceParams:
         help: str,
         is_global: bool,
         ptype: ParamType,
+        allow_missing: bool = False,
     ):
         assert name not in self.global_defs
         assert name not in self.local_defs
-        defn = ParamDef(name, default_value, optional, help, ptype)
+        defn = ParamDef(name, default_value, optional, help, ptype, allow_missing=allow_missing)
         if is_global:
             self.global_defs[name] = defn
         else:

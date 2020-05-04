@@ -22,8 +22,19 @@ class ParamConfigHandler(metaclass=ABCMeta):
         self.defs = defs
 
     def get_value(self, name: str) -> Any:
+        defn = self.defs[name]
         if name in self.params:
-            return self.params[name]
+            value = self.params[name]
+            if (value is None) and (not defn.optional):
+                if defn.allow_missing:
+                    return "MISSING"
+                else:
+                    raise InternalError(
+                        "Missing value for %s %s parameter %s"
+                        % (self.get_scope(), self.get_what_for(), name)
+                    )
+            else:
+                return value
         else:
             return self.defs[name].default_value
 
