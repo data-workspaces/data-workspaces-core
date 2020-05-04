@@ -13,7 +13,7 @@ from dataworkspaces.utils.param_utils import (
     ParamDef,
 )
 from dataworkspaces.utils.print_utils import print_columns, ColSpec
-from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.errors import ConfigurationError, InternalError
 
 
 class ParamConfigHandler(metaclass=ABCMeta):
