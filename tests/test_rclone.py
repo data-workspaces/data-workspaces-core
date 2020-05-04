@@ -6,6 +6,7 @@ import os
 from os.path import join, exists
 import unittest
 import shutil
+import subprocess
 
 from utils_for_tests import BaseCase, WS_DIR, TEMPDIR
 from dataworkspaces.lineage import LineageBuilder
@@ -74,6 +75,10 @@ class TestRclone(BaseCase):
         self._assert_file(basedir, 'subdir/file3.txt', 16)
         self._assert_file(basedir, 'subdir/file4.txt', 16)
 
+    def _touch_file(self, path, cwd=TEMPDIR):
+        assert exists(path)
+        subprocess.run(['touch', path], cwd=cwd)
+
     def _init_files(self, basedir=MASTER_DIR):
         with open(join(basedir, 'file1.txt'), 'w') as f:
             f.write("this is a test\n")
@@ -119,10 +124,10 @@ class TestRclone(BaseCase):
         self.assertEqual(len(history), 2)
         snap1 = history[0]
         self.assertEqual(['tag1'], snap1.tags)
-        self.assertEqual('9162a3c2825841ee9426c28089da4901986bb226', snap1.hashval)
+        self.assertEqual('830910b0c7e74e62d1ea57a403980640a71471c0', snap1.hashval)
         snap2 = history[1]
         self.assertEqual(['tag2'], snap2.tags)
-        self.assertEqual('e8ea515f179a08479caafb7c7da05ce18525cbd0', snap2.hashval)
+        self.assertEqual('4991d9620dbe557c18df9f7301f278c6267c13a3', snap2.hashval)
 
     def test_sync_remote_is_master(self):
         """Will pull changes down from master in sync mode.
@@ -237,6 +242,25 @@ class TestRclone(BaseCase):
         self.assertEqual(ret['code'], 0, "Return from rclone sync bad: %s"% repr(ret))
         self._run_dws(['pull'])
         self._assert_final_state_sync(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag2'])
+
+    def test_size_only(self):
+        """Will pull changes down from master in copy mode.
+        """
+        self._setup_initial_repo()
+        os.mkdir(MASTER_DIR)
+        self._init_files()
+        self._run_dws(['add', 'rclone','--role', 'source-data', '--sync-mode=copy', '--master=remote',
+                       '--size-only', 'localfs:'+MASTER_DIR,
+                       RESOURCE_DIR])
+        self._assert_initial_state(RESOURCE_DIR)
+        self._run_dws(['snapshot', 'tag1'])
+
+        self._update_files()
+        FILE3_MASTER=join(MASTER_DIR, 'subdir/file3.txt')
+        self._touch_file(FILE3_MASTER)
+        self._run_dws(['pull'])
+        self._assert_final_state_copy(RESOURCE_DIR)
         self._run_dws(['snapshot', 'tag2'])
 
 

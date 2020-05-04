@@ -447,6 +447,14 @@ add.add_command(local_files)
     + "the target are removed if they are not present at the source. The default is 'copy'. If master is 'none', "
     + "this option has no effect.",
 )
+@click.option(
+    "--size-only",
+    is_flag=True,
+    default=False,
+    help="If specified, use only the file size (rather than also modification time and checksum) to "
+    + "determine if a file has been changed. If your resource has a lot of files and access to the remote "
+    + "is over a WAN, you probably want to set this. Otherwise, syncs/copies can be VERY slow.",
+)
 @click.argument("remote", type=str)
 @click.argument(
     "local_path", type=str
@@ -462,6 +470,7 @@ def rclone(
     imported: bool,
     master: str,
     sync_mode: str,
+    size_only: bool,
     remote: str,
     local_path: str,
 ):
@@ -514,6 +523,7 @@ def rclone(
         imported,
         master,
         sync_mode,
+        size_only,
     )
 
 

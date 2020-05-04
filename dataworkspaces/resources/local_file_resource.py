@@ -105,6 +105,7 @@ class LocalFileResource(
             help="True if metadata for export should be added each snapshot",
             is_global=True,
             ptype=BoolType(),
+            allow_missing=True,
         )
         self.export = self.param_defs.get("export", export)  # type: bool
         self.param_defs.define(
@@ -114,6 +115,7 @@ class LocalFileResource(
             help="If True, then this resource has lineage imported from another workspace",
             is_global=True,
             ptype=BoolType(),
+            allow_missing=True,
         )
         self.imported = self.param_defs.get("imported", imported)  # type: bool
         self.ignore = ignore if (ignore is not None) else []  # TODO: should this be a parameter?
