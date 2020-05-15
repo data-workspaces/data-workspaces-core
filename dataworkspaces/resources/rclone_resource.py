@@ -158,8 +158,7 @@ class RcloneResource(LocalFileResource):
             flags = ["--size-only"]
         else:
             flags = []
-        if self.workspace.verbose:
-            flags.append("--verbose")
+        flags.append("--verbose")
         if self.master == "remote":
             if self.sync_mode == "sync":
                 ret = self.rclone.sync(self.remote_origin, self.local_path, flags=flags)
@@ -184,8 +183,7 @@ class RcloneResource(LocalFileResource):
             flags = ["--size-only"]
         else:
             flags = []
-        if self.workspace.verbose:
-            flags.append("--verbose")
+        flags.append("--verbose")
         if self.master == "local":
             if self.sync_mode == "copy":
                 ret = self.rclone.copy(self.local_path, self.remote_origin, flags=flags)
@@ -258,8 +256,7 @@ class RcloneFactory(ResourceFactory):
             flags = ["--size-only"]
         else:
             flags = []
-        if verbose:
-            flags.append("--verbose")
+        flags.append("--verbose")
 
         if sync_mode == "copy":
             ret = rclone.copy(remote_origin, local_path, flags=flags)
