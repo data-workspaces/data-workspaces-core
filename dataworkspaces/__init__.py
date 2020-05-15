@@ -12,22 +12,24 @@ Some other submodules (mostly for extending dataworkspaces):
 * commands  - implementations of the command line commands
 * dws       - command line interface and option parsing
 * errors    - exception classes
-* resoures  - implementations of the different resource types
+* resources - implementations of the different resource types
 * utils     - common utilities
 * workspace - core APIs for dataworkspaces internals, including Workspace,
               Resource, and the various mixins that represent different
               capabilities.
+
+Submodules are not imported by default, due to external dependencies
+(e.g. click or specific frameworks required by submodules under
+dataworkspaces.kits). Just import the APIs you need directly. For
+example::
+
+  from dataworkspaces import lineage
+
+or::
+
+  from dataworkspaces.lineage import LineageBuilder
+
 """
 
 __version__ = "1.4.0alpha"
 
-from . import api
-from . import backends
-from . import commands
-from . import dws
-from . import errors
-from . import kits
-from . import lineage
-from . import resources
-from . import utils
-from . import workspace
