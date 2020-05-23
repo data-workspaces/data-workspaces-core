@@ -972,9 +972,10 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
         assert isinstance(self, Workspace)
         for r in resource_list:
             assert isinstance(r, Resource)
-            if self.verbose:
-                print("[pull] pulling resource %s" % r.name)
+            print("[pull] pulling resource %s" % r.name)
             r.pull()
+        print("[pull] all resources pulled successfully.")
+
 
         # We need to clear the current lineage for pulled resources since we
         # don't know what the pull command did to it.
@@ -1008,7 +1009,9 @@ class SyncedWorkspaceMixin(metaclass=ABCMeta):
         self._push_precheck(resource_list)
 
         for r in resource_list:
+            print("[push] pushing resource %s" % cast(Resource, r).name)
             r.push()
+        print("[push] all resources pushed successfully.")
 
     @abstractmethod
     def publish(self, *args) -> None:
@@ -1244,6 +1247,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
         # now take the actual snapshots
         for r in current_resources:
             if isinstance(r, SnapshotResourceMixin):
+                print("[snapshot] Taking snapshot of resource %s"% r.name)
                 (compare_hash, restore_hash) = r.snapshot()
             else:
                 (compare_hash, restore_hash) = (None, None)
@@ -1253,6 +1257,7 @@ class SnapshotWorkspaceMixin(metaclass=ABCMeta):
             entry = cast(Workspace, self)._get_resource_params(r.name)
             entry["hash"] = compare_hash
             manifest.append(entry)
+        print("[shapshot] all resources snapshotted successfully.")
         manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
         manifest_hash = hash_bytes(manifest_bytes)
 
