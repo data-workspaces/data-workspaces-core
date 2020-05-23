@@ -230,7 +230,7 @@ class _TfKerasSequenceWrapper(kerasutils.Sequence):
         return _wrap_generator(self.wrapped, self.hash_state)
 
     def on_epoch_end(self):
-        return self.on_epoch_end()
+        return self.wrapped.on_epoch_end()
 
 
 class DwsModelCheckpoint(ModelCheckpoint):
@@ -492,17 +492,28 @@ def add_lineage_to_keras_model_class(
                 self._dws_state.lineage.add_param("loss_function", loss)
             elif isinstance(loss, losses.Loss):
                 self._dws_state.lineage.add_param("loss_function", loss.__class__.__name__)
-            return super().compile(
-                optimizer,
-                loss,
-                metrics,
-                loss_weights,
-                sample_weight_mode,
-                weighted_metrics,
-                target_tensors,
-                distribute,
-                **kwargs,
-            )
+            if tensorflow.__version__<"2.2.": # type: ignore
+                return super().compile(
+                    optimizer,
+                    loss,
+                    metrics,
+                    loss_weights,
+                    sample_weight_mode,
+                    weighted_metrics,
+                    target_tensors,
+                    distribute,
+                    **kwargs,
+                )
+            else: # starting in 2.2, tensorflow removed the tartet_tensors and distribute args
+                return super().compile(
+                    optimizer,
+                    loss,
+                    metrics,
+                    loss_weights,
+                    sample_weight_mode,
+                    weighted_metrics,
+                    **kwargs,
+                )
 
         def fit(self, x, y=None, **kwargs):
             """x, y can be arrays or x can be a generator.
