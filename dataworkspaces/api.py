@@ -44,7 +44,8 @@ class ResourceInfo(NamedTuple):
     local_path: Optional[str]
 
 
-def get_resource_info(workspace_uri_or_path: Optional[str] = None, verbose: bool = False):
+def get_resource_info(workspace_uri_or_path: Optional[str] = None, verbose: bool = False
+    ) -> List[ResourceInfo]:
     """Returns a list of ResourceInfo instances, describing the resources
     defined for this workspace.
     """
@@ -62,6 +63,18 @@ def get_resource_info(workspace_uri_or_path: Optional[str] = None, verbose: bool
         for r in workspace.get_resources()
     ]
 
+def get_local_path_for_resource(
+        name: str,
+        workspace_uri_or_path: Optional[str] = None,
+        verbose: bool = False
+    ) -> Optional[str]:
+    """If a local path is available for this resource, return it. Otherwise,
+    return None."""
+    workspace = find_and_load_workspace(True, verbose, workspace_uri_or_path)
+    r = workspace.get_resource(name)
+    return  cast(LocalStateResourceMixin, r).get_local_path_if_any() \
+            if isinstance(r, LocalStateResourceMixin) \
+            else None
 
 class SnapshotInfo(NamedTuple):
     """Named tuple represneting the results from a call
