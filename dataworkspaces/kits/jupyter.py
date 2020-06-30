@@ -31,7 +31,7 @@ from dataworkspaces.lineage import LineageBuilder
 from dataworkspaces.workspace import _find_containing_workspace
 from dataworkspaces.api import take_snapshot, get_snapshot_history,\
                                make_lineage_table, make_lineage_graph,\
-                               get_results
+                               get_results, get_resource_info
 from dataworkspaces.errors import ConfigurationError
 
 
@@ -382,6 +382,7 @@ class DwsMagics(Magics):
 
     @line_magic
     def dws_info(self, line):
+        import pandas as pd # TODO: support case where pandas wasn't installed
         parser = DwsMagicParseArgs("dws_info",
                                    description="Print some information about this workspace")
         try:
@@ -397,6 +398,17 @@ class DwsMagics(Magics):
         print("Notebook server dir: %s" % self.dws_jupyter_info.notebook_server_dir)
         if self.dws_jupyter_info.error is not None:
             print("Error message:       %s" % self.dws_jupyter_info.error)
+            return
+
+        resources = get_resource_info(self.dws_jupyter_info.workspace_dir)
+        df = pd.DataFrame({
+            'Resource':[r.name for r in resources],
+            'Role':[r.role for r in resources],
+            'Type':[r.resource_type for r in resources],
+            'Local Path':[r.local_path for r in resources]
+        })
+        with pd.option_context('display.max_colwidth', 80):
+            display(df)
 
     @line_magic
     def dws_snapshot(self, line):
