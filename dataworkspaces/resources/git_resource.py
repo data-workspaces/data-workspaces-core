@@ -499,7 +499,7 @@ class GitRepoResource(GitResourceBase):
         """Pull from remote origin, if any"""
         switch_git_branch_if_needed(self.local_path, self.branch, self.workspace.verbose)
         call_subprocess(
-            [GIT_EXE_PATH, "pull", "origin", "master"],
+            [GIT_EXE_PATH, "pull", "origin", self.branch],
             cwd=self.local_path,
             verbose=self.workspace.verbose,
         )
