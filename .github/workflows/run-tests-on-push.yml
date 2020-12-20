@@ -6,20 +6,22 @@ jobs:
   run-tests:
     name: Run tests on push
     runs-on: ubuntu-latest
+
     steps:
-      -uses: actions/checkout@v2
-      -name "Set up Python"
-       uses: actions/setup-python@v2
-       with:
-         python-version: '3.6'
-      -name: Install dependencies
-       run: |
-         python -m pip install --upgrade pip
-         pip install -r requirements.txt
-         pip install mypy pyflakes jupyter joblib sklearn
-      -name: Install dws
-       run: |
-         pip install --editable `pwd`
-      -name: Run tests
-       run: |
-         cd tests; make install-rclone-deb test
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.6'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install mypy pyflakes jupyter joblib sklearn
+    - name: Install dws
+      run: |
+        pip install --editable `pwd`
+    - name: Run tests
+      run: |
+        cd tests; make install-rclone-deb test
