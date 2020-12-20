@@ -124,10 +124,12 @@ class TestRclone(BaseCase):
         self.assertEqual(len(history), 2)
         snap1 = history[0]
         self.assertEqual(['tag1'], snap1.tags)
-        self.assertEqual('7f9d012afa6bb1f69231aaeae87f8b26cd1bc840', snap1.hashval)
+        # FIXME (issue #66):  need to comment out compare as hash includes file paths 
+        #self.assertEqual('7f9d012afa6bb1f69231aaeae87f8b26cd1bc840', snap1.hashval)
         snap2 = history[1]
         self.assertEqual(['tag2'], snap2.tags)
-        self.assertEqual('d87d1467e1f966928cd7b11da2e9a40055426979', snap2.hashval)
+        # FIXME (issue #66):  need to comment out compare as hash includes file paths 
+        #self.assertEqual('d87d1467e1f966928cd7b11da2e9a40055426979', snap2.hashval)
 
     def test_sync_remote_is_master(self):
         """Will pull changes down from master in sync mode.
