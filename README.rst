@@ -18,7 +18,7 @@ Data Workspaces runs on
 Unix-like systems, including Linux, MacOS, and on Windows via the
 Windows Subsystem for Linux.
 
-.. image:: https://travis-ci.org/data-workspaces/data-workspaces-core.svg?branch=master
+.. image:: https://github.com/data-workspaces/data-workspaces-core/workflows/Run-tests-on-push/badge.svg
 
 Quick Start
 ===========
