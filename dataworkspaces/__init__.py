@@ -31,5 +31,5 @@ or::
 
 """
 
-__version__ = "1.4.0alpha"
+__version__ = "1.4.0"
 
