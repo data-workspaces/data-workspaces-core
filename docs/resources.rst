@@ -265,3 +265,32 @@ However, you can specify a different configuration file::
   $ dws add rclone --config=/path/to/configfile --role=source-data localfs:/Users/rupak/tmp tmpfiles
 
 In this case, make sure the config file you are using has the remote ``localfs`` defined.
+
+rclone synchronization options
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Data Workspaces uses ``rclone`` for uni-directional synchronization. Either the workspace or the ``rclone`` remote is the *master* and the
+other side is the *replica*. All changes must be made on the master side and the replica side treats the data as read-only. The roles of
+the workspace and the remote are determined with the ``dws add rclone`` command via the ``-master`` option. It must hve one of three values:
+
+* ``none`` (the default) means that no action is taken for pushes and pulls. The user is responsible for manually calling
+  rclone for synchronization. Use this option if you want full control over your synchronization or need to change the
+  direction of the synchronization based on the situation.
+* ``remote`` means that pulls will be done, but not pushes. The data is treated as read-only from the perspective of
+  the workspace.
+* ``local`` means that the local system is the master and the remote the replica. Pushes will be done for this resource,
+  but not pulls.
+
+When first adding the resource or cloning to a new machine, if
+the local directory does not exist, and ``remote`` or ``none`` were specified,  the
+contents of the remote will copied down to the local directory.
+
+The ``--sync-mode`` option to ``dws add rclone`` will also impact the synchonization behavior. This option
+determines the ``rclone`` command used when synchronization data. The following two options are supported:
+
+* ``copy`` - files are added or overwritten without deleting any files present at the replica. This
+  is the default and the "safer" option.
+* ``sync`` - files at the replica are removed if they are no longer present at the master. If the master
+  both adds and removes files, this option ensures that the master and replica contain the same
+  set of files.
+
+

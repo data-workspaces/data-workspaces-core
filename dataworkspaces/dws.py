@@ -233,8 +233,7 @@ RESOURCE_PARAM = ResourceParamType()
     type=HOST_PARAM,
     default=None,
     help="Hostname to identify this machine in snapshot directory paths, "
-    + "defaults to "
-    + DEFAULT_HOSTNAME,
+    + "defaults to the result of the 'hostname' command.",
 )
 @click.option(
     "--create-resources",

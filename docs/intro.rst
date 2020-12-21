@@ -386,3 +386,23 @@ like the original data scientisst. When readly, then can upload their changes to
 Others can then use the ``pull`` command to download these changes to their workspace.
 This process can be repeated as many times as necessary, and multiple collaborators can overlap
 their work.
+
+Sharing lineage across workspaces
+---------------------------------
+In some more complex scenarios, it makes sense to split a data pipeline
+across multiple workspaces. For example, an intial sequence of steps may
+generate data used across multiple downstream pipelines. As shown in the
+picture below, the initial pipeline can be its own self contained workspace.
+The intermediate data to be used downstream is then an *exported* resource. Such
+resources save their lineage in the resource itself, in a file named ``lineage.json``.
+
+.. image:: _static/resource-export-import.png
+
+The downstream pipelines can then be separate workspaces that *import* the resource.
+This causes the lineage graph of the imported resource to be included in the lineage
+graph of the importing workspace. Thus, end to end lineage is still captured, even
+across workspaces.
+
+For more details, see the :ref:`command reference <commands>`,
+specifically the ``-export`` and ``--import``
+options of the ``dws add [resource_type]`` subcommands.
