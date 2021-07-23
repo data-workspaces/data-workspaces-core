@@ -70,7 +70,7 @@ class S3Resource(
             optional=False,
             is_global=True,
             help="Name of the bucket",
-3            ptype=StringType(),
+            ptype=StringType(),
         )
         self.bucket_name = self.param_defs.get(
             "bucket_name", bucket_name
@@ -264,41 +264,8 @@ class S3Resource(
         return "Local directory %s in role '%s'" % (self.local_path, self.role)
 
 
-def setup_path_for_hashes(role: str, name: str, workspace: Workspace, local_path: str):
-    """When creating the resource, make sure we have a path for the hashes.
-    Subclasses of LocalFilesResource will need to call this in their factory
-    functions."""
-    workspace_path = workspace.get_workspace_local_path_if_any()
-    if isinstance(workspace, git_backend.Workspace):
-        assert workspace_path is not None
-        hash_path = join(workspace_path, _relative_rsrc_dir_for_git_workspace(role, name))
-        try:
-            os.makedirs(hash_path)
-            with open(os.path.join(hash_path, "dummy.txt"), "w") as f:
-                f.write("Placeholder to ensure directory is added to git\n")
-            call_subprocess(
-                [
-                    GIT_EXE_PATH,
-                    "add",
-                    join(_relative_rsrc_dir_for_git_workspace(role, name), "dummy.txt"),
-                ],
-                cwd=workspace_path,
-            )
-            call_subprocess(
-                [GIT_EXE_PATH, "commit", "-m", "Adding resource %s" % name], cwd=workspace_path
-            )
-        except OSError as exc:
-            if exc.errno == EEXIST and os.path.isdir(hash_path):
-                pass
-            else:
-                raise
-    else:
-        non_git_hashes = join(local_path, ".hashes")
-        if not exists(non_git_hashes):
-            os.mkdir(non_git_hashes)
 
-
-class LocalFileFactory(ResourceFactory):
+class S3ResourceFactory(ResourceFactory):
     def from_command_line(self, role, name, workspace, local_path, compute_hash, export, imported):
         """Instantiate a resource object from the add command's arguments"""
         if not os.path.isdir(local_path):
