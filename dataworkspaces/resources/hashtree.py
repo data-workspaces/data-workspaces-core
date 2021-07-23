@@ -57,13 +57,13 @@ class HashTree(HashEntry):
         super().__init__(name, None)
         self.path = rootdir
         self.cache = []  # type: List[Tuple[str,str,str]]
+        # JF 2021-07: ache loookups are slow, so store a mapping frm name to index.
+        # No longer can delete items from cache, but we dont need that functionality.
+        self.by_name = {} # type: Dict[str,int]
         self.add_to_git = add_to_git
 
     def _index_by_name(self, name):
-        for i, t in enumerate(self.cache):
-            if t[2] == name:
-                return i
-        return -1
+        return self.by_name.get(name, -1)
 
     _map_id_to_type = {
         BLOB: HashBlob
@@ -96,7 +96,10 @@ class HashTree(HashEntry):
         index = self._index_by_name(name)
         if index == -1:
             # this name is not in the cache
+            index = len(self.cache)
+            self.by_name[name] = index            
             self.cache.append(item)
+            
         else:
             if force:
                 self.cache[index] = item
@@ -105,11 +108,6 @@ class HashTree(HashEntry):
                 if prev_item[0] != sha or prev_item[1] != mode:
                     raise ValueError("Item %r existed with different properties" % name)
 
-    def __delitem__(self, name):
-        """Deletes an item with the given name if it exists"""
-        index = self._index_by_name(name)
-        if index > -1:
-            del self.cache[index]
 
     def sort(self):
         """sort the cache in alphabetical order"""
