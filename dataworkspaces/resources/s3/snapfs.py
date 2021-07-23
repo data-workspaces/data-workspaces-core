@@ -4,8 +4,8 @@ Run S3 fs against a snapshot
 
 import sys
 import argparse
-import s3fs
 import json
+import gzip
 
 class NotSupportedError(Exception):
     pass
@@ -116,7 +116,9 @@ class S3Snapshot:
     def version_id(self, path):
         if path not in self.snapshot:
             raise PathError(f"Path {path} not present in snapshot")
-        return self.snapshot[path][1]
+        return self.snapshot[path]
+        # versioning including modification time
+        # return self.snapshot[path][1]
 
     def ls(self, path):
         return self.root.ls(path)
@@ -130,9 +132,9 @@ class S3Snapshot:
 
     
 def read_snapshot(filename):
-    with open(filename, 'r') as f:
-        data = json.load(f)
-    return data
+    with open(filename, 'rb') as f:
+        raw_data = gzip.decompress(f.read()).decode('utf-8')
+    return json.loads(raw_data)
     
 
 def main(argv=sys.argv[1:]):
