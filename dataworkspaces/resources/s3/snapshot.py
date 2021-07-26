@@ -1,6 +1,5 @@
 
-import boto3
-from collections import deque
+import boto3 # type: ignore
 from multiprocessing import Process, JoinableQueue, Queue, cpu_count
 import time
 import json
@@ -69,7 +68,7 @@ class VersionWorker(Process):
             truncated = resp['IsTruncated']
             if truncated:
                 next_key_marker = resp['NextKeyMarker']
-                new_version_id_marker = resp['NextVersionIdMarker']
+                #new_version_id_marker = resp['NextVersionIdMarker']
             else:
                 break
 
@@ -85,11 +84,11 @@ class VersionWorker(Process):
 def snapshot_multiprocess(bucket, snapshot_dir, max_keys=1000, num_workers=CPU_COUNT, max_depth=2, dry_run=False):
     """Compute the snapshot and store as a hash in the specified directory.
     The filename will be HASH.json.gz. The hashing occurs before compresssing.
-    Returns the hash."""
+    Returns the hashcode and the versions directory."""
     start = time.time()
-    work_q = JoinableQueue()
+    work_q = JoinableQueue() # type: JoinableQueue
     work_q.put(('', 0))
-    result_q = Queue()
+    result_q = Queue() # type: Queue
     workers = [VersionWorker(work_q, result_q, bucket, max_keys, max_depth) for i in range(num_workers)]
     for worker in workers:
         worker.start()
@@ -111,7 +110,7 @@ def snapshot_multiprocess(bucket, snapshot_dir, max_keys=1000, num_workers=CPU_C
     with open(local_file, 'wb') as f:
         f.write(gzip.compress(data))
     if not dry_run:
-        import s3fs
+        import s3fs # type: ignore
         fs = s3fs.S3FileSystem()
         snapshot_path = join(join(bucket, SNAPSHOTS_SUBDIR), f'{hashcode}.json.gz')
         fs.put(local_file, snapshot_path)
@@ -120,7 +119,7 @@ def snapshot_multiprocess(bucket, snapshot_dir, max_keys=1000, num_workers=CPU_C
     print(f"Completed snapshot of {len(versions)} objects in {round(end-start, 1)} seconds")
     print(f"Time to write (included in total) was {round(end-pre_write, 2)} seconds")
     print(f"hashcode={hashcode}")
-    return hashcode
+    return (hashcode, versions)
 
 # just for testing
 def main(argv=sys.argv[1:]):

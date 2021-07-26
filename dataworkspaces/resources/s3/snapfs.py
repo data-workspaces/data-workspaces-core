@@ -65,7 +65,7 @@ class Directory:
         leaf = parts[-1]
         return leaf in parent.entries
 
-    def is_file(self, path):
+    def isfile(self, path):
         parts = path.split("/")
         parent = self
         for part in parts[0:-1]:
@@ -88,7 +88,7 @@ class Directory:
         assert len(self.entries)>0, "Empty directory!"
         unique_entries = set(self.entries)
         assert len(self.entries)==len(unique_entries), f"Not all entries are unique: {self}"
-        count = len(entries) - len(subdirs)
+        count = len(self.entries) - len(self.subdirs)
         for key in self.subdirs.keys():
             assert key in self.entries, f"entry {key} in subdirs but not keys: {self}"
             subdir = self.subdirs[key]
@@ -107,6 +107,11 @@ def build_file_tree(snapshot):
     return tree
 
 
+def read_snapshot(filename):
+    with open(filename, 'rb') as f:
+        raw_data = gzip.decompress(f.read()).decode('utf-8')
+    return json.loads(raw_data)
+
 class S3Snapshot:
     def __init__(self, snapshot):
         self.snapshot = snapshot
@@ -123,19 +128,16 @@ class S3Snapshot:
     def ls(self, path):
         return self.root.ls(path)
 
-    def is_file(self, path):
-        return self.root.is_file(path)
+    def isfile(self, path):
+        return self.root.isfile(path)
 
     def exists(self, path):
         return self.root.exists(path)
-        
 
-    
-def read_snapshot(filename):
-    with open(filename, 'rb') as f:
-        raw_data = gzip.decompress(f.read()).decode('utf-8')
-    return json.loads(raw_data)
-    
+    @staticmethod
+    def read_snapshot_from_file(filename):
+        return S3Snapshot(read_snapshot(filename))
+
 
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
@@ -148,8 +150,8 @@ def main(argv=sys.argv[1:]):
     t = S3Snapshot(s)
     if args.path:
         print(f"exists() => {t.exists(args.path)}")
-        print(f"is_file() => {t.is_file(args.path)}")
-        if t.is_file(args.path):
+        print(f"isfile() => {t.isfile(args.path)}")
+        if t.isfile(args.path):
             print(f"version_id = {t.version_id(args.path)}")
         print(f"ls('{args.path}') => {t.ls(args.path)}")
     else:

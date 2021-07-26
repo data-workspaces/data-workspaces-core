@@ -26,6 +26,7 @@ pyflakes:
 	cd $(DATAWORKSPACES)/utils; pyflakes *.py
 	cd $(DATAWORKSPACES)/backends; pyflakes *.py
 	cd $(DATAWORKSPACES)/resources; pyflakes *.py
+	cd $(DATAWORKSPACES)/resources/s3; pyflakes *.py
 	cd $(DATAWORKSPACES)/commands; pyflakes *.py
 	cd $(DATAWORKSPACES)/kits; pyflakes *.py
 

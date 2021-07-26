@@ -18,4 +18,6 @@ dependencies:
     - black
     - click
     - requests
+    - types-requests
+    - chardet
     - dws-repo2docker
