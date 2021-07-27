@@ -625,6 +625,32 @@ def api_resource(ctx, role, name):
 add.add_command(api_resource)
 
 
+
+@click.command(name="s3")
+@click.option("--role", type=ROLE_PARAM)
+@click.option("--name", type=str, default=None, help="Short name for this resource")
+@click.argument("bucket_name", type=str)
+@click.pass_context
+def s3(ctx, role, name, bucket_name: str):
+    """Add a S3 resource to the workspace. Subcommand of ``add``"""
+    ns = ctx.obj
+    if role is None:
+        if imported:
+            role = ResourceRoles.SOURCE_DATA_SET
+        elif ns.batch:
+            raise BatchModeError("--role")
+        else:
+            role = click.prompt(
+                "Please enter a role for this resource, one of [s]ource-data, [i]ntermediate-data, [c]ode, or [r]esults",
+                type=ROLE_PARAM,
+            )
+    workspace = find_and_load_workspace(ns.batch, ns.verbose, ns.workspace_dir)
+    add_command("s3", role, name, workspace, bucket_name)
+
+
+add.add_command(s3)
+
+
 @click.command()
 @click.option("--workspace-dir", type=WORKSPACE_PARAM, default=DWS_PATHDIR)
 @click.option("--message", "-m", type=str, default="", help="Message describing the snapshot")

@@ -31,7 +31,8 @@ register_resource_type(API_RESOURCE_TYPE, ApiResourceFactory)
 
 
 try:
-    from dataworkspaces.resources.s3.s3_resource import S3_RESOURCE_TYPE, S3Resource
-    register_resource_type(S3_RESOURCE_TYPE, S3Resource)
+    from dataworkspaces.resources.s3.s3_resource \
+        import S3_RESOURCE_TYPE, S3ResourceFactory
+    register_resource_type(S3_RESOURCE_TYPE, S3ResourceFactory)
 except ImportError:
     pass # dependencies not installed
