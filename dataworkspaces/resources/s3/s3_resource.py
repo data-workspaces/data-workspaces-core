@@ -62,39 +62,29 @@ class S3Resource(
         self.bucket_name = self.param_defs.get(
             "bucket_name", bucket_name
         )  # type: str
-        # self.param_defs.define(
-        #     "region",
-        #     default_value=None,
-        #     optional=False,
-        #     is_global=False,
-        #     help="S3 Region for bucket",
-        #     ptype=StringType(),
-        # )
-        # self.region = self.param_defs.get(
-        #     "region", region
-        # ) # type: str
-        # self.fs = S3FileSystem(region=region)
-        self.fs = S3FileSystem()
 
-        # local scratch directory is for stuff we keep locally reflecting the
-        # current state of our local workspace.
-        self.local_scratch_dir = join(join(workspace.get_scratch_directory(), S3_RESOURCE_TYPE),
-                                      name)
-        # ensure the scratch directory exits
-        if not exists(self.local_scratch_dir):
-            os.makedirs(self.local_scratch_dir)
+        # local scratch space for resource is where we store the current snapshot and
+        # the cache.
+        self.local_scratch_dir = workspace._get_local_scratch_space_for_resource(
+                                     self.name,
+                                     create_if_not_present=True)
         self.current_snapshot_file = join(self.local_scratch_dir, 'current_snapshot.txt')
         self.current_snapshot = None # type: Optional[str]
         self.snapshot_fs = None # type: Optional[S3Snapshot]
-        if exists(self.current_snapshot_file):
-            with open(self.current_snapshot_file, 'r') as f:
-                self.current_snapshot = f.read().strip()
-            self.snaphot_fs = self._load_snapshot(self.current_snapshot)
         # we cache snapshot files in a subdirectory of the scratch dir
         self.snapshot_cache_dir = join(self.local_scratch_dir, "snapshot_cache")
         # Make sure it exists.
         if not exists(self.snapshot_cache_dir):
             os.makedirs(self.snapshot_cache_dir)
+
+        if exists(self.current_snapshot_file):
+            with open(self.current_snapshot_file, 'r') as f:
+                self.current_snapshot = f.read().strip()
+            self.fs = S3FileSystem(version_aware=True)
+            self.snapshot_fs = self._load_snapshot(self.current_snapshot)
+        else:
+            self.fs = S3FileSystem()
+
 
     def _load_snapshot(self, snapshot_hash:str) -> S3Snapshot:
         snapshot_file = snapshot_hash+'.json.gz'
@@ -105,7 +95,12 @@ class S3Resource(
             if not self.fs.exists(snapshot_s3_path):
                 raise InternalError(f"File s3://{snapshot_s3_path} not found for snapshot {snapshot_hash}")
             self.fs.get(snapshot_s3_path, snapshot_local_path)
-        return S3Snapshot.read_snapshot_from_file(snapshot_file)
+        return S3Snapshot.read_snapshot_from_file(snapshot_local_path)
+
+    def __repr__(self):
+        return f"S3Resource(name={self.name}, role={self.role}, bucket_name={self.bucket_name},\n"+\
+            f"    current_snapshot_file={self.current_snapshot_file}, current_snapshot={self.current_snapshot},\n"+\
+            f"    snapshot_fs={self.snapshot_fs})"
 
     def get_local_path_if_any(self):
         return None
@@ -175,11 +170,17 @@ class S3Resource(
             return self.fs.open(path, mode)
 
     def ls(self, rel_path:str) -> List[str]:
+        """For ls, we return a relative path, not including the bucket. This is different
+        from S3FileSystem, which includes the bucket name."""
         if self.current_snapshot:
             assert self.snapshot_fs is not None
             return self.snapshot_fs.ls(rel_path)
         else:
-            return self.fs.ls(rel_path)
+            base = self.bucket_name + '/'
+            baselen = len(base)
+            return [
+                entry[baselen:] for entry in
+                self.fs.ls(join(self.bucket_name, rel_path))]
 
     def delete_file(self, rel_path: str) -> None:
         self._verify_no_snapshot()
@@ -227,6 +228,8 @@ class S3Resource(
             with open(self.current_snapshot_file, 'w') as f:
                 f.write(self.current_snapshot)
             self.snapshot_fs = S3Snapshot(versions)
+            if not self.fs.version_enabled:
+                self.fs = S3FileSystem(version_enabled=True)
             return (self.current_snapshot, self.current_snapshot)
 
     def restore_precheck(self, hashval):
@@ -241,6 +244,10 @@ class S3Resource(
     def restore(self, hashval):
         self.snapshot_fs = self._load_snapshot(hashval)
         self.current_snapshot = hashval
+        with open(self.current_snapshot_file, 'w') as f:
+            f.write(hashval)
+        if not self.fs.version_enabled:
+            self.fs = S3FileSystem(version_enabled=True)
 
 
     def delete_snapshot(
@@ -253,7 +260,9 @@ class S3Resource(
         snapshot_s3_path = join(join(self.bucket_name, '.snapshots'),
                                 snapshot_file)
         if  self.fs.exists(snapshot_s3_path):
-            self.fs.remove(snapshot_s3_path)
+            self.fs.rm(snapshot_s3_path)
+        if self.current_snapshot==resource_restore_hash:
+            os.remove(self.current_snapshot_file)
 
 
     def validate_subpath_exists(self, subpath: str) -> None:
@@ -263,9 +272,6 @@ class S3Resource(
                 raise ConfigurationError(f"Subpath {subpath} does not existing in bucket {self.bucket_name} as of snapshot {self.current_snapshot}")
         elif not self.fs.exists(subpath):
             raise ConfigurationError(f"Subpath {subpath} does not currently exist in bucket {self.bucket_name}")
-
-    def __str__(self):
-        return "S3 Resource bucket %s in role '%s'" % (self.bucket_name, self.role)
 
 
 

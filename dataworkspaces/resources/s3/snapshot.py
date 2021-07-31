@@ -24,7 +24,7 @@ class VersionWorker(Process):
         self.max_keys = max_keys
         self.max_depth = max_depth
         self.versions = {}
-        self.client = boto3.client('s3')
+        self.client = None
 
     def get_at_prefix(self, prefix, depth):
         next_key_marker = None
@@ -40,6 +40,7 @@ class VersionWorker(Process):
                 kwargs['KeyMarker'] = next_key_marker
             if next_version_id_marker is not None:
                 kwargs['VersionIdMarker'] = next_version_id_marker
+            assert self.client is not None
             resp = self.client.list_object_versions(**kwargs)
 
             if 'CommonPrefixes'  in resp:
@@ -73,6 +74,7 @@ class VersionWorker(Process):
                 break
 
     def run(self):
+        self.client = boto3.client('s3')
         while True:
             prefix, depth = self.work_q.get()
             if prefix==None:

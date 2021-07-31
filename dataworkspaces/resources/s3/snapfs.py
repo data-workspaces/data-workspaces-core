@@ -128,6 +128,9 @@ class S3Snapshot:
     def exists(self, path):
         return self.root.exists(path)
 
+    def __repr__(self):
+        return f'S3Snapshot({len(self.snapshot)} entries)'
+
     @staticmethod
     def read_snapshot_from_file(filename):
         return S3Snapshot(read_snapshot(filename))

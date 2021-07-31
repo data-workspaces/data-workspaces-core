@@ -441,6 +441,8 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         """Given a tag, return the asssociated snapshot metadata.
         This lookup could be slower ,if a reverse index is not kept."""
         md_dir = join(self.workspace_dir, SNAPSHOT_METADATA_DIR_PATH)
+        if not exists(md_dir):
+            raise ConfigurationError(f"Snapshot for tag {tag} not found")
         regexp = re.compile(re.escape(tag))
         for fname in os.listdir(md_dir):
             if not fname.endswith("_md.json"):
