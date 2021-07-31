@@ -11,7 +11,7 @@ import shutil
 
 import click
 
-from dataworkspaces.errors import ConfigurationError
+from dataworkspaces.errors import ConfigurationError, PathError
 from dataworkspaces.utils.subprocess_utils import call_subprocess
 from dataworkspaces.utils.file_utils import does_subpath_exist, LocalPathType
 from dataworkspaces.utils.git_utils import GIT_EXE_PATH, is_git_staging_dirty
@@ -45,7 +45,7 @@ def _relative_rsrc_dir_for_git_workspace(role, name):
 class LocalFileResource(
     Resource, LocalStateResourceMixin, FileResourceMixin, SnapshotResourceMixin
 ):
-    """Resource class for local files. Can also server as the base class for other resource
+    """Resource class for local files. Can also serve as the base class for other resource
     types (e.g. rclone)."""
 
     def __init__(
@@ -211,6 +211,28 @@ class LocalFileResource(
                 raise ConfigurationError(
                     "Parse error when reading %s in resource %s" % (subpath, self.name)
                 ) from e
+
+    def ls(self, rel_path:str) -> List[str]:
+        if rel_path!='':
+            path = os.path.join(self.local_path, rel_path)
+        else:
+            path = self.local_path
+        if isdir(path):
+            files = os.listdir(path)
+            if rel_path!='':
+                return [join(rel_path, file) for file in files]
+            else:
+                return files
+        elif exists(path):
+            return [rel_path]
+        else:
+            raise PathError(f"Path {rel_path} does not exist in resource {self.name}")
+
+    def open(self, rel_path:str, mode:str):
+        if rel_path=='':
+            raise PathError("Need to specify a file to open, empty string is not valid here")
+        path = os.path.join(self.local_path, rel_path)
+        return open(path, mode)
 
     def get_local_params(self) -> JSONDict:
         return {"local_path": self.my_local_path}

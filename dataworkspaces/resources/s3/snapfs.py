@@ -7,11 +7,7 @@ import argparse
 import json
 import gzip
 
-class NotSupportedError(Exception):
-    pass
-
-class PathError(Exception):
-    pass
+from dataworkspaces.errors import PathError
 
 
 class Directory:
@@ -74,8 +70,7 @@ class Directory:
             parent = parent.subdirs[part]
         leaf = parts[-1]
         return (leaf in parent.entries) and (leaf not in parent.subdirs)
-        
-        
+
     def __repr__(self):
         if len(self.entries)>5:
             separator = ',\n '
@@ -116,7 +111,6 @@ class S3Snapshot:
     def __init__(self, snapshot):
         self.snapshot = snapshot
         self.root = build_file_tree(snapshot)
-        
 
     def version_id(self, path):
         if path not in self.snapshot:

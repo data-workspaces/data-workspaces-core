@@ -61,3 +61,7 @@ class ApiParamError(Exception):
     """Incorrect value for an API parameter"""
 
     pass
+
+class PathError(ApiParamError):
+    """A path provided to an API by the user is not valid"""
+    pass

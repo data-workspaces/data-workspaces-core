@@ -8,6 +8,7 @@ from os.path import (
     realpath,
     basename,
     isdir,
+    isfile,
     join,
     dirname,
     exists,
@@ -20,9 +21,9 @@ import shutil
 import stat
 import click
 import json
-from typing import Set, Pattern, Union, Optional, Tuple, cast
+from typing import Set, Pattern, Union, Optional, Tuple, cast, List
 
-from dataworkspaces.errors import ConfigurationError, InternalError
+from dataworkspaces.errors import ConfigurationError, InternalError, PathError
 from dataworkspaces.utils.subprocess_utils import call_subprocess, call_subprocess_for_rc
 from dataworkspaces.utils.git_utils import (
     is_git_dirty,
@@ -218,8 +219,8 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
         in the resource. If the path does not exist or is not a file
         throw a ConfigurationError.
         """
-        path = os.path.join(self.local_path, subpath)
-        if not os.path.isfile(path):
+        path = join(self.local_path, subpath)
+        if not isfile(path):
             raise ConfigurationError(
                 "subpath %s does not exist or is not a file in resource %s" % (subpath, self.name)
             )
@@ -239,6 +240,28 @@ class GitResourceBase(Resource, LocalStateResourceMixin, FileResourceMixin, Snap
             git_remove_file(self.local_path, rel_path, verbose=self.workspace.verbose)
         else:
             os.remove(join(self.local_path, rel_path))
+
+    def ls(self, rel_path:str) -> List[str]:
+        if rel_path!='':
+            path = join(self.local_path, rel_path)
+        else:
+            path = self.local_path
+        if isdir(path):
+            files = os.listdir(path)
+            if rel_path!='':
+                return [join(rel_path, file) for file in files]
+            else:
+                return files
+        elif exists(path):
+            return [rel_path]
+        else:
+            raise PathError(f"Path {rel_path} does not exist in resource {self.name}")
+
+    def open(self, rel_path:str, mode:str):
+        if rel_path=='':
+            raise PathError("Need to specify a file to open, empty string is not valid here")
+        path = join(self.local_path, rel_path)
+        return open(path, mode)
 
 
 def get_workspace_dir(workspace: Workspace) -> str:

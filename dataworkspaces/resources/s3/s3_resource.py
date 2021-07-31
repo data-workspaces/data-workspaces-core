@@ -4,12 +4,12 @@ Resource for files living in a local directory
 """
 import os
 from os.path import join, exists
-from typing import Pattern, Tuple, Optional, Set, Union
+from typing import Pattern, Tuple, Optional, Set, Union, List
 
 from s3fs import S3FileSystem # type: ignore
 
 
-from dataworkspaces.errors import ConfigurationError, NotSupportedError, InternalError
+from dataworkspaces.errors import ConfigurationError, NotSupportedError, InternalError, PathError
 from dataworkspaces.workspace import (
     Workspace,
     Resource,
@@ -137,7 +137,7 @@ class S3Resource(
         """
         self._verify_no_snapshot()
         if not exists(local_path):
-            raise ConfigurationError("Source file %s does not exist." % local_path)
+            raise PathError("Source file %s does not exist." % local_path)
         self.fs.put(local_path, join(self.bucket_name, rel_dest_path))
 
     def does_subpath_exist(
@@ -163,6 +163,24 @@ class S3Resource(
             else:
                 return True
 
+    def open(self, rel_path:str, mode:str):
+        path = join(self.bucket_name, rel_path)
+        if self.current_snapshot:
+            if mode not in ('r', 'rb'):
+                raise NotSupportedError("Cannot open a snapshot file in write mode")
+            assert self.snapshot_fs is not None
+            version_id = self.snapshot_fs.version_id(rel_path)
+            return self.fs.open(path, mode, version_id=version_id)
+        else:
+            return self.fs.open(path, mode)
+
+    def ls(self, rel_path:str) -> List[str]:
+        if self.current_snapshot:
+            assert self.snapshot_fs is not None
+            return self.snapshot_fs.ls(rel_path)
+        else:
+            return self.fs.ls(rel_path)
+
     def delete_file(self, rel_path: str) -> None:
         self._verify_no_snapshot()
         self.fs.rm(join(self.bucket_name, rel_path))
@@ -170,7 +188,7 @@ class S3Resource(
     def read_results_file(self, subpath: str) -> JSONDict:
         """Read and parse json results data from the specified path
         in the resource. If the path does not exist or is not a file
-        throw a ConfigurationError.
+        throw an error.
         """
         raise RESULTS_ROLE_NOT_SUPPORTED
 

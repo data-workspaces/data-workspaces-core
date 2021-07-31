@@ -635,9 +635,7 @@ def s3(ctx, role, name, bucket_name: str):
     """Add a S3 resource to the workspace. Subcommand of ``add``"""
     ns = ctx.obj
     if role is None:
-        if imported:
-            role = ResourceRoles.SOURCE_DATA_SET
-        elif ns.batch:
+        if ns.batch:
             raise BatchModeError("--role")
         else:
             role = click.prompt(

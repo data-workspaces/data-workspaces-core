@@ -10,6 +10,7 @@ from dataworkspaces.workspace import (
     LocalStateResourceMixin,
     SnapshotWorkspaceMixin,
     JSONDict,
+    FileResourceMixin
 )
 from dataworkspaces.commands.snapshot import snapshot_command
 from dataworkspaces.commands.restore import restore_command
@@ -75,6 +76,42 @@ def get_local_path_for_resource(
     return  cast(LocalStateResourceMixin, r).get_local_path_if_any() \
             if isinstance(r, LocalStateResourceMixin) \
             else None
+
+class ResourceFileSystem:
+    """subset of fsspec supported by our file resources."""
+    def __init__(self, resource:FileResourceMixin):
+        self.resource = resource
+
+    def open(self, rel_path:str, mode:str):
+        return self.resource.open(rel_path, mode)
+
+    def ls(self, rel_path:str) -> List[str]:
+        return self.resource.ls(rel_path)
+
+    def exists(self, rel_path) -> bool:
+        return self.resource.does_subpath_exist(rel_path)
+
+    def isfile(self, rel_path) -> bool:
+        return self.resource.does_subpath_exist(rel_path, must_be_file=True)
+
+    def isdir(self, rel_path) -> bool:
+        return self.resource.does_subpath_exist(rel_path, must_be_directory=True)
+
+
+def get_filesystem_for_resource(name: str,
+        workspace_uri_or_path: Optional[str] = None,
+        verbose: bool = False
+    ) -> Optional[ResourceFileSystem]:
+    """Get the a filesystem-like object for the named resource.
+    If it isn't a FileResource, returns None.
+    """
+    workspace = find_and_load_workspace(True, verbose, workspace_uri_or_path)
+    resource = workspace.get_resource(name)
+    if isinstance(resource, FileResourceMixin):
+        return ResourceFileSystem(resource)
+    else:
+        return None
+
 
 class SnapshotInfo(NamedTuple):
     """Named tuple represneting the results from a call

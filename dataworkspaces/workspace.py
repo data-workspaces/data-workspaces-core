@@ -813,6 +813,17 @@ class FileResourceMixin(metaclass=ABCMeta):
         """
         pass
 
+    @abstractmethod
+    def open(self, rel_path:str, mode:str):
+        """Returns a file like object in the specified mode.
+        """
+        pass
+
+    @abstractmethod
+    def ls(self, rel_path:str) -> List[str]:
+        """List the files under the relative path (use empty string for root)"""
+        pass
+
 
 class LocalStateResourceMixin(metaclass=ABCMeta):
     """Mixin for the resource api for resources with local state
