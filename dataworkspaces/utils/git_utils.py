@@ -125,6 +125,28 @@ def git_commit(repo_dir: str, message: str, verbose: bool = False) -> None:
     call_subprocess([GIT_EXE_PATH, "commit", "-m", message], cwd=repo_dir, verbose=verbose)
 
 
+def get_branch_info(local_path, verbose=False):
+    data = call_subprocess([GIT_EXE_PATH, "branch"], cwd=local_path, verbose=verbose)
+    current = None
+    other = []
+    for line in data.split("\n"):
+        line = line.strip()
+        if len(line) == 0:
+            continue
+        if line.startswith("*"):
+            assert current is None
+            current = line[2:]
+        else:
+            other.append(line)
+    if current is None:
+        raise InternalError(
+            "Problem obtaining branch information for local git repo at %s" % local_path
+        )
+    else:
+        return (current, other)
+
+
+
 def git_remove_subtree(
     repo_dir: str, relative_path: str, remove_history: bool = False, verbose: bool = False
 ) -> None:

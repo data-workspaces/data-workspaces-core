@@ -29,6 +29,7 @@ from dataworkspaces.utils.git_utils import (
     is_git_dirty,
     is_file_tracked_by_git,
     get_local_head_hash,
+    get_branch_info,
     commit_changes_in_repo,
     checkout_and_apply_commit,
     GIT_EXE_PATH,
@@ -548,27 +549,6 @@ def get_remote_origin(local_path, verbose=False):
         click.echo("Remote origin not found for git repo at %s" % local_path)
         return None
     return cp.stdout.rstrip()
-
-
-def get_branch_info(local_path, verbose=False):
-    data = call_subprocess([GIT_EXE_PATH, "branch"], cwd=local_path, verbose=verbose)
-    current = None
-    other = []
-    for line in data.split("\n"):
-        line = line.strip()
-        if len(line) == 0:
-            continue
-        if line.startswith("*"):
-            assert current is None
-            current = line[2:]
-        else:
-            other.append(line)
-    if current is None:
-        raise InternalError(
-            "Problem obtaining branch information for local git repo at %s" % local_path
-        )
-    else:
-        return (current, other)
 
 
 def switch_git_branch(local_path, branch, verbose):
