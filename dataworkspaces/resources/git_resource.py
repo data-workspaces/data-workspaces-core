@@ -43,6 +43,8 @@ from dataworkspaces.utils.git_utils import (
     git_commit,
     git_add,
     is_git_staging_dirty,
+    switch_git_branch,
+    switch_git_branch_if_needed,
 )
 from dataworkspaces.utils.git_fat_utils import (
     is_a_git_fat_repo,
@@ -551,26 +553,6 @@ def get_remote_origin(local_path, verbose=False):
     return cp.stdout.rstrip()
 
 
-def switch_git_branch(local_path, branch, verbose):
-    try:
-        call_subprocess([GIT_EXE_PATH, "checkout", branch], cwd=local_path, verbose=verbose)
-    except Exception as e:
-        raise ConfigurationError(
-            "Unable to switch git repo at %s to branch %s" % (local_path, branch)
-        ) from e
-
-
-def switch_git_branch_if_needed(local_path, branch, verbose, ok_if_not_present=False):
-    (current, others) = get_branch_info(local_path, verbose)
-    if branch == current:
-        return
-    else:
-        if (branch not in others) and (not ok_if_not_present):
-            raise InternalError(
-                "Trying to switch to branch %s not in repo at %s" % (branch, others)
-            )
-        switch_git_branch(local_path, branch, verbose)
-
 
 class GitLocalPathType(LocalPathType):
     def __init__(self, remote_url: str, verbose: bool):
@@ -617,9 +599,10 @@ class GitRepoFactory(ResourceFactory):
                 and wspath is not None
                 and lpr.startswith(wspath)
             ):
-                if branch != "master":
+                dws_branch = workspace.get_dws_git_branch()
+                if (branch is not None ) and (branch != dws_branch):
                     raise ConfigurationError(
-                        "Only the branch 'master' is available for resources that are within the workspace's git repository"
+                        f"Branch for subdirectory must match brach of primary dws git repository ({dws_branch})"
                     )
                 elif read_only:
                     raise ConfigurationError(
@@ -657,6 +640,8 @@ class GitRepoFactory(ResourceFactory):
                 + "Please configure before adding resource."
             )
         (current, others) = get_branch_info(local_path, workspace.verbose)
+        if branch is None:
+            branch = current # we default to the current branch
         if branch != current and branch not in others:
             raise ConfigurationError(
                 "Requested branch '%s' is not available for git repository at %s"
@@ -774,7 +759,7 @@ class GitRepoFactory(ResourceFactory):
         else:
             # the repo already exists locally, and we've alerady verified that then
             # remote is correct
-            cmd = [GIT_EXE_PATH, "pull", "origin", "master"]
+            cmd = [GIT_EXE_PATH, "pull", "origin", branch]
             call_subprocess(cmd, local_path, workspace.verbose)
         switch_git_branch_if_needed(local_path, branch, workspace.verbose, ok_if_not_present=True)
         ensure_git_lfs_configured_if_needed(local_path, verbose=workspace.verbose)
@@ -928,6 +913,11 @@ class GitRepoResultsSubdirResource(GitResourceBase):
             "Should never call restore on a git subdirectory resource (%s)" % self.name
         )
 
+    def get_branch(self):
+        """The branch will be the same as our parent"""
+        assert isinstance(self.workspace, git_backend.Workspace)
+        return self.workspace.get_dws_git_branch()
+
     def add_results_file(self, data: Union[JSONDict, JSONList], rel_dest_path: str) -> None:
         """Save JSON results data to the specified path in the resource.
         """
@@ -963,7 +953,7 @@ class GitRepoResultsSubdirResource(GitResourceBase):
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing."
                 % self.workspace_dir
             )
-        if is_pull_needed_from_remote(self.workspace_dir, "master", self.workspace.verbose):
+        if is_pull_needed_from_remote(self.workspace_dir, self.get_branch(), self.workspace.verbose):
             raise ConfigurationError(
                 "Resource '%s' requires a pull from the remote origin before pushing." % self.name
             )
@@ -1093,6 +1083,11 @@ class GitRepoSubdirResource(GitResourceBase):
             self.workspace_dir, self.relative_path, hashval, verbose=self.workspace.verbose
         )
 
+    def get_branch(self):
+        """The branch will be the same as our parent"""
+        assert isinstance(self.workspace, git_backend.Workspace)
+        return self.workspace.get_dws_git_branch()
+
     def push_precheck(self):
         if not exists(self.local_path):
             raise ConfigurationError(
@@ -1107,7 +1102,7 @@ class GitRepoSubdirResource(GitResourceBase):
                 "Git repo at %s has uncommitted changes. Please commit your changes before pushing."
                 % self.local_path
             )
-        if is_pull_needed_from_remote(self.local_path, "master", self.workspace.verbose):
+        if is_pull_needed_from_remote(self.local_path, self.get_branch(), self.workspace.verbose):
             raise ConfigurationError(
                 "Resource '%s' requires a pull from the remote origin before pushing." % self.name
             )

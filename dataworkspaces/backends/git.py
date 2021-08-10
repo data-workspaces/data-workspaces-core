@@ -41,8 +41,10 @@ from dataworkspaces.utils.git_utils import (
     verify_git_config_initialized,
     git_remove_file,
     git_remove_subtree,
+    get_branch_info,
     ensure_entry_in_gitignore,
     echo_git_status_for_user,
+    switch_git_branch_if_needed
 )
 from dataworkspaces.utils.git_fat_utils import (
     validate_git_fat_in_path_if_needed,
@@ -65,6 +67,7 @@ from dataworkspaces.utils.param_utils import (
     get_scratch_directory,
     SCRATCH_DIRECTORY,
     LOCAL_SCRATCH_DIRECTORY,
+    DWS_GIT_BRANCH
 )
 from dataworkspaces.utils.lineage_utils import (
     FileLineageStore,
@@ -358,9 +361,10 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
             )
         validate_git_fat_in_path_if_needed(self.workspace_dir)
 
-        # do the pooling
+        # do the pulls
+        branch = self.get_dws_git_branch()
         call_subprocess(
-            [GIT_EXE_PATH, "pull", "origin", "master"], cwd=self.workspace_dir, verbose=self.verbose
+            [GIT_EXE_PATH, "pull", "origin", branch], cwd=self.workspace_dir, verbose=self.verbose
         )
         run_git_fat_pull_if_needed(self.workspace_dir, self.verbose)
 
@@ -368,7 +372,8 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         return Workspace(self.workspace_dir, batch=self.batch, verbose=self.verbose)
 
     def _push_precheck(self, resource_list: List[ws.LocalStateResourceMixin]) -> None:
-        if is_pull_needed_from_remote(self.workspace_dir, "master", self.verbose):
+        branch = self.get_dws_git_branch()
+        if is_pull_needed_from_remote(self.workspace_dir, branch, self.verbose):
             raise ConfigurationError(
                 "Data workspace at %s requires a pull from remote origin" % self.workspace_dir
             )
@@ -389,9 +394,10 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         super()._push_precheck(resource_list)
 
     def push(self, resource_list: List[ws.LocalStateResourceMixin]) -> None:
+        branch = self.get_dws_git_branch()
         super().push(resource_list)
         call_subprocess(
-            [GIT_EXE_PATH, "push", "origin", "master"], cwd=self.workspace_dir, verbose=self.verbose
+            [GIT_EXE_PATH, "push", "origin", branch], cwd=self.workspace_dir, verbose=self.verbose
         )
         run_git_fat_push_if_needed(self.workspace_dir, verbose=self.verbose)
 
@@ -586,6 +592,20 @@ class Workspace(ws.Workspace, ws.SyncedWorkspaceMixin, ws.SnapshotWorkspaceMixin
         """
         return cast(ws.SnapshotWorkspaceMixin, self)
 
+    def get_dws_git_branch(self) -> str:
+        """This is an implementation-specific method to get the branch name for
+        the workspace. It is used internally as well as by the Git subdirectory
+        resource (which uses the same git repo as the workspace). We define this
+        method rather than just getting the dws_git_branch parameter because it
+        might not have been set if the repo was created pre-1.5."""
+        branch = self.global_params.get(DWS_GIT_BRANCH, None)
+        if branch is not None:
+            return branch
+        else:
+            (dws_git_branch, _) = get_branch_info(self.workspace_dir, self.verbose)
+            self.global_params[DWS_GIT_BRANCH] = dws_git_branch # cache for subsequent calls
+            return dws_git_branch
+
 
 class WorkspaceFactory(ws.WorkspaceFactory):
     @staticmethod
@@ -639,16 +659,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
         (abs_scratch_dir, scratch_dir_gitignore) = init_scratch_directory(
             scratch_dir, workspace_dir, global_params, local_params
         )
-        with open(join(workspace_dir, CONFIG_FILE_PATH), "w") as f:
-            json.dump(
-                {
-                    "name": workspace_name,
-                    "dws-version": dws_version,
-                    "global_params": global_params,
-                },
-                f,
-                indent=2,
-            )
+        if exists(join(workspace_dir, ".git")):
+            click.echo("%s is already a git repository, will just add to it" % workspace_dir)
+        else:
+            git_init(workspace_dir, verbose=verbose)
         with open(join(workspace_dir, RESOURCES_FILE_PATH), "w") as f:
             json.dump([], f, indent=2)
         with open(join(workspace_dir, LOCAL_PARAMS_PATH), "w") as f:
@@ -661,13 +675,9 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             f.write("%s\n" % basename(LOCAL_PARAMS_PATH))
             f.write("%s\n" % basename(RESOURCE_LOCAL_PARAMS_PATH))
             f.write("current_lineage/\n")
-        if exists(join(workspace_dir, ".git")):
-            click.echo("%s is already a git repository, will just add to it" % workspace_dir)
-        else:
-            git_init(workspace_dir, verbose=verbose)
         git_add(
             workspace_dir,
-            [CONFIG_FILE_PATH, RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
+            [RESOURCES_FILE_PATH, GIT_IGNORE_FILE_PATH],
             verbose=verbose,
         )
         if scratch_dir_gitignore is not None:
@@ -689,6 +699,23 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             verbose=verbose,
         )
         commit_changes_in_repo(workspace_dir, "dws init", verbose=verbose)
+
+        # Now that we've done an initial commit, we figure out the branch we
+        # are on, create the config file and commit that.
+        (dws_git_branch, _) = get_branch_info(workspace_dir, verbose=verbose)
+        global_params[DWS_GIT_BRANCH] = dws_git_branch
+        with open(join(workspace_dir, CONFIG_FILE_PATH), "w") as f:
+            json.dump(
+                {
+                    "name": workspace_name,
+                    "dws-version": dws_version,
+                    "global_params": global_params,
+                },
+                f,
+                indent=2,
+            )
+        git_add(workspace_dir, [CONFIG_FILE_PATH], verbose=verbose)
+        commit_changes_in_repo(workspace_dir, "dws init (config.json)", verbose=verbose)
 
         if not isdir(abs_scratch_dir):
             if verbose:
@@ -778,6 +805,10 @@ class WorkspaceFactory(ws.WorkspaceFactory):
             global_params = cf_data["global_params"]
             # get the scratch directory (also adds local param if needed)
             abs_scratch_dir = clone_scratch_directory(directory, global_params, local_params, batch)
+            if DWS_GIT_BRANCH in global_params and (global_params[DWS_GIT_BRANCH] is not None):
+                # if the branch is specified, make sure we are on it
+                switch_git_branch_if_needed(directory, global_params[DWS_GIT_BRANCH],
+                                            verbose=verbose)
             if not isdir(abs_scratch_dir):
                 if verbose:
                     print("Creating scratch directory %s" % abs_scratch_dir)

@@ -146,6 +146,26 @@ def get_branch_info(local_path, verbose=False):
         return (current, other)
 
 
+def switch_git_branch(local_path, branch, verbose):
+    try:
+        call_subprocess([GIT_EXE_PATH, "checkout", branch], cwd=local_path, verbose=verbose)
+    except Exception as e:
+        raise ConfigurationError(
+            "Unable to switch git repo at %s to branch %s" % (local_path, branch)
+        ) from e
+
+
+def switch_git_branch_if_needed(local_path, branch, verbose, ok_if_not_present=False):
+    (current, others) = get_branch_info(local_path, verbose)
+    if branch == current:
+        return
+    else:
+        if (branch not in others) and (not ok_if_not_present):
+            raise InternalError(
+                "Trying to switch to branch %s not in repo at %s" % (branch, others)
+            )
+        switch_git_branch(local_path, branch, verbose)
+
 
 def git_remove_subtree(
     repo_dir: str, relative_path: str, remove_history: bool = False, verbose: bool = False

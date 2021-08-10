@@ -533,7 +533,8 @@ add.add_command(rclone)
 @click.option("--role", type=ROLE_PARAM)
 @click.option("--name", type=str, default=None, help="Short name for this resource")
 @click.option(
-    "--branch", type=str, default="master", help="Branch of the repo to use, defaults to master."
+    "--branch", type=str, default=None,
+    help="Branch of the repo to use. If not specified, defaults to the current branch."
 )
 @click.option(
     "--read-only",

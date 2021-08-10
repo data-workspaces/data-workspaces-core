@@ -325,6 +325,15 @@ SCRATCH_DIRECTORY = define_param(
 )
 
 
+DWS_GIT_BRANCH = define_param(
+    "dws_git_branch",
+    default_value=None,
+    optional=True,
+    help="Name of git branch for the main dws repository. This is set when the dws workspace is initialized to the "+
+         "current branch.",
+    ptype=StringType()
+)
+
 def get_global_param_defaults():
     """Return a mapping of all default values of global params for use
     in generating the initial config file
