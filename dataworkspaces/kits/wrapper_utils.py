@@ -15,12 +15,12 @@ from dataworkspaces.errors import ConfigurationError
 import numpy as np
 
 try:
-    import pandas
+    import pandas # type: ignore
 except ImportError:
     pandas = None
 
 try:
-    import tensorflow
+    import tensorflow # type: ignore
 except ImportError:
     tensorflow = None  # type: ignore
 

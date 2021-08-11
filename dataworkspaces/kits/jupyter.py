@@ -7,18 +7,18 @@ in Jupyter notebooks.
 """
 import os
 import sys
-import ipykernel
-from IPython.core.getipython import get_ipython
-from IPython.core.magic import (Magics, magics_class, line_magic)
-from IPython.core.display import display
-from IPython.display import IFrame, HTML, Markdown
+import ipykernel # type: ignore
+from IPython.core.getipython import get_ipython # type: ignore
+from IPython.core.magic import (Magics, magics_class, line_magic) # type: ignore
+from IPython.core.display import display # type: ignore
+from IPython.display import IFrame, HTML, Markdown # type: ignore
 
 import requests
 import json
 from urllib.parse import urljoin
 import re
 from os.path import join, basename, dirname, abspath, expanduser, curdir, exists
-from notebook.notebookapp import list_running_servers
+from notebook.notebookapp import list_running_servers # type: ignore
 from typing import Optional, List, Any, Dict, Tuple, Callable, Sequence
 assert Dict # keep pyflakes happy
 import shlex
@@ -280,7 +280,7 @@ def _metric_col_to_colormap(col):
     the heatmap indexes (0 through 6).
     Returns a series with the same number of elements as the column.
     """
-    import pandas as pd
+    import pandas as pd # type: ignore
     import numpy as np
     nunique = len(col.dropna().unique())
     num_bins = min(nunique, 7)

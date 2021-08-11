@@ -13,10 +13,11 @@ runs a common sklearn classification workflow, including grid search.
 
 from typing import Optional, Union, Dict, List, Any, cast
 from abc import ABCMeta, abstractmethod
-from sklearn.base import ClassifierMixin
-from sklearn import metrics
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.utils import Bunch
+from sklearn.base import ClassifierMixin # type: ignore
+from sklearn import metrics # type: ignore
+from sklearn.model_selection import GridSearchCV, train_test_split # type: ignore
+from sklearn.utils import Bunch # type: ignore
+import sklearn.utils.metaestimators # type: ignore
 import sys
 import numpy as np
 import os
@@ -37,7 +38,7 @@ from dataworkspaces.kits.wrapper_utils import _DwsModelState, _add_to_hash
 from .jupyter import is_notebook, get_step_name_for_notebook, get_notebook_directory
 
 try:
-    import joblib
+    import joblib # type: ignore
 except ImportError as e:
     raise ConfigurationError('Please install the joblib package (via "pip install joblib")') from e
 
@@ -52,7 +53,7 @@ def _load_dataset_file(dataset_path, filename):
             return np.loadtxt(filepath, delimiter=",")
         except ValueError:
             # try with pandas
-            import pandas
+            import pandas # type: ignore
 
             df = pandas.read_csv(filepath)
             if len(df.values.shape) == 2 and df.values.shape[1] == 1:  # this is just a list
@@ -310,8 +311,6 @@ _METRICS = {
     "multiclass_classification": MulticlassClassificationMetrics,
     "regression": RegressionMetrics,
 }
-
-import sklearn.utils.metaestimators
 
 
 class LineagePredictor(sklearn.utils.metaestimators._BaseComposition):
