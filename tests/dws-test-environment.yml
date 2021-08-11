@@ -13,7 +13,7 @@ dependencies:
   - pip:
     - tensorflow>=2.0
     - pytest
-    - mypy
+    - mypy==0.812
     - pyflakes
     - black
     - click

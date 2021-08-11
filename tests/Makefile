@@ -1,5 +1,5 @@
 shell=/bin/bash
-MYPYPATH:=$(shell cd ..; pwd)
+BASEDIR:=$(shell cd ..; pwd)
 DATAWORKSPACES:=$(shell cd ../dataworkspaces; pwd)
 
 help:
@@ -16,10 +16,7 @@ test: clean mypy pyflakes
 MYPY=mypy --config-file=$(MYPYPATH)/pyproject.toml
 
 mypy:
-	cd $(DATAWORKSPACES); export MYPYPATH=$(MYPYPATH); $(MYPY) workspace.py dws.py lineage.py api.py \
-      utils/ backends/ resources/ commands/
-	cd $(DATAWORKSPACES)/kits; export MYPYPATH=$(MYPYPATH); \
-        $(MYPY) --ignore-missing-imports $(MYPY_KITS)
+	cd $(BASEDIR); mypy  --config-file=pyproject.toml dataworkspaces
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py api.py
