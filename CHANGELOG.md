@@ -2,6 +2,18 @@
 This file is to document DWS releases and the noteable changes in each release.
 We started keeping this log as of release 1.5.
 
+## [1.5.1] - 2021-08-11
+
+Minor release to address some mypy and setuptools compatibility issues. Should not
+impact users installing via pip.
+
+### Fixed
+
+- Issue [#78](https://github.com/data-workspaces/data-workspaces-core/issues/78) - a workaround for
+  an older mypy issue broke the packaging. Ran into a bunch of mypy issues (on Linux only!), which
+  were finally resolved by moving the mypy configuration out of pyproject.toml and adding typing
+  ignore comments for external package imports in the dataworkspaces.kits submodules.
+
 
 ## [1.5.0] - 2021-08-11
   
