@@ -293,4 +293,70 @@ determines the ``rclone`` command used when synchronization data. The following 
   both adds and removes files, this option ensures that the master and replica contain the same
   set of files.
 
+S3 Resources
+------------
+The S3 resource type provides a resource interface for an Amazon AWS S3 bucket.
+Unlike the Git, rclone, and local files resource types, S3 resources do not store files locally.
+Instead, files are accessed via the ``ResourceFileSystem`` interface defined in
+``dataworkspaces.api``. The S3 bucket versioning capability is leveraged to support accessing
+older versions of files associated with a snapshot.
 
+Installation
+~~~~~~~~~~~~
+The S3 dependencies are not included with DWS by default. To install with the required
+dependencies, specify the "s3" extra as follows::
+
+  pip install dataworkspaces[s3]
+
+Adding an S3 Resource
+~~~~~~~~~~~~~~~~~~~~~
+To add an S3 resource to your workspace, first ensure that versioning is enabled for your
+bucket on AWS. Next, configure the AWS credentials on your local machine using Amazon's
+``aws`` command line tool. Then, run the ``dws add`` command as follows, where
+``BUCKET_NAME`` is the name of your bucket, and ROLE is one of
+source-data, code, or intermediate-data::
+
+  dws add s3 --role ROLE BUCKET_NAME
+
+Accessing Files
+~~~~~~~~~~~~~~~
+After adding an S3 resource, you can get a ``ResourceFileSystem`` instance via
+a call to ``get_filesystem_for_resource()``. Here is an example::
+
+  import csv
+  from dataworkspaces.api import get_filesystem_for_resource
+
+  fs = get_filesystem_for_resource('my-s3-resource')
+
+  # get a list of the top level files and directories
+  files = fs.ls('')
+
+  # open a csv file for reading
+  with fs.open('myfile.csv' 'r') as f:
+      reader = csv.reader(f)
+
+Snapshots
+~~~~~~~~~
+When you take a snapshot of an S3 resource, a file is created in the bucket with the key
+``.snapshots/HASH.json.gz``, where HASH is the hash code of the snapshot. This file
+contains a mapping between each file currently active in the bucket and its version id.
+The file is also cached locally in the workspace, but not checked into the workspace's
+Git repository.
+
+A file containing the hash code associated with the snapshot is also
+created at ``.dataworkspaces/scratch/RESOURCE_NAME/current_snapshot.txt``. When this
+file is present, the filesystem interface described in the previous section will return
+the set of files and versions as of the snapshot rather than the latest in the bucket.
+When a prior snapshot is restored, the hash associated with that snapshot is written
+to the ``current_snapshot.txt`` file, causing that snapshot to be used for determining
+files and file versions.
+
+When a snapshot is active for the S3 resource, the resource becomes read-only. If you
+manually remove the ``current_snapshot.txt`` file, the latest versions of each
+file become visible through the API.
+
+Feedback Requested
+~~~~~~~~~~~~~~~~~~
+This is the first major release with the S3 resource functionality. We would
+appreciate your feedback on how you want to use S3 resources in your data
+science projeccts. Thanks!
