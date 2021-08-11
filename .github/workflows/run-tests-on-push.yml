@@ -18,7 +18,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install mypy pyflakes jupyter joblib sklearn types-requests
+        pip install mypy==0.812 pyflakes jupyter joblib sklearn types-requests
     - name: Configure git
       run: |
         git config --global user.name test
