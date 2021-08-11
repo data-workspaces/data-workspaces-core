@@ -14,6 +14,7 @@ test: clean mypy pyflakes
 	python -m unittest $(UNIT_TESTS)
 
 mypy:
+	mypy --version
 	cd $(BASEDIR); mypy  --config-file=mypy.ini dataworkspaces
 
 pyflakes:
