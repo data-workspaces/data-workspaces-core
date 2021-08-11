@@ -13,10 +13,8 @@ test: clean mypy pyflakes
 	./testcli.sh --batch
 	python -m unittest $(UNIT_TESTS)
 
-MYPY=mypy --config-file=$(MYPYPATH)/pyproject.toml
-
 mypy:
-	cd $(BASEDIR); mypy  --config-file=pyproject.toml dataworkspaces
+	cd $(BASEDIR); mypy  --config-file=mypy.ini dataworkspaces
 
 pyflakes:
 	cd $(DATAWORKSPACES); pyflakes workspace.py dws.py lineage.py api.py
