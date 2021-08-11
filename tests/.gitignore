@@ -1,3 +1,5 @@
 ./test
 ./remotes
 ./test_git_utils_data
+/test_params.cfg
+/utils_for_tests_data/

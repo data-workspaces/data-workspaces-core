@@ -138,7 +138,9 @@ class S3Resource(
     def does_subpath_exist(
         self, subpath: str, must_be_file: bool = False, must_be_directory: bool = False
     ) -> bool:
-        if self.current_snapshot:
+        if subpath.startswith('.snapshots'):
+            return False
+        elif self.current_snapshot:
             assert self.snapshot_fs
             if not self.snapshot_fs.exists(subpath):
                 return False
@@ -149,12 +151,13 @@ class S3Resource(
             else:
                 return True
         else:
-            if not self.fs.exists(subpath):
+            path = join(self.bucket_name, subpath)
+            if not self.fs.exists(path):
                 return False
             elif must_be_file:
-                return self.fs.isfile(subpath)
+                return self.fs.isfile(path)
             elif must_be_directory:
-                return not self.fs.isfile(subpath)
+                return not self.fs.isfile(path)
             else:
                 return True
 
@@ -176,11 +179,17 @@ class S3Resource(
             assert self.snapshot_fs is not None
             return self.snapshot_fs.ls(rel_path)
         else:
+            # We call the S3FileSystem ls in this case. However,
+            # we need to exclude the snapshots. Also, there seems to be a bug where it
+            # includes the directory itself in some cases. We excluded that to prevent
+            # infinite loops when traversing the tree.
             base = self.bucket_name + '/'
             baselen = len(base)
             return [
                 entry[baselen:] for entry in
-                self.fs.ls(join(self.bucket_name, rel_path))]
+                self.fs.ls(join(self.bucket_name, rel_path))
+                if not entry[baselen:].startswith('.snapshots')
+                and not entry[baselen:]==rel_path]
 
     def delete_file(self, rel_path: str) -> None:
         self._verify_no_snapshot()
@@ -219,6 +228,10 @@ class S3Resource(
     def snapshot_precheck(self) -> None:
         pass
 
+    def _ensure_fs_version_enabled(self):
+        if not self.fs.version_aware:
+            self.fs = S3FileSystem(version_aware=True)
+
     def snapshot(self) -> Tuple[Optional[str], Optional[str]]:
         if self.current_snapshot is not None:
             # if a snapshot is already enabled, just return that one
@@ -228,8 +241,7 @@ class S3Resource(
             with open(self.current_snapshot_file, 'w') as f:
                 f.write(self.current_snapshot)
             self.snapshot_fs = S3Snapshot(versions)
-            if not self.fs.version_enabled:
-                self.fs = S3FileSystem(version_enabled=True)
+            self._ensure_fs_version_enabled()
             return (self.current_snapshot, self.current_snapshot)
 
     def restore_precheck(self, hashval):
@@ -246,9 +258,7 @@ class S3Resource(
         self.current_snapshot = hashval
         with open(self.current_snapshot_file, 'w') as f:
             f.write(hashval)
-        if not self.fs.version_enabled:
-            self.fs = S3FileSystem(version_enabled=True)
-
+        self._ensure_fs_version_enabled()
 
     def delete_snapshot(
         self, workspace_snapshot_hash: str, resource_restore_hash: str, relative_path: str

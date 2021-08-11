@@ -49,7 +49,7 @@ class Directory:
         if leaf in parent.subdirs:
             return [join(join(parent.path, leaf), entry) for entry in parent.subdirs[leaf].entries]
         else:
-            return [join(parent.path, path)]
+            return [path]
 
     def exists(self, path): 
         parts = path.split("/")

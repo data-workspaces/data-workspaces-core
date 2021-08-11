@@ -9,6 +9,9 @@ from os.path import join, abspath, expanduser, exists
 import os
 import unittest
 import sys
+import json
+import gzip
+import configparser
 
 TEMPDIR=abspath(expanduser(__file__)).replace('.py', '_data')
 WS_DIR=join(TEMPDIR,'workspace')
@@ -147,4 +150,39 @@ class SimpleCase(HelperMethods, unittest.TestCase):
                 self._add_api_resource(rname, cwd=WS_DIR)
         self._run_dws(['status'])
 
+
+def write_gzipped_json(json_data, filepath):
+    data = json.dumps(json_data).encode('utf-8')
+    compressed = gzip.compress(data)
+    with open(filepath, 'wb') as f:
+        f.write(compressed)
+
+
+def get_configuration_for_test(test_section_name, required_properties=None):
+    """Retrieve the configuration section for the
+    specify test from test_params.cfg. If the config
+    file is not present or the section not present,
+    return None.
+
+    If required_properties is specified, it should be a list of property names.
+    If they are not all present, a warning will be emitted and None returned.
+    """
+    config = configparser.ConfigParser()
+    files_read = config.read('test_params.cfg')
+    if len(files_read)!=1:
+        return None
+    if config.has_section(test_section_name):
+        section = config[test_section_name]
+        if required_properties is not None:
+            missing_props = [
+                prop for prop in required_properties
+                if prop not in section
+            ]
+            if len(missing_props)>0:
+                print(f"WARNING: test_params.cfg section '{test_section_name}' missing required properties {', '.join(missing_props)}",
+                      file=sys.stderr)
+                return None
+        return section
+    else:
+        return None
 
