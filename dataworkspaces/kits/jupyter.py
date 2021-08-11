@@ -281,7 +281,7 @@ def _metric_col_to_colormap(col):
     Returns a series with the same number of elements as the column.
     """
     import pandas as pd # type: ignore
-    import numpy as np
+    import numpy as np # type: ignore
     nunique = len(col.dropna().unique())
     num_bins = min(nunique, 7)
     if num_bins<2:
@@ -466,7 +466,7 @@ class DwsMagics(Magics):
             display(Markdown("DWS magic commands are disabled. To enable, set `DWS_MAGIC_DISABLE` to `False` and restart kernel."))
             return
         import pandas as pd # TODO: support case where pandas wasn't installed
-        import numpy as np
+        import numpy as np # type: ignore
         if args.heatmap:
             if args.baseline is not None:
                 print("Cannot specify both --baseline and --heatmap", file=sys.stderr)

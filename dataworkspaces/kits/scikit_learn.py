@@ -19,7 +19,7 @@ from sklearn.model_selection import GridSearchCV, train_test_split # type: ignor
 from sklearn.utils import Bunch # type: ignore
 import sklearn.utils.metaestimators # type: ignore
 import sys
-import numpy as np
+import numpy as np # type: ignore
 import os
 from os.path import join, abspath, expanduser, exists, isabs
 from tempfile import NamedTemporaryFile

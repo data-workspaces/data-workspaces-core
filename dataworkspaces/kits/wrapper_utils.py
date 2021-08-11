@@ -12,7 +12,7 @@ from dataworkspaces.lineage import ResultsLineage
 from dataworkspaces.resources.api_resource import API_RESOURCE_TYPE, ApiResource
 from dataworkspaces.errors import ConfigurationError
 
-import numpy as np
+import numpy as np # type: ignore
 
 try:
     import pandas # type: ignore
