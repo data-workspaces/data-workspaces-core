@@ -15,9 +15,9 @@ A few tests require special configuration:
 * ``test_rclone.py`` has tests that need an ``rclone`` remote called *dws-test* to be
   configured in the system's rclone configuration file.
 * ``test_s3_resource.py`` has tests that require an s3 bucket. This bucket should be specified
-  in the file ``test_params.cfg`` is follows:
+  in the file ``test_params.cfg`` is follows::
 
-  [s3_resource]
-  s3_bucket=YOUR_BUCKET_NAME
+    [s3_resource]
+    s3_bucket=YOUR_BUCKET_NAME
 
 
