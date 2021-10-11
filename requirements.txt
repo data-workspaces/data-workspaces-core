@@ -1,5 +1,0 @@
-click
-requests
-dws-repo2docker
-chardet # required by dws-repo2docker
-

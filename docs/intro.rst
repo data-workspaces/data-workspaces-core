@@ -229,7 +229,7 @@ This software runs directly on Linux and MacOSx. Windows is supported by via the
 `Windows Subsystem for Linux <https://docs.microsoft.com/en-us/windows/wsl/install-win10>`_. The following software should be pre-installed:
 
 * git
-* Python 3.5 or later
+* Python 3.6 or later
 * Optionally, the `rclone <https://rclone.org>`_ utility, if you are going to be
   using it to sync with a remote copy of your data.
 
@@ -260,6 +260,28 @@ Now that you have your virtual environment set up, we can install the actual lib
 To verify that it was installed correctly, run::
 
   dws --help
+
+Extra Dependencies
+~~~~~~~~~~~~~~~~~~~~
+To keep the default Data Workspaces install small, some optional dependencies have been
+left out. If you plan to use the :ref:`S3 resource <s3-resources>`, you can install
+the associated dependencies via the ``s3`` *extra* option to the package::
+
+  pip install dataworkspaces[s3]
+
+If you plan to use the ``dws deploy`` subcommand to create a Docker container
+from your workspace, then install with the ``docker`` extra as follows::
+
+  pip install dataworkspaces[docker]
+
+You can install both extras as well::
+
+  pip install dataworkspaces[s3,docker]
+
+Finally, if you have already installed the base ``dataworkspaces`` package,
+you can add the extras by running ``pip`` with the ``--upgrade`` option::
+
+  pip install --upgrade dataworkspaces[s3,docker]
 
 
 Installation via the source tree

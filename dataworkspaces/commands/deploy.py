@@ -3,13 +3,14 @@ from os.path import curdir, abspath, expanduser
 from typing import Optional
 import click
 
-from repo2docker.__main__ import make_r2d  # type: ignore
-
 from dataworkspaces.workspace import Workspace
 import dataworkspaces.backends.git as git_backend
 from dataworkspaces.utils.git_utils import get_git_config_param, get_remote_origin_url
 from dataworkspaces.utils.subprocess_utils import call_subprocess
+from dataworkspaces.errors import ConfigurationError
 
+R2D_IMPORT_ERROR="Unable to import repo2docker package. You may need to reinstall Data Workspaces with the 'docker' option:"+\
+                 " pip install dataworkspaces[docker]"
 
 def deploy_build_command(
     workspace: Workspace,
@@ -18,6 +19,10 @@ def deploy_build_command(
     git_user_email: Optional[str],
     git_user_name: Optional[str],
 ) -> None:
+    try:
+        from repo2docker.__main__ import make_r2d  # type: ignore
+    except ImportError as e:
+        raise ConfigurationError(R2D_IMPORT_ERROR) from e
     target_repo_dir = "/home/%s/%s" % (os.environ["USER"], workspace.name)
     if image_name is None:
         image_name = workspace.name
@@ -62,6 +67,10 @@ def deploy_build_command(
 def deploy_run_command(
     workspace: Workspace, image_name: Optional[str], no_mount_ssh_keys: bool
 ) -> None:
+    try:
+        from repo2docker.__main__ import make_r2d  # type: ignore
+    except ImportError as e:
+        raise ConfigurationError(R2D_IMPORT_ERROR) from e
     target_repo_dir = "/home/%s/%s" % (os.environ["USER"], workspace.name)
     if image_name is None:
         image_name = workspace.name

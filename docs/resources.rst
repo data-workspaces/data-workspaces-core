@@ -293,6 +293,8 @@ determines the ``rclone`` command used when synchronization data. The following 
   both adds and removes files, this option ensures that the master and replica contain the same
   set of files.
 
+.. _s3-resources:
+
 S3 Resources
 ------------
 The S3 resource type provides a resource interface for an Amazon AWS S3 bucket.
