@@ -210,6 +210,28 @@ class TestCommit(BaseCase):
         self.assert_file_exists('to_be_added.txt')
         self.assert_file_not_exists('to_be_deleted.txt')
 
+    def test_commit_filename_with_spaces(self):
+        """See issue #79 (https://github.com/data-workspaces/data-workspaces-core/issues/79)
+        Files with spaces returned by git status --porcelain are in quotes!
+        """
+        makefile('to_be_deleted.txt', 'this file will be deleted')
+        makefile('to_be_left_alone.txt', 'this file to be left alone')
+        makefile('to be modified.txt', 'this file to be modified')
+        self._git_add(['to_be_deleted.txt', 'to_be_left_alone.txt',
+                       'to be modified.txt'])
+        self._run(['commit', '-m', 'initial version'])
+        os.remove(join(REPODIR, 'to_be_deleted.txt'))
+        with open(join(REPODIR, 'to be modified.txt'), 'a') as f:
+            f.write("Adding another line to file!\n")
+        makefile('to_be_added.txt', 'this file was added')
+        commit_changes_in_repo(REPODIR, 'testing applied changes',
+                               verbose=True)
+        self.assertFalse(is_git_dirty(REPODIR), "Git still dirty after commit!")
+        self.assert_file_exists('to_be_left_alone.txt')
+        self.assert_file_exists('to be modified.txt')
+        self.assert_file_exists('to_be_added.txt')
+        self.assert_file_not_exists('to_be_deleted.txt')
+
 
 class TestCheckoutAndApplyCommit(BaseCase):
     def test_checkout_and_apply_commit(self):
@@ -296,6 +318,41 @@ class TestSubdirCommit(BaseCase):
         self.assertFalse(is_git_dirty(REPODIR), "Git still dirty after commit!")
         self.assert_file_exists('subdir/to_be_left_alone.txt')
         self.assert_file_exists('subdir/to_be_modified.txt')
+        self.assert_file_exists('subdir/to_be_added.txt')
+        self.assert_file_not_exists('subdir/to_be_deleted.txt')
+        self.assert_file_exists('root_file1.txt')
+        # verify that staged files outside of the subdir are not changed
+        makefile('staged_but_not_committed.txt', 'should be staged but not committed')
+        self._git_add(['staged_but_not_committed.txt'])
+        commit_changes_in_repo_subdir(REPODIR, 'subdir', 'testing not committing',
+                                      verbose=True)
+        self.assertFalse(is_git_subdir_dirty(REPODIR, 'subdir'))
+        self.assertTrue(is_git_dirty(REPODIR))
+        self.assertTrue(is_git_staging_dirty(REPODIR))
+        self.assertFalse(is_git_staging_dirty(REPODIR, 'subdir'))
+
+    def test_commit_filename_with_spaces(self):
+        """See issue #79 (https://github.com/data-workspaces/data-workspaces-core/issues/79)
+        Files with spaces returned by git status --porcelain are in quotes!
+        """
+        os.mkdir(join(REPODIR, 'subdir'))
+        makefile('subdir/to_be_deleted.txt', 'this file will be deleted')
+        makefile('subdir/to_be_left_alone.txt', 'this file to be left alone')
+        makefile('subdir/to be modified.txt', 'this file to be modified')
+        makefile('root_file1.txt', 'this should not be changed')
+        self._git_add(['subdir/to_be_deleted.txt', 'subdir/to_be_left_alone.txt',
+                       'subdir/to be modified.txt',
+                       'root_file1.txt'])
+        self._run(['commit', '-m', 'initial version'])
+        os.remove(join(REPODIR, 'subdir/to_be_deleted.txt'))
+        with open(join(REPODIR, 'subdir/to be modified.txt'), 'a') as f:
+            f.write("Adding another line to file!\n")
+        makefile('subdir/to_be_added.txt', 'this file was added')
+        commit_changes_in_repo_subdir(REPODIR, 'subdir', 'testing applied changes',
+                                      verbose=True)
+        self.assertFalse(is_git_dirty(REPODIR), "Git still dirty after commit!")
+        self.assert_file_exists('subdir/to_be_left_alone.txt')
+        self.assert_file_exists('subdir/to be modified.txt')
         self.assert_file_exists('subdir/to_be_added.txt')
         self.assert_file_not_exists('subdir/to_be_deleted.txt')
         self.assert_file_exists('root_file1.txt')

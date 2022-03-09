@@ -261,6 +261,8 @@ def commit_changes_in_repo(local_path, message, remove_empty_dirs=False, verbose
         if len(line) < 2:
             continue
         relpath = line[2:].strip()
+        if relpath[0]=='"' and relpath[-1]=='"':
+            relpath = relpath[1:-1] # line has spaces, so git enclosed it in quotes
         if line[1] == "?":
             call_subprocess([GIT_EXE_PATH, "add", relpath], cwd=local_path, verbose=verbose)
             need_to_commit = True
@@ -334,6 +336,8 @@ def commit_changes_in_repo_subdir(
         # first character is the staging area status, second character
         # is the working tree status, and rest is the relative path.
         relpath = line[2:].strip()
+        if relpath[0]=='"' and relpath[-1]=='"': # issue 79
+            relpath = relpath[1:-1] # line has spaces, so git enclosed it in quotes
         if not relpath.startswith(subdir):
             raise InternalError("Git status line not in subdirectory %s: %s" % (subdir, line))
         elif line[1] == "?":

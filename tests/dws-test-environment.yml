@@ -4,7 +4,7 @@
 # local in-development copy.
 name: dws-test-environment
 dependencies:
-  - python=3.6.*
+  - python=3.7.*
   - jupyter
   - matplotlib
   - pandas

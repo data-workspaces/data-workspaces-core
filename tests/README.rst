@@ -12,7 +12,12 @@ for any external requirements and skip the test if the requirements are not sati
 
 A few tests require special configuration:
 
-* ``test_rclone.py`` has tests that need an ``rclone`` remote called *dws-test* to be
+* The rclone tests need to have the ``rclone`` executable installed and a remote called *localfs*.
+  ``rclone`` may be downloaded from https://rclone.org. On Ubuntu-derived Linux, you can install via
+  ``sudo apt-get rclone``.
+  To configure the remote, create the file ~/.config/rclone/rclone.conf with a section ``localfs`` and a
+  single setting: ``type = local``
+* ``test_rclone.py`` has additional tests that need an ``rclone`` remote called *dws-test* to be
   configured in the system's rclone configuration file.
 * ``test_s3_resource.py`` has tests that require an s3 bucket. This bucket should be specified
   in the file ``test_params.cfg`` is follows::
