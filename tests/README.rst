@@ -6,6 +6,9 @@ This directory contains the test suite for DWS. To ensure you have all the depen
 the Anaconda environment specified in dws-test-environment.yml. We use the oldest version of
 Python we support to catch any accidental use of newer syntax contructs.
 
+Some of the tests needed an installed copy of ``dws``, to get that, activate your conda environment
+and then, from the top level of this repo, run ``pip install --editable $PWD``
+
 You can use the Makefile to drive the tests. ``make test`` will run the pyflakes checks,
 mypy checks, and the unit test suite. Some tests use ``unittest.skipUnless`` to check
 for any external requirements and skip the test if the requirements are not satisfied.
