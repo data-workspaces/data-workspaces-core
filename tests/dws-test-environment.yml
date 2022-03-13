@@ -5,9 +5,10 @@
 name: dws-test-environment
 dependencies:
   - python=3.7.*
-  - jupyter
+  - notebook
   - matplotlib
   - pandas
+  - numpy
   - scikit-learn
   - pip
   - pip:
