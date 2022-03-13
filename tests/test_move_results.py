@@ -33,8 +33,7 @@ def makefile(fname):
 
 class TestDirTemplateRe(unittest.TestCase):
     def _test_pat(self, template, expected):
-        if sys.version>='3.7':
-            expected = expected.replace(r'\/', '/').replace(r'\:', ':')
+        expected = expected.replace(r'\/', '/').replace(r'\:', ':')
         p = make_re_pattern_for_dir_template(template)
         print("%s => %s" % (template, p))
         self.assertEqual(p, expected,
