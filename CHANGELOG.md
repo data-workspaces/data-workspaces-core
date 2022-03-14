@@ -2,6 +2,21 @@
 This file is to document DWS releases and the noteable changes in each release.
 We started keeping this log as of release 1.5.
 
+## [1.6.0] - 2022-03-13
+
+We are happy to announce release 1.6.0. The primary changes are:
+
+- Added support for Python 3.10 and dropped Python 3.6
+- Fixed issue #79 - If the filename of a modified file contains spaces, dws snapshot fails
+- Updated to latest version of repo2docker (2022.02.0.1).
+
+## [1.5.2] - 2021-10-11
+
+The dependencies used for the dws deploy commands have been moved out of the default install. They can be included by enabling the docker extra as follows:
+```
+pip install --upgrade dataworkspaces[docker]
+```
+
 ## [1.5.1] - 2021-08-11
 
 Minor release to address some mypy and setuptools compatibility issues. Should not
